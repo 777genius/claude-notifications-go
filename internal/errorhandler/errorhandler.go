@@ -41,9 +41,19 @@ func Init(logToConsole, exitOnCritical, recoveryEnabled bool) *ErrorHandler {
 
 // GetHandler returns the default error handler (auto-initializes if needed)
 func GetHandler() *ErrorHandler {
-	if defaultHandler == nil {
-		return Init(true, false, true)
-	}
+	// Use handlerOnce to ensure thread-safe initialization
+	// This prevents data races when multiple goroutines call GetHandler concurrently
+	handlerOnce.Do(func() {
+		if defaultHandler == nil {
+			defaultHandler = &ErrorHandler{
+				logToConsole:    true,
+				exitOnCritical:  false,
+				recoveryEnabled: true,
+			}
+			// Enable console output in logging if requested
+			logging.EnableConsoleOutput()
+		}
+	})
 	return defaultHandler
 }
 
