@@ -15,10 +15,17 @@ Downloading the notification binary for your platform...
 
 ```bash
 # Get plugin root directory
+# Priority: 1) CLAUDE_PLUGIN_ROOT env var, 2) installed plugin location, 3) current directory
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
 if [ -z "$PLUGIN_ROOT" ]; then
-  echo "Warning: CLAUDE_PLUGIN_ROOT not set, using current directory"
-  PLUGIN_ROOT="$(pwd)"
+  # Try the standard installed plugin location
+  INSTALLED_PATH="$HOME/.claude/plugins/marketplaces/claude-notifications-go"
+  if [ -d "$INSTALLED_PATH" ]; then
+    PLUGIN_ROOT="$INSTALLED_PATH"
+  else
+    # Fallback to current directory (for development)
+    PLUGIN_ROOT="$(pwd)"
+  fi
 fi
 
 echo "Plugin root: $PLUGIN_ROOT"

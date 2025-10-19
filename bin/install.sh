@@ -262,6 +262,30 @@ make_executable() {
     chmod +x "$BINARY_PATH" 2>/dev/null || true
 }
 
+# Create symlink for hooks
+create_symlink() {
+    local symlink_path="${SCRIPT_DIR}/claude-notifications"
+
+    # Remove old symlink if exists
+    rm -f "$symlink_path" 2>/dev/null || true
+
+    # Create symlink pointing to platform-specific binary
+    if ln -s "$BINARY_NAME" "$symlink_path" 2>/dev/null; then
+        echo -e "${GREEN}✓ Created symlink${NC} claude-notifications → ${BINARY_NAME}"
+        return 0
+    else
+        # Fallback: copy if symlink fails (some systems don't support symlinks)
+        if cp "$BINARY_PATH" "$symlink_path" 2>/dev/null; then
+            chmod +x "$symlink_path" 2>/dev/null || true
+            echo -e "${GREEN}✓ Created copy${NC} claude-notifications (symlink not supported)"
+            return 0
+        fi
+
+        echo -e "${YELLOW}⚠ Could not create symlink/copy (hooks may not work)${NC}"
+        return 1
+    fi
+}
+
 # Cleanup temporary files
 cleanup() {
     rm -f "$CHECKSUMS_PATH" 2>/dev/null || true
@@ -283,6 +307,8 @@ main() {
 
     # Check if already installed
     if check_existing; then
+        # Even if binary exists, ensure symlink is created
+        create_symlink
         echo -e "${GREEN}✓ No download needed${NC}"
         echo ""
         return 0
@@ -327,6 +353,9 @@ main() {
     # Make executable
     make_executable
 
+    # Create symlink for hooks to use
+    create_symlink
+
     # Cleanup
     cleanup
 
@@ -339,6 +368,7 @@ main() {
     echo -e "${GREEN}✓${NC} Binary downloaded: ${BOLD}${BINARY_NAME}${NC}"
     echo -e "${GREEN}✓${NC} Location: ${SCRIPT_DIR}/"
     echo -e "${GREEN}✓${NC} Checksum verified"
+    echo -e "${GREEN}✓${NC} Symlink created for hooks"
     echo -e "${GREEN}✓${NC} Ready to use!"
     echo ""
 }

@@ -48,10 +48,17 @@ First, let me verify the notification binary is installed:
 
 ```bash
 # Get plugin root directory
+# Priority: 1) CLAUDE_PLUGIN_ROOT env var, 2) installed plugin location, 3) current directory
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
 if [ -z "$PLUGIN_ROOT" ]; then
-  echo "Warning: CLAUDE_PLUGIN_ROOT not set, using current directory"
-  PLUGIN_ROOT="$(pwd)"
+  # Try the standard installed plugin location
+  INSTALLED_PATH="$HOME/.claude/plugins/marketplaces/claude-notifications-go"
+  if [ -d "$INSTALLED_PATH" ]; then
+    PLUGIN_ROOT="$INSTALLED_PATH"
+  else
+    # Fallback to current directory (for development)
+    PLUGIN_ROOT="$(pwd)"
+  fi
 fi
 
 echo "Plugin root: $PLUGIN_ROOT"
@@ -95,7 +102,12 @@ Now let me detect what sound options are available on your system!
 # Get plugin root (re-declare for this bash session)
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
 if [ -z "$PLUGIN_ROOT" ]; then
-  PLUGIN_ROOT="$(pwd)"
+  INSTALLED_PATH="$HOME/.claude/plugins/marketplaces/claude-notifications-go"
+  if [ -d "$INSTALLED_PATH" ]; then
+    PLUGIN_ROOT="$INSTALLED_PATH"
+  else
+    PLUGIN_ROOT="$(pwd)"
+  fi
 fi
 
 # Detect Operating System
@@ -224,7 +236,12 @@ When user says "play [sound_name]", "preview [sound_name]", "прослушат�
    # Get plugin root
    PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
    if [ -z "$PLUGIN_ROOT" ]; then
-     PLUGIN_ROOT="$(pwd)"
+     INSTALLED_PATH="$HOME/.claude/plugins/marketplaces/claude-notifications-go"
+     if [ -d "$INSTALLED_PATH" ]; then
+       PLUGIN_ROOT="$INSTALLED_PATH"
+     else
+       PLUGIN_ROOT="$(pwd)"
+     fi
    fi
 
    # For built-in sounds (no extension needed)
@@ -250,7 +267,12 @@ When user says "play [sound_name]", "preview [sound_name]", "прослушат�
    # Get plugin root
    PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
    if [ -z "$PLUGIN_ROOT" ]; then
-     PLUGIN_ROOT="$(pwd)"
+     INSTALLED_PATH="$HOME/.claude/plugins/marketplaces/claude-notifications-go"
+     if [ -d "$INSTALLED_PATH" ]; then
+       PLUGIN_ROOT="$INSTALLED_PATH"
+     else
+       PLUGIN_ROOT="$(pwd)"
+     fi
    fi
 
    echo "🔊 Playing: ${sound_name}... (volume: 30%)"
@@ -440,7 +462,12 @@ Use AskUserQuestion with:
 # Get plugin root
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
 if [ -z "$PLUGIN_ROOT" ]; then
-  PLUGIN_ROOT="$(pwd)"
+  INSTALLED_PATH="$HOME/.claude/plugins/marketplaces/claude-notifications-go"
+  if [ -d "$INSTALLED_PATH" ]; then
+    PLUGIN_ROOT="$INSTALLED_PATH"
+  else
+    PLUGIN_ROOT="$(pwd)"
+  fi
 fi
 
 echo "Let me play a quick test at your selected volume..."
@@ -592,7 +619,12 @@ If yes:
 # Get plugin root
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
 if [ -z "$PLUGIN_ROOT" ]; then
-  PLUGIN_ROOT="$(pwd)"
+  INSTALLED_PATH="$HOME/.claude/plugins/marketplaces/claude-notifications-go"
+  if [ -d "$INSTALLED_PATH" ]; then
+    PLUGIN_ROOT="$INSTALLED_PATH"
+  else
+    PLUGIN_ROOT="$(pwd)"
+  fi
 fi
 
 echo "Testing task-complete sound at your configured volume (<selected_volume>%)..."

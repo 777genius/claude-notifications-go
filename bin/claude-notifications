@@ -85,12 +85,14 @@ show_not_found_error() {
     echo -e "${YELLOW}To fix this issue:${NC}" >&2
     echo "" >&2
     echo -e "  Run the setup command to download the binary:" >&2
-    echo -e "  ${BLUE}/setup-notifications${NC}" >&2
+    echo -e "  ${BLUE}/claude-notifications-go:notifications-init${NC}" >&2
     echo "" >&2
     echo -e "${YELLOW}This will automatically:${NC}" >&2
     echo -e "  1. Download the correct binary for your platform" >&2
-    echo -e "  2. Configure notification sounds" >&2
-    echo -e "  3. Set up the plugin for use" >&2
+    echo -e "  2. Create symlink for hooks" >&2
+    echo "" >&2
+    echo -e "${YELLOW}Then configure sounds (optional):${NC}" >&2
+    echo -e "  ${BLUE}/claude-notifications-go:notifications-settings${NC}" >&2
     echo "" >&2
     echo -e "${YELLOW}Alternative (manual download):${NC}" >&2
     echo -e "  https://github.com/777genius/claude-notifications-go/releases" >&2
