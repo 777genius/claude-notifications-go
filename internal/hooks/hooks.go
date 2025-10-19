@@ -9,6 +9,7 @@ import (
 	"github.com/777genius/claude-notifications/internal/analyzer"
 	"github.com/777genius/claude-notifications/internal/config"
 	"github.com/777genius/claude-notifications/internal/dedup"
+	"github.com/777genius/claude-notifications/internal/errorhandler"
 	"github.com/777genius/claude-notifications/internal/logging"
 	"github.com/777genius/claude-notifications/internal/notifier"
 	"github.com/777genius/claude-notifications/internal/platform"
@@ -73,6 +74,9 @@ func NewHandler(pluginRoot string) (*Handler, error) {
 
 // HandleHook handles a hook event
 func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
+	// Add panic recovery for robustness
+	defer errorhandler.HandlePanic()
+
 	// Ensure notifier resources are cleaned up when function exits
 	defer func() {
 		if err := h.notifierSvc.Close(); err != nil {
@@ -284,6 +288,9 @@ func (h *Handler) generateMessage(hookData *HookData, status analyzer.Status) st
 
 // sendNotifications sends desktop and webhook notifications
 func (h *Handler) sendNotifications(status analyzer.Status, message, sessionID string) {
+	// Add panic recovery to prevent notification failures from crashing the plugin
+	defer errorhandler.HandlePanic()
+
 	// Add session name to message (like bash version: "[bold-cat]")
 	sessionName := sessionname.GenerateSessionName(sessionID)
 	enhancedMessage := fmt.Sprintf("[%s] %s", sessionName, message)
@@ -293,7 +300,7 @@ func (h *Handler) sendNotifications(status analyzer.Status, message, sessionID s
 	// Send desktop notification
 	if h.cfg.IsDesktopEnabled() {
 		if err := h.notifierSvc.SendDesktop(status, enhancedMessage); err != nil {
-			logging.Error("Failed to send desktop notification: %v", err)
+			errorhandler.HandleError(err, "Failed to send desktop notification")
 		}
 	}
 

@@ -9,6 +9,9 @@ bin/*.dll
 bin/*.so
 bin/*.dylib
 
+# Root binary (should be in bin/ instead)
+/claude-notifications
+
 # Test binaries
 *.test
 *.out

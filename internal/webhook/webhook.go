@@ -13,6 +13,7 @@ import (
 
 	"github.com/777genius/claude-notifications/internal/analyzer"
 	"github.com/777genius/claude-notifications/internal/config"
+	"github.com/777genius/claude-notifications/internal/errorhandler"
 	"github.com/777genius/claude-notifications/internal/logging"
 	"github.com/google/uuid"
 )
@@ -247,13 +248,14 @@ func (s *Sender) sendHTTPRequest(ctx context.Context, requestID, url string, pay
 // SendAsync sends a webhook asynchronously with graceful shutdown support
 func (s *Sender) SendAsync(status analyzer.Status, message, sessionID string) {
 	s.wg.Add(1)
-	go func() {
+	// Use SafeGo to protect against panics in async webhook sending
+	errorhandler.SafeGo(func() {
 		defer s.wg.Done()
 
 		if err := s.Send(status, message, sessionID); err != nil {
-			logging.Error("Async webhook send failed: %v", err)
+			errorhandler.HandleError(err, "Async webhook send failed")
 		}
-	}()
+	})
 }
 
 // Shutdown gracefully shuts down the webhook sender

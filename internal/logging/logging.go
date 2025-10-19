@@ -11,9 +11,10 @@ import (
 
 // Logger provides structured logging to a file
 type Logger struct {
-	file   *os.File
-	mu     sync.Mutex
-	prefix string
+	file          *os.File
+	mu            sync.Mutex
+	prefix        string
+	consoleOutput bool // Enable output to console (stderr/stdout)
 }
 
 var (
@@ -54,6 +55,20 @@ func (l *Logger) SetPrefix(prefix string) {
 	l.prefix = prefix
 }
 
+// EnableConsoleOutput enables logging to console (stderr for errors/warnings, stdout for info/debug)
+func (l *Logger) EnableConsoleOutput() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.consoleOutput = true
+}
+
+// DisableConsoleOutput disables logging to console
+func (l *Logger) DisableConsoleOutput() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.consoleOutput = false
+}
+
 // log writes a formatted log message with timestamp
 func (l *Logger) log(level, format string, args ...interface{}) {
 	l.mu.Lock()
@@ -69,7 +84,28 @@ func (l *Logger) log(level, format string, args ...interface{}) {
 		logLine = fmt.Sprintf("[%s] [%s] %s\n", timestamp, level, message)
 	}
 
+	// Write to file
 	_, _ = l.file.WriteString(logLine)
+
+	// Write to console if enabled
+	if l.consoleOutput {
+		// Use stderr for errors and warnings, stdout for info and debug
+		var consoleOutput io.Writer
+		if level == "ERROR" || level == "WARN" {
+			consoleOutput = os.Stderr
+		} else {
+			consoleOutput = os.Stdout
+		}
+
+		// Add plugin prefix to console output for clarity
+		var consoleLine string
+		if l.prefix != "" {
+			consoleLine = fmt.Sprintf("[claude-notifications] [%s] [%s] %s: %s\n", timestamp, level, l.prefix, message)
+		} else {
+			consoleLine = fmt.Sprintf("[claude-notifications] [%s] [%s] %s\n", timestamp, level, message)
+		}
+		_, _ = fmt.Fprint(consoleOutput, consoleLine)
+	}
 }
 
 // Debug logs a debug message
@@ -142,6 +178,20 @@ func Error(format string, args ...interface{}) {
 func SetPrefix(prefix string) {
 	if defaultLogger != nil {
 		defaultLogger.SetPrefix(prefix)
+	}
+}
+
+// EnableConsoleOutput enables console output for the default logger
+func EnableConsoleOutput() {
+	if defaultLogger != nil {
+		defaultLogger.EnableConsoleOutput()
+	}
+}
+
+// DisableConsoleOutput disables console output for the default logger
+func DisableConsoleOutput() {
+	if defaultLogger != nil {
+		defaultLogger.DisableConsoleOutput()
 	}
 }
 

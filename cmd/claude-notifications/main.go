@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/777genius/claude-notifications/internal/errorhandler"
 	"github.com/777genius/claude-notifications/internal/hooks"
 	"github.com/777genius/claude-notifications/internal/logging"
 )
@@ -12,6 +13,15 @@ import (
 const version = "1.0.0"
 
 func main() {
+	// Initialize global error handler with panic recovery
+	// logToConsole=true: errors will be shown in console
+	// exitOnCritical=false: don't exit on critical errors (let caller decide)
+	// recoveryEnabled=true: recover from panics
+	errorhandler.Init(true, false, true)
+
+	// Add global panic recovery
+	defer errorhandler.HandlePanic()
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
@@ -39,12 +49,15 @@ func main() {
 }
 
 func handleHook(hookEvent string) {
+	// Add panic recovery for this function
+	defer errorhandler.HandlePanic()
+
 	// Determine plugin root
 	pluginRoot := getPluginRoot()
 
 	// Initialize logger
 	if _, err := logging.InitLogger(pluginRoot); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		errorhandler.HandleCriticalError(err, "Failed to initialize logger")
 		os.Exit(1)
 	}
 	defer logging.Close()
@@ -52,15 +65,13 @@ func handleHook(hookEvent string) {
 	// Create handler
 	handler, err := hooks.NewHandler(pluginRoot)
 	if err != nil {
-		logging.Error("Failed to create handler: %v", err)
-		fmt.Fprintf(os.Stderr, "Failed to create handler: %v\n", err)
+		errorhandler.HandleCriticalError(err, "Failed to create handler")
 		os.Exit(1)
 	}
 
 	// Handle hook
 	if err := handler.HandleHook(hookEvent, os.Stdin); err != nil {
-		logging.Error("Failed to handle hook: %v", err)
-		fmt.Fprintf(os.Stderr, "Failed to handle hook: %v\n", err)
+		errorhandler.HandleCriticalError(err, "Failed to handle hook")
 		os.Exit(1)
 	}
 }

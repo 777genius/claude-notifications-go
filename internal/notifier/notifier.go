@@ -22,6 +22,7 @@ import (
 
 	"github.com/777genius/claude-notifications/internal/analyzer"
 	"github.com/777genius/claude-notifications/internal/config"
+	"github.com/777genius/claude-notifications/internal/errorhandler"
 	"github.com/777genius/claude-notifications/internal/logging"
 	"github.com/777genius/claude-notifications/internal/platform"
 )
@@ -89,10 +90,11 @@ func (n *Notifier) SendDesktop(status analyzer.Status, message string) error {
 	// Play sound if enabled (sequential playback handled by speaker mixer)
 	if n.cfg.Notifications.Desktop.Sound && statusInfo.Sound != "" {
 		n.wg.Add(1)
-		go func(soundPath string) {
+		// Use SafeGo to protect against panics in sound playback goroutine
+		errorhandler.SafeGo(func() {
 			defer n.wg.Done()
-			n.playSound(soundPath)
-		}(statusInfo.Sound)
+			n.playSound(statusInfo.Sound)
+		})
 	}
 
 	return nil
