@@ -103,7 +103,8 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 ### Prerequisites
 
 - Claude Code (tested on v2.0.15)
-- **No additional software required** - pre-built binaries included for all platforms
+- **Internet connection** (for first-time binary download)
+- **No additional software required** - binaries download automatically
 
 ### Install from GitHub
 
@@ -115,9 +116,17 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 /plugin install claude-notifications-go@claude-notifications-go
 
 # Restart Claude Code
+
+# Run setup wizard (downloads binary + configures sounds)
+/setup-notifications
 ```
 
-That's it! The plugin will automatically select the correct binary for your platform (macOS, Linux, or Windows).
+**That's it!** On first run, `/setup-notifications` will:
+1. Automatically download the correct binary for your platform (macOS/Linux/Windows) from GitHub Releases
+2. Show a progress bar during download
+3. Guide you through sound configuration with an interactive wizard
+
+The binary is downloaded once and cached locally. Subsequent runs are instant.
 
 ## Platform Support
 
@@ -127,9 +136,10 @@ That's it! The plugin will automatically select the correct binary for your plat
 - Windows 10+ (x64)
 
 **No additional dependencies:**
-- ✅ Pre-built binaries included
+- ✅ Binaries auto-download from GitHub Releases
 - ✅ Pure Go - no C compiler needed
 - ✅ All libraries bundled
+- ✅ Works offline after first setup
 
 **Windows-specific features:**
 - Native Toast notifications (Windows 10+)
@@ -294,8 +304,8 @@ echo '{"session_id":"test","transcript_path":"/path/to/transcript.jsonl"}' | \
 git clone https://github.com/777genius/claude-notifications-go
 cd claude-notifications-go
 
-# 2. Verify binaries (optional)
-./setup.sh
+# 2. Build binary for your platform
+make build
 
 # 3. Add as local marketplace
 /plugin marketplace add .
@@ -304,7 +314,12 @@ cd claude-notifications-go
 /plugin install claude-notifications-go@local-dev
 
 # 5. Restart Claude Code for hooks to take effect
+
+# 6. Run setup (will use your locally built binary)
+/setup-notifications
 ```
+
+**Note:** For local development, build the binary with `make build` first. The `/setup-notifications` command will use your locally built binary if it exists, otherwise it will download from GitHub Releases.
 
 ### Building binaries
 

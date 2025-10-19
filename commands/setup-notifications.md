@@ -54,6 +54,25 @@ fi
 echo "Plugin root: $PLUGIN_ROOT"
 ```
 
+## Step 1.5: Download Binary (First-Time Setup)
+
+Now let me check if the notification binary is installed, and download it if needed:
+
+```bash
+# Run the installer to download the binary for your platform
+echo ""
+echo "Checking for notification binary..."
+if ! "${PLUGIN_ROOT}/bin/install.sh"; then
+  echo ""
+  echo "Error: Failed to install notification binary"
+  echo "Please check your internet connection and try again"
+  exit 1
+fi
+echo ""
+```
+
+This will automatically download the correct binary for your platform (macOS, Linux, or Windows) from GitHub Releases on first run. Subsequent runs will skip this step if the binary is already installed.
+
 ## Step 2: Discover Available Sounds
 
 Now let me detect what sound options are available on your system!

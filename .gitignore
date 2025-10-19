@@ -1,13 +1,18 @@
-# Binaries
-# IMPORTANT: bin/ directory should be committed with:
-# - bin/claude-notifications (wrapper script)
-# - bin/claude-notifications-* (platform binaries)
-# Only exclude temporary/development binaries:
-bin/test-build
-bin/sound-preview
+# Binaries - exclude all platform-specific binaries
+# These are downloaded from GitHub Releases during setup
+bin/claude-notifications-*
+bin/*.exe
 bin/*.dll
 bin/*.so
 bin/*.dylib
+
+# Keep these scripts in git:
+# - bin/claude-notifications (wrapper script)
+# - bin/install.sh (installer script)
+
+# Temporary build files
+bin/test-build
+bin/sound-preview
 
 # Root binary (should be in bin/ instead)
 /claude-notifications
