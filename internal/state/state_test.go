@@ -203,7 +203,7 @@ func TestManager_UpdateLastNotification_NewState(t *testing.T) {
 func TestManager_UpdateLastNotification_ExistingState(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-notif-existing"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Create initial state
 	initial := &SessionState{
@@ -241,7 +241,7 @@ func TestManager_ShouldSuppressQuestion_NoState(t *testing.T) {
 func TestManager_ShouldSuppressQuestion_NoTaskCompleteTime(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-suppress-no-time"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Create state without LastTaskCompleteTime
 	state := &SessionState{SessionID: sessionID}
@@ -256,7 +256,7 @@ func TestManager_ShouldSuppressQuestion_NoTaskCompleteTime(t *testing.T) {
 func TestManager_ShouldSuppressQuestion_WithinCooldown(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-suppress-within"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Create state with recent task complete
 	state := &SessionState{
