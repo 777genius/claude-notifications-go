@@ -275,7 +275,7 @@ func TestManager_ShouldSuppressQuestion_WithinCooldown(t *testing.T) {
 func TestManager_ShouldSuppressQuestion_OutsideCooldown(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-suppress-outside"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Create state with old task complete (6 seconds ago)
 	state := &SessionState{
@@ -294,7 +294,7 @@ func TestManager_ShouldSuppressQuestion_OutsideCooldown(t *testing.T) {
 func TestManager_ShouldSuppressQuestion_ZeroCooldown(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-suppress-zero"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Create state
 	state := &SessionState{
@@ -331,7 +331,7 @@ func TestManager_ShouldSuppressAfterAny_NoState(t *testing.T) {
 func TestManager_ShouldSuppressAfterAny_NoNotificationTime(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-suppress-any-no-time"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	state := &SessionState{SessionID: sessionID}
 	err := mgr.Save(state)
@@ -345,7 +345,7 @@ func TestManager_ShouldSuppressAfterAny_NoNotificationTime(t *testing.T) {
 func TestManager_ShouldSuppressAfterAny_WithinCooldown(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-suppress-any-within"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	state := &SessionState{
 		SessionID:            sessionID,
@@ -362,7 +362,7 @@ func TestManager_ShouldSuppressAfterAny_WithinCooldown(t *testing.T) {
 func TestManager_ShouldSuppressAfterAny_OutsideCooldown(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-suppress-any-outside"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	state := &SessionState{
 		SessionID:            sessionID,
@@ -381,7 +381,7 @@ func TestManager_ShouldSuppressAfterAny_OutsideCooldown(t *testing.T) {
 func TestManager_UpdateState_TaskComplete(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-update-task"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	err := mgr.UpdateState(sessionID, analyzer.StatusTaskComplete, "", "")
 	require.NoError(t, err)
@@ -394,7 +394,7 @@ func TestManager_UpdateState_TaskComplete(t *testing.T) {
 func TestManager_UpdateState_PlanReady(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-update-plan"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	err := mgr.UpdateState(sessionID, analyzer.StatusPlanReady, "ExitPlanMode", "/test")
 	require.NoError(t, err)
@@ -408,7 +408,7 @@ func TestManager_UpdateState_PlanReady(t *testing.T) {
 func TestManager_UpdateState_Question(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-update-question"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	err := mgr.UpdateState(sessionID, analyzer.StatusQuestion, "AskUserQuestion", "/test")
 	require.NoError(t, err)
@@ -421,7 +421,7 @@ func TestManager_UpdateState_Question(t *testing.T) {
 func TestManager_UpdateState_UnknownStatus(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-update-unknown"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Unknown status should not create state
 	err := mgr.UpdateState(sessionID, analyzer.StatusUnknown, "SomeTool", "/test")
@@ -435,7 +435,7 @@ func TestManager_UpdateState_UnknownStatus(t *testing.T) {
 func TestManager_UpdateState_QuestionWithoutTool(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-update-question-no-tool"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Question without tool name should not update
 	err := mgr.UpdateState(sessionID, analyzer.StatusQuestion, "", "/test")
@@ -482,7 +482,7 @@ func TestManager_Cleanup_OldFiles(t *testing.T) {
 	assert.NotNil(t, state, "recent state should remain")
 
 	// Cleanup
-	mgr.Delete(session2)
+	_ = mgr.Delete(session2)
 }
 
 func TestManager_Cleanup_EmptyDirectory(t *testing.T) {
@@ -498,7 +498,7 @@ func TestManager_Cleanup_EmptyDirectory(t *testing.T) {
 func TestManager_FullWorkflow(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-workflow"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// 1. Update interactive tool (plan ready)
 	err := mgr.UpdateInteractiveTool(sessionID, "ExitPlanMode", "/project")
