@@ -3,8 +3,8 @@ package analyzer
 import (
 	"strings"
 
-	"github.com/belief/claude-notifications/internal/config"
-	"github.com/belief/claude-notifications/pkg/jsonl"
+	"github.com/777genius/claude-notifications/internal/config"
+	"github.com/777genius/claude-notifications/pkg/jsonl"
 )
 
 // Tool categories for state machine classification
