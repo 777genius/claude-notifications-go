@@ -40,9 +40,9 @@ This setup wizard is INTERACTIVE. Users can preview sounds at ANY time by saying
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-## Step 1: Determine Plugin Root
+## Step 1: Setup Plugin Binary
 
-First, let me find where the plugin is installed:
+First, let me find the plugin location and download the binary if needed:
 
 ```bash
 # Get plugin root directory
@@ -52,13 +52,7 @@ if [ -z "$PLUGIN_ROOT" ]; then
   PLUGIN_ROOT="$(pwd)"
 fi
 echo "Plugin root: $PLUGIN_ROOT"
-```
 
-## Step 1.5: Download Binary (First-Time Setup)
-
-Now let me check if the notification binary is installed, and download it if needed:
-
-```bash
 # Run the installer to download the binary for your platform
 echo ""
 echo "Checking for notification binary..."
@@ -77,9 +71,14 @@ This will automatically download the correct binary for your platform (macOS, Li
 
 Now let me detect what sound options are available on your system!
 
-### Detect Operating System
-
 ```bash
+# Get plugin root (re-declare for this bash session)
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+if [ -z "$PLUGIN_ROOT" ]; then
+  PLUGIN_ROOT="$(pwd)"
+fi
+
+# Detect Operating System
 OS_TYPE=$(uname -s)
 case "$OS_TYPE" in
   Darwin*)
@@ -89,7 +88,6 @@ case "$OS_TYPE" in
     ;;
   Linux*)
     echo "Operating System: Linux"
-    # Check common Linux sound directories
     if [ -d "/usr/share/sounds" ]; then
       HAS_SYSTEM_SOUNDS="true"
       SYSTEM_SOUNDS_DIR="/usr/share/sounds"
@@ -106,13 +104,9 @@ case "$OS_TYPE" in
     HAS_SYSTEM_SOUNDS="false"
     ;;
 esac
-```
 
-### Built-in Sounds (Always Available)
-
-The plugin includes these pre-configured sounds that work on all platforms:
-
-```bash
+# Built-in Sounds
+echo ""
 echo "Built-in sounds (included with plugin):"
 if [ -d "${PLUGIN_ROOT}/sounds" ]; then
   ls -1 "${PLUGIN_ROOT}/sounds/"*.mp3 2>/dev/null | while read file; do
@@ -122,19 +116,8 @@ if [ -d "${PLUGIN_ROOT}/sounds" ]; then
 else
   echo "  Warning: sounds/ directory not found!"
 fi
-```
 
-**Always available:**
-- ✅ **task-complete.mp3** - Triumphant completion chime
-- ✅ **review-complete.mp3** - Gentle notification tone
-- ✅ **question.mp3** - Attention-grabbing sound
-- ✅ **plan-ready.mp3** - Professional planning tone
-
-### System Sounds (Platform-dependent)
-
-Now checking for system sounds:
-
-```bash
+# System Sounds
 if [ "$HAS_SYSTEM_SOUNDS" = "true" ]; then
   echo ""
   echo "System sounds detected at: $SYSTEM_SOUNDS_DIR"
@@ -161,6 +144,12 @@ else
   echo "   They work perfectly on all platforms!"
 fi
 ```
+
+**Always available:**
+- ✅ **task-complete.mp3** - Triumphant completion chime
+- ✅ **review-complete.mp3** - Gentle notification tone
+- ✅ **question.mp3** - Attention-grabbing sound
+- ✅ **plan-ready.mp3** - Professional planning tone
 
 **macOS system sounds** (if detected):
 - **Glass** - Crisp, clean chime ✨
@@ -209,6 +198,12 @@ When user says "play [sound_name]", "preview [sound_name]", "прослушат�
 
 2. **Determine the full path** to the sound file:
    ```bash
+   # Get plugin root
+   PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+   if [ -z "$PLUGIN_ROOT" ]; then
+     PLUGIN_ROOT="$(pwd)"
+   fi
+
    # For built-in sounds (no extension needed)
    if [[ "$sound_name" == "task-complete" ]] || [[ "$sound_name" == "review-complete" ]] || [[ "$sound_name" == "question" ]] || [[ "$sound_name" == "plan-ready" ]]; then
      SOUND_PATH="${PLUGIN_ROOT}/sounds/${sound_name}.mp3"
@@ -229,8 +224,14 @@ When user says "play [sound_name]", "preview [sound_name]", "прослушат�
 
 2. **Play the sound** using the sound-preview utility with reduced volume:
    ```bash
+   # Get plugin root
+   PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+   if [ -z "$PLUGIN_ROOT" ]; then
+     PLUGIN_ROOT="$(pwd)"
+   fi
+
    echo "🔊 Playing: ${sound_name}... (volume: 30%)"
-   bin/sound-preview --volume 0.3 "$SOUND_PATH"
+   "${PLUGIN_ROOT}/bin/sound-preview" --volume 0.3 "$SOUND_PATH"
    echo "✓ Playback complete!"
    ```
 
@@ -413,8 +414,14 @@ Use AskUserQuestion with:
 
 **Note:** You can offer to preview a sound at the selected volume:
 ```bash
+# Get plugin root
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+if [ -z "$PLUGIN_ROOT" ]; then
+  PLUGIN_ROOT="$(pwd)"
+fi
+
 echo "Let me play a quick test at your selected volume..."
-bin/sound-preview --volume <selected_volume> sounds/task-complete.mp3
+"${PLUGIN_ROOT}/bin/sound-preview" --volume <selected_volume> "${PLUGIN_ROOT}/sounds/task-complete.mp3"
 echo "How does that sound? (If you want to adjust, just let me know)"
 ```
 
@@ -559,8 +566,14 @@ Ask user: "Would you like to test your task-complete notification now?"
 
 If yes:
 ```bash
+# Get plugin root
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+if [ -z "$PLUGIN_ROOT" ]; then
+  PLUGIN_ROOT="$(pwd)"
+fi
+
 echo "Testing task-complete sound at your configured volume (<selected_volume>%)..."
-bin/sound-preview --volume <selected_volume> "<path-to-chosen-sound>"
+"${PLUGIN_ROOT}/bin/sound-preview" --volume <selected_volume> "<path-to-chosen-sound>"
 echo "✓ Sound test complete!"
 ```
 
