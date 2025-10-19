@@ -1,0 +1,32 @@
+{
+    "name": "claude-notifications-go",
+    "owner": {
+        "name": "belief",
+        "email": "[email protected]"
+    },
+    "metadata": {
+        "description": "Smart notifications marketplace for Claude Code (Go implementation)",
+        "version": "1.0.0"
+    },
+    "plugins": [{
+        "name": "claude-notifications-go",
+        "source": "./",
+        "description": "Smart notifications for Claude Code task statuses (Go implementation)",
+        "version": "1.0.0",
+        "author": {
+            "name": "belief",
+            "email": "[email protected]"
+        },
+        "repository": "https://github.com/belief/claude-notifications-go",
+        "license": "MIT",
+        "keywords": [
+            "notifications",
+            "alerts",
+            "productivity",
+            "go",
+            "hooks"
+        ],
+        "category": "productivity",
+        "tags": ["notifications", "hooks", "alerts", "go"]
+    }]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "claude-notifications-go",
+  "version": "1.0.0",
+  "description": "Smart notifications for Claude Code task statuses (Go implementation)",
+  "author": {
+    "name": "belief",
+    "email": "[email protected]"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/belief/claude-notifications-go",
+  "keywords": ["notifications", "alerts", "productivity", "go"],
+  "commands": ["./commands/setup-notifications.md"],
+  "hooks": ["./hooks/hooks.json"]
+}

@@ -1,0 +1,39 @@
+# Binaries (keep bin/ directory with wrapper and cross-platform binaries)
+# bin/ directory should be committed with wrapper script and platform binaries
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+*.out
+
+# Coverage
+coverage.txt
+coverage.html
+
+# Dependencies
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+notification-debug.log
+
+# State files
+.state/
+*.lock
+
+# Build artifacts
+dist/
+build/

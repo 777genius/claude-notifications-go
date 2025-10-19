@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+
+          # macOS (Intel)
+          GOOS=darwin GOARCH=amd64 go build -o dist/claude-notifications-darwin-amd64 ./cmd/claude-notifications
+
+          # macOS (Apple Silicon)
+          GOOS=darwin GOARCH=arm64 go build -o dist/claude-notifications-darwin-arm64 ./cmd/claude-notifications
+
+          # Linux (x86_64)
+          GOOS=linux GOARCH=amd64 go build -o dist/claude-notifications-linux-amd64 ./cmd/claude-notifications
+
+          # Linux (ARM64)
+          GOOS=linux GOARCH=arm64 go build -o dist/claude-notifications-linux-arm64 ./cmd/claude-notifications
+
+          # Windows (x86_64)
+          GOOS=windows GOARCH=amd64 go build -o dist/claude-notifications-windows-amd64.exe ./cmd/claude-notifications
+
+      - name: Create checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-binaries:
+    name: Test Release Binaries
+    needs: release
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            binary: claude-notifications-linux-amd64
+          - os: macos-latest
+            binary: claude-notifications-darwin-arm64
+          - os: windows-latest
+            binary: claude-notifications-windows-amd64.exe
+
+    steps:
+      - name: Download release binary
+        uses: robinraju/release-downloader@v1.8
+        with:
+          tag: ${{ github.ref_name }}
+          fileName: ${{ matrix.binary }}
+
+      - name: Make binary executable (Unix)
+        if: runner.os != 'Windows'
+        run: chmod +x ${{ matrix.binary }}
+
+      - name: Test binary
+        run: ./${{ matrix.binary }} version
+        shell: bash
