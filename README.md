@@ -6,23 +6,19 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/777genius/claude-notifications-go)](https://goreportcard.com/report/github.com/777genius/claude-notifications-go)
 [![codecov](https://codecov.io/gh/777genius/claude-notifications-go/branch/master/graph/badge.svg)](https://codecov.io/gh/777genius/claude-notifications-go)
 
-**Professional rewrite of the claude-notifications plugin in Go.**
+<img width="700" height="478" alt="image" src="https://github.com/user-attachments/assets/06824578-772c-4d16-95e8-67de008d516b" />
 
-Smart notifications for Claude Code task statuses with cross-platform support, webhook integrations, and intelligent deduplication.
+Smart notifications for Claude Code task statuses with cross-platform support, webhook integrations.
 
 ## Features
 
 - ✅ **Cross-platform**: macOS, Linux, Windows (Git Bash/WSL)
 - ✅ **Smart status detection**: State machine-based analysis with temporal locality
 - ✅ **PreToolUse integration**: Instant notifications for ExitPlanMode and AskUserQuestion
-- ✅ **Deduplication**: Two-phase lock mechanism prevents duplicate notifications
-- ✅ **Cooldown system**: Suppress noisy back-to-back alerts
-- ✅ **Desktop notifications**: Native OS notifications with custom sounds/icons
-- ✅ **Native sound playback**: Using gopxl/beep (no external commands)
+- ✅ **Session names**: Friendly names like "[bold-cat]" for easy session identification
 - ✅ **Multi-format support**: MP3, WAV, FLAC, OGG, AIFF
 - ✅ **Interactive setup**: `/setup-notifications` command with sound preview
 - ✅ **Volume control**: Customizable notification volume (0-100%) for all environments
-- ✅ **Session names**: Friendly names like "[bold-cat]" for easy session identification
 - ✅ **Webhook support**: Slack, Discord, Telegram, and custom endpoints with enterprise reliability patterns
   - Retry with exponential backoff
   - Circuit breaker for fault tolerance
@@ -32,6 +28,8 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
   - **→ [Complete Webhook Documentation](docs/webhooks/README.md)**
 - ✅ **JSONL parsing**: Efficient streaming parser for large transcripts
 - ✅ **Comprehensive testing**: Unit tests with race detection
+- ✅ **Cooldown system**: Suppress noisy back-to-back alerts
+- ✅ **Deduplication**: Two-phase lock mechanism prevents duplicate notifications
 
 ## Architecture
 
@@ -63,8 +61,7 @@ claude_icon.png             # Plugin icon for desktop notifications
 
 ### Prerequisites
 
-- Claude Code v2.0.15+
-- Windows 10+ (for Toast notifications), macOS, or Linux
+- Claude Code (tested on v2.0.15)
 - **No additional software required** - pre-built binaries included for all platforms
 
 ### Install from GitHub
