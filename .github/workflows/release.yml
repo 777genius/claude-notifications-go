@@ -26,15 +26,11 @@ jobs:
             arch: arm64
             binary: claude-notifications-darwin-arm64
 
-          # Linux builds
+          # Linux build
           - os: ubuntu-latest
             platform: linux
             arch: amd64
             binary: claude-notifications-linux-amd64
-          - os: ubuntu-latest
-            platform: linux
-            arch: arm64
-            binary: claude-notifications-linux-arm64
 
           # Windows build
           - os: windows-latest
