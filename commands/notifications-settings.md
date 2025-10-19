@@ -73,7 +73,7 @@ if [ "$BINARY_EXISTS" = "false" ]; then
   if ! "${PLUGIN_ROOT}/bin/install.sh"; then
     echo ""
     echo "❌ Error: Failed to install notification binary"
-    echo "Please run /notifications-init or check your internet connection"
+    echo "Please run /claude-notifications-go:notifications-init or check your internet connection"
     exit 1
   fi
   echo ""
@@ -604,7 +604,7 @@ echo "✓ Sound test complete!"
 ## Additional Notes
 
 **Editing Later:**
-- You can re-run `/notifications-settings` anytime to reconfigure
+- You can re-run `/claude-notifications-go:notifications-settings` anytime to reconfigure
 - Or manually edit `config/config.json`
 
 **Webhook Configuration:**

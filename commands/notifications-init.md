@@ -43,7 +43,7 @@ echo ""
 echo "✅ Binary installed successfully!"
 echo ""
 echo "Next steps:"
-echo "  Run /notifications-settings to configure sounds and notifications"
+echo "  Run /claude-notifications-go:notifications-settings to configure sounds and notifications"
 ```
 
 This will automatically download the correct binary for your platform from GitHub Releases with a progress bar. The binary is cached locally - subsequent runs will skip the download if already installed.

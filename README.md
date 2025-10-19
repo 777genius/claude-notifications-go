@@ -15,6 +15,9 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 - [Claude Notifications (Go)](#claude-notifications-go)
   - [Table of Contents](#table-of-contents)
   - [Supported Notification Types](#supported-notification-types)
+  - [Installation](#installation)
+    - [Prerequisites](#prerequisites)
+    - [Install from GitHub](#install-from-github)
   - [Features](#features)
     - [🖥️ Cross-Platform Support](#️-cross-platform-support)
     - [🧠 Smart Detection](#-smart-detection)
@@ -22,9 +25,6 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
     - [🔊 Audio Customization](#-audio-customization)
     - [🌐 Enterprise-Grade Webhooks](#-enterprise-grade-webhooks)
     - [🛠️ Developer Experience](#️-developer-experience)
-  - [Installation](#installation)
-    - [Prerequisites](#prerequisites)
-    - [Install from GitHub](#install-from-github)
   - [Platform Support](#platform-support)
   - [Quick Start](#quick-start)
     - [Interactive Setup (Recommended)](#interactive-setup-recommended)
@@ -51,6 +51,40 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 | Session Limit Reached | ⏱️ | Session limit reached | Stop/SubagentStop hooks (state machine detects "Session limit reached" text in last 3 assistant messages) |
 
 
+## Installation
+
+### Prerequisites
+
+- Claude Code (tested on v2.0.15)
+- **Internet connection** (for first-time binary download)
+- **No additional software required** - binaries download automatically
+
+### Install from GitHub
+
+```bash
+# Add marketplace
+/plugin marketplace add 777genius/claude-notifications-go
+
+# Install plugin
+/plugin install claude-notifications-go@claude-notifications-go
+
+# Restart Claude Code
+
+# Download the binary for your platform
+/claude-notifications-go:notifications-init
+
+# Configure sounds and settings
+/claude-notifications-go:notifications-settings
+```
+
+**That's it!**
+
+1. `/claude-notifications-go:notifications-init` downloads the correct binary for your platform (macOS/Linux/Windows) from GitHub Releases with a progress bar
+2. `/claude-notifications-go:notifications-settings` guides you through sound configuration with an interactive wizard
+
+The binary is downloaded once and cached locally. You can re-run `/claude-notifications-go:notifications-settings` anytime to reconfigure.
+
+
 ## Features
 
 ### 🖥️ Cross-Platform Support
@@ -75,7 +109,7 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 - **Volume control**: 0-100% customizable volume
 - **Built-in sounds**: Professional notification sounds included
 - **System sounds**: Use macOS/Linux system sounds (optional)
-- **Sound preview**: Test sounds before choosing with `/notifications-settings`
+- **Sound preview**: Test sounds before choosing with `/claude-notifications-go:notifications-settings`
 
 ### 🌐 Enterprise-Grade Webhooks
 - **Retry logic** with exponential backoff
@@ -86,7 +120,7 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 - **→ [Complete Webhook Documentation](docs/webhooks/README.md)**
 
 ### 🛠️ Developer Experience
-- **Interactive setup wizards**: `/notifications-init` for binary setup, `/notifications-settings` for configuration
+- **Interactive setup wizards**: `/claude-notifications-go:notifications-init` for binary setup, `/claude-notifications-go:notifications-settings` for configuration
 - **JSONL streaming parser** for efficient large file processing
 - **Comprehensive testing**: Unit tests with race detection
 - **Two-phase lock deduplication** prevents duplicate notifications
@@ -97,39 +131,6 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 - **Stop/SubagentStop hooks** analyze the conversation transcript using a state machine to determine the task status
 - **Notification hook** is triggered when Claude needs user input (permission dialogs, questions)
 - The state machine uses temporal locality (last 15 messages) and tool analysis to accurately detect task completion
-
-## Installation
-
-### Prerequisites
-
-- Claude Code (tested on v2.0.15)
-- **Internet connection** (for first-time binary download)
-- **No additional software required** - binaries download automatically
-
-### Install from GitHub
-
-```bash
-# Add marketplace
-/plugin marketplace add 777genius/claude-notifications-go
-
-# Install plugin
-/plugin install claude-notifications-go@claude-notifications-go
-
-# Restart Claude Code
-
-# Download the binary for your platform
-/notifications-init
-
-# Configure sounds and settings
-/notifications-settings
-```
-
-**That's it!**
-
-1. `/notifications-init` downloads the correct binary for your platform (macOS/Linux/Windows) from GitHub Releases with a progress bar
-2. `/notifications-settings` guides you through sound configuration with an interactive wizard
-
-The binary is downloaded once and cached locally. You can re-run `/notifications-settings` anytime to reconfigure.
 
 ## Platform Support
 
@@ -157,13 +158,13 @@ The binary is downloaded once and cached locally. You can re-run `/notifications
 First, download the notification binary:
 
 ```
-/notifications-init
+/claude-notifications-go:notifications-init
 ```
 
 Then configure your notification sounds:
 
 ```
-/notifications-settings
+/claude-notifications-go:notifications-settings
 ```
 
 This will:
@@ -326,11 +327,11 @@ make build
 # 5. Restart Claude Code for hooks to take effect
 
 # 6. Download binary and configure settings
-/notifications-init
-/notifications-settings
+/claude-notifications-go:notifications-init
+/claude-notifications-go:notifications-settings
 ```
 
-**Note:** For local development, build the binary with `make build` first. The `/notifications-init` command will use your locally built binary if it exists, otherwise it will download from GitHub Releases.
+**Note:** For local development, build the binary with `make build` first. The `/claude-notifications-go:notifications-init` command will use your locally built binary if it exists, otherwise it will download from GitHub Releases.
 
 ### Building binaries
 
