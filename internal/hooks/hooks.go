@@ -157,6 +157,19 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 	// Check cooldown for question status BEFORE updating notification time
 	if status == analyzer.StatusQuestion {
+		logging.Debug("Checking question cooldown: cooldownSeconds=%d", h.cfg.Notifications.SuppressQuestionAfterAnyNotificationSeconds)
+
+		// Load state to log its contents
+		sessionState, stateErr := h.stateMgr.Load(hookData.SessionID)
+		if stateErr != nil {
+			logging.Warn("Failed to load state for logging: %v", stateErr)
+		} else if sessionState != nil {
+			logging.Debug("Session state: lastNotificationTime=%d, lastNotificationStatus=%s",
+				sessionState.LastNotificationTime, sessionState.LastNotificationStatus)
+		} else {
+			logging.Debug("No session state found")
+		}
+
 		// First, check if we should suppress question after ANY notification (not just task_complete)
 		suppressAfterAny, err := h.stateMgr.ShouldSuppressQuestionAfterAnyNotification(
 			hookData.SessionID,
@@ -168,6 +181,8 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 			logging.Debug("Question suppressed due to recent notification from this session")
 			// Lock will be released by defer
 			return nil
+		} else {
+			logging.Debug("Question NOT suppressed (cooldown check passed)")
 		}
 
 		// Also check legacy cooldown after task_complete

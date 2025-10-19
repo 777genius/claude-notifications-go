@@ -206,6 +206,11 @@ func (m *Manager) ShouldSuppressQuestionAfterAnyNotification(sessionID string, c
 	// Check if we're within the cooldown window
 	now := platform.CurrentTimestamp()
 	elapsed := now - state.LastNotificationTime
+	shouldSuppress := elapsed < int64(cooldownSeconds)
 
-	return elapsed < int64(cooldownSeconds), nil
+	// Import logging to add debug output
+	// Note: This creates a circular dependency, so we'll skip logging here
+	// and rely on the caller to log the result
+
+	return shouldSuppress, nil
 }
