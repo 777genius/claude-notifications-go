@@ -67,8 +67,24 @@ func generateQuestionSummary(messages []jsonl.Message, cfg *config.Config) strin
 		return truncateText(cleaned, 150)
 	}
 
-	// 2) Look for recent textual questions in assistant messages
-	recentMessages := jsonl.GetLastAssistantMessages(messages, 8)
+	// 2) Filter to get only assistant messages AFTER last user message
+	// This ensures we only look at the CURRENT response, not previous ones
+	userTS := jsonl.GetLastUserTimestamp(messages)
+	filteredMessages := jsonl.FilterMessagesAfterTimestamp(messages, userTS)
+
+	// If no messages after user timestamp, fall back to last 8 assistant messages
+	var recentMessages []jsonl.Message
+	if len(filteredMessages) > 0 {
+		// Use filtered messages (only from current response)
+		recentMessages = filteredMessages
+		if len(filteredMessages) > 8 {
+			recentMessages = filteredMessages[len(filteredMessages)-8:]
+		}
+	} else {
+		// Fallback to last 8 assistant messages if filtering fails
+		recentMessages = jsonl.GetLastAssistantMessages(messages, 8)
+	}
+
 	texts := jsonl.ExtractTextFromMessages(recentMessages)
 
 	// Strategy A: Find texts with "?" and prioritize short ones
