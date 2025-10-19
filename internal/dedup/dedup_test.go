@@ -166,7 +166,7 @@ func TestCleanupForSession(t *testing.T) {
 	// Create lock for different session
 	_, err = mgr.AcquireLock("other-session")
 	require.NoError(t, err)
-	defer mgr.ReleaseLock("other-session")
+	defer func() { _ = mgr.ReleaseLock("other-session") }()
 
 	// Verify both locks exist
 	testLock := mgr.getLockPath(sessionID)

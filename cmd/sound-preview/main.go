@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -86,7 +87,12 @@ func initSpeaker() error {
 	speakerInit.Do(func() {
 		// Initialize speaker with standard sample rate (44100 Hz)
 		sampleRate := beep.SampleRate(44100)
-		speaker.Init(sampleRate, sampleRate.N(time.Second/10))
+		if err := speaker.Init(sampleRate, sampleRate.N(time.Second/10)); err != nil {
+			// Ignore "already initialized" error
+			if err.Error() != "speaker cannot be initialized more than once" {
+				log.Fatalf("Failed to initialize speaker: %v", err)
+			}
+		}
 
 		mu.Lock()
 		speakerInited = true

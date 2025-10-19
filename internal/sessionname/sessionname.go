@@ -66,6 +66,8 @@ func hexToInt(hex string) int {
 	}
 
 	var result int
-	fmt.Sscanf(hex, "%x", &result)
+	if _, err := fmt.Sscanf(hex, "%x", &result); err != nil {
+		return 0 // Return 0 on parse error
+	}
 	return result
 }

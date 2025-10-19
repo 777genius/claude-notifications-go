@@ -117,7 +117,7 @@ func TestCircuitBreakerHalfOpenToOpenFailure(t *testing.T) {
 
 	// Open the circuit
 	for i := 0; i < 2; i++ {
-		cb.Execute(context.Background(), func() error {
+		_ = cb.Execute(context.Background(), func() error {
 			return errors.New("service error")
 		})
 	}
@@ -126,7 +126,7 @@ func TestCircuitBreakerHalfOpenToOpenFailure(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 
 	// Execute one failing call - should immediately go back to open
-	cb.Execute(context.Background(), func() error {
+	_ = cb.Execute(context.Background(), func() error {
 		return errors.New("still failing")
 	})
 
@@ -150,7 +150,7 @@ func TestCircuitBreakerResetOnSuccess(t *testing.T) {
 
 	// Execute 2 failing calls (less than threshold)
 	for i := 0; i < 2; i++ {
-		cb.Execute(context.Background(), func() error {
+		_ = cb.Execute(context.Background(), func() error {
 			return errors.New("service error")
 		})
 	}
@@ -259,7 +259,7 @@ func TestCircuitBreakerPartialSuccessInHalfOpen(t *testing.T) {
 
 	// Open the circuit
 	for i := 0; i < 2; i++ {
-		cb.Execute(context.Background(), func() error {
+		_ = cb.Execute(context.Background(), func() error {
 			return errors.New("service error")
 		})
 	}

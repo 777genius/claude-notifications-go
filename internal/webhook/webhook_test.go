@@ -183,7 +183,7 @@ func TestSenderSendSlackFormat(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &receivedPayload)
+		_ = json.Unmarshal(body, &receivedPayload)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -214,7 +214,7 @@ func TestSenderSendDiscordFormat(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &receivedPayload)
+		_ = json.Unmarshal(body, &receivedPayload)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -246,7 +246,7 @@ func TestSenderSendTelegramFormat(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &receivedPayload)
+		_ = json.Unmarshal(body, &receivedPayload)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -486,7 +486,7 @@ func TestSenderMetricsTracking(t *testing.T) {
 
 	// Send multiple requests
 	for i := 0; i < 10; i++ {
-		sender.Send(analyzer.StatusTaskComplete, "Test", "session-123")
+		_ = sender.Send(analyzer.StatusTaskComplete, "Test", "session-123")
 	}
 
 	stats := sender.GetMetrics()
