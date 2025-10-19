@@ -27,6 +27,12 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
+      - name: Clear Go cache
+        run: go clean -modcache
+
+      - name: Download dependencies
+        run: go mod download
+
       - name: Run tests
         run: go test -v ./...
 
