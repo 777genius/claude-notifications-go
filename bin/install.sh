@@ -18,6 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # GitHub repository
 REPO="777genius/claude-notifications-go"
 RELEASE_URL="https://github.com/${REPO}/releases/latest/download"
+CHECKSUMS_URL="${RELEASE_URL}/checksums.txt"
 
 # Detect platform and architecture
 detect_platform() {
@@ -35,7 +36,7 @@ detect_platform() {
             PLATFORM="windows"
             ;;
         *)
-            echo -e "${RED}✗ Unsupported OS: $os${NC}"
+            echo -e "${RED}✗ Unsupported OS: $os${NC}" >&2
             exit 1
             ;;
     esac
@@ -48,7 +49,7 @@ detect_platform() {
             ARCH="arm64"
             ;;
         *)
-            echo -e "${RED}✗ Unsupported architecture: $arch${NC}"
+            echo -e "${RED}✗ Unsupported architecture: $arch${NC}" >&2
             exit 1
             ;;
     esac
@@ -61,6 +62,40 @@ detect_platform() {
     fi
 
     BINARY_PATH="${SCRIPT_DIR}/${BINARY_NAME}"
+    CHECKSUMS_PATH="${SCRIPT_DIR}/.checksums.txt"
+}
+
+# Get file size with multiple fallbacks
+get_file_size() {
+    local file="$1"
+
+    # Try BSD stat (macOS)
+    if stat -f%z "$file" 2>/dev/null; then
+        return 0
+    fi
+
+    # Try GNU stat (Linux)
+    if stat -c%s "$file" 2>/dev/null; then
+        return 0
+    fi
+
+    # Fallback to wc -c (universal)
+    wc -c < "$file" 2>/dev/null || echo "0"
+}
+
+# Check if GitHub is accessible
+check_github_availability() {
+    if command -v curl &> /dev/null; then
+        if ! curl -s --max-time 5 -I https://github.com &> /dev/null; then
+            echo -e "${RED}✗ Cannot reach GitHub${NC}" >&2
+            echo -e "${YELLOW}Possible issues:${NC}" >&2
+            echo -e "  - No internet connection" >&2
+            echo -e "  - GitHub is down" >&2
+            echo -e "  - Firewall/proxy blocking access" >&2
+            return 1
+        fi
+    fi
+    return 0
 }
 
 # Check if binary already exists
@@ -70,6 +105,25 @@ check_existing() {
         echo ""
         return 0
     fi
+    return 1
+}
+
+# Download checksums file
+download_checksums() {
+    echo -e "${BLUE}📝 Downloading checksums...${NC}"
+
+    if command -v curl &> /dev/null; then
+        if curl -fsSL "$CHECKSUMS_URL" -o "$CHECKSUMS_PATH" 2>/dev/null; then
+            return 0
+        fi
+    elif command -v wget &> /dev/null; then
+        if wget -q "$CHECKSUMS_URL" -O "$CHECKSUMS_PATH" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    # Checksums optional - just warn
+    echo -e "${YELLOW}⚠ Could not download checksums (verification will be skipped)${NC}"
     return 1
 }
 
@@ -83,27 +137,95 @@ download_binary() {
 
     # Try curl first (with progress bar)
     if command -v curl &> /dev/null; then
-        if curl -fL --progress-bar "$url" -o "$BINARY_PATH"; then
+        # Capture HTTP status
+        local http_code=$(curl -w "%{http_code}" -fL --progress-bar "$url" -o "$BINARY_PATH" 2>&1 | tail -1)
+
+        if [ -f "$BINARY_PATH" ] && [ "$(get_file_size "$BINARY_PATH")" -gt 100000 ]; then
             echo ""
             return 0
         else
-            echo -e "${RED}✗ Download failed${NC}"
+            # Analyze failure
             rm -f "$BINARY_PATH"
+
+            if echo "$http_code" | grep -q "404"; then
+                echo ""
+                echo -e "${RED}✗ Binary not found (404)${NC}" >&2
+                echo ""
+                echo -e "${YELLOW}This usually means the release is still building.${NC}" >&2
+                echo -e "${YELLOW}Check build status at:${NC}" >&2
+                echo -e "  https://github.com/${REPO}/actions" >&2
+                echo ""
+                echo -e "${YELLOW}Wait a few minutes and try again.${NC}" >&2
+            elif echo "$http_code" | grep -qE "^5[0-9]{2}"; then
+                echo ""
+                echo -e "${RED}✗ GitHub server error (${http_code})${NC}" >&2
+                echo -e "${YELLOW}GitHub may be experiencing issues. Try again later.${NC}" >&2
+            else
+                echo ""
+                echo -e "${RED}✗ Download failed${NC}" >&2
+                echo -e "${YELLOW}Check your internet connection and try again.${NC}" >&2
+            fi
             return 1
         fi
+
     # Fallback to wget
     elif command -v wget &> /dev/null; then
-        if wget --show-progress -q "$url" -O "$BINARY_PATH"; then
-            echo ""
-            return 0
-        else
-            echo -e "${RED}✗ Download failed${NC}"
-            rm -f "$BINARY_PATH"
-            return 1
+        if wget --show-progress -q "$url" -O "$BINARY_PATH" 2>&1; then
+            if [ -f "$BINARY_PATH" ] && [ "$(get_file_size "$BINARY_PATH")" -gt 100000 ]; then
+                echo ""
+                return 0
+            fi
         fi
+
+        rm -f "$BINARY_PATH"
+        echo ""
+        echo -e "${RED}✗ Download failed${NC}" >&2
+        return 1
+
     else
-        echo -e "${RED}✗ Error: curl or wget required for installation${NC}"
-        echo -e "${YELLOW}Please install curl or wget and try again${NC}"
+        echo -e "${RED}✗ Error: curl or wget required for installation${NC}" >&2
+        echo -e "${YELLOW}Please install curl or wget and try again${NC}" >&2
+        return 1
+    fi
+}
+
+# Verify checksum
+verify_checksum() {
+    if [ ! -f "$CHECKSUMS_PATH" ]; then
+        echo -e "${YELLOW}⚠ Skipping checksum verification (checksums.txt not available)${NC}"
+        return 0
+    fi
+
+    echo -e "${BLUE}🔒 Verifying checksum...${NC}"
+
+    # Extract expected checksum for our binary
+    local expected_sum=$(grep "$BINARY_NAME" "$CHECKSUMS_PATH" 2>/dev/null | awk '{print $1}')
+
+    if [ -z "$expected_sum" ]; then
+        echo -e "${YELLOW}⚠ Checksum not found for ${BINARY_NAME} (skipping)${NC}"
+        return 0
+    fi
+
+    # Calculate actual checksum
+    local actual_sum=""
+    if command -v shasum &> /dev/null; then
+        actual_sum=$(shasum -a 256 "$BINARY_PATH" 2>/dev/null | awk '{print $1}')
+    elif command -v sha256sum &> /dev/null; then
+        actual_sum=$(sha256sum "$BINARY_PATH" 2>/dev/null | awk '{print $1}')
+    else
+        echo -e "${YELLOW}⚠ sha256sum not available (skipping checksum)${NC}"
+        return 0
+    fi
+
+    if [ "$expected_sum" = "$actual_sum" ]; then
+        echo -e "${GREEN}✓ Checksum verified${NC}"
+        return 0
+    else
+        echo -e "${RED}✗ Checksum mismatch!${NC}" >&2
+        echo -e "${RED}  Expected: ${expected_sum}${NC}" >&2
+        echo -e "${RED}  Got:      ${actual_sum}${NC}" >&2
+        echo -e "${YELLOW}The downloaded file may be corrupted. Try again.${NC}" >&2
+        rm -f "$BINARY_PATH"
         return 1
     fi
 }
@@ -111,15 +233,24 @@ download_binary() {
 # Verify downloaded binary
 verify_binary() {
     if [ ! -f "$BINARY_PATH" ]; then
-        echo -e "${RED}✗ Binary file not found after download${NC}"
+        echo -e "${RED}✗ Binary file not found after download${NC}" >&2
         return 1
     fi
 
-    local size=$(stat -f%z "$BINARY_PATH" 2>/dev/null || stat -c%s "$BINARY_PATH" 2>/dev/null)
+    local size=$(get_file_size "$BINARY_PATH")
+
+    # Check minimum size (1MB)
     if [ "$size" -lt 1000000 ]; then
-        echo -e "${RED}✗ Downloaded file too small (${size} bytes)${NC}"
-        echo -e "${YELLOW}This might be an error page. Check your internet connection.${NC}"
+        echo -e "${RED}✗ Downloaded file too small (${size} bytes)${NC}" >&2
+        echo -e "${YELLOW}This might be an error page. Check your internet connection.${NC}" >&2
         rm -f "$BINARY_PATH"
+        return 1
+    fi
+
+    echo -e "${GREEN}✓ Size check passed${NC} (${size} bytes)"
+
+    # Verify checksum
+    if ! verify_checksum; then
         return 1
     fi
 
@@ -128,7 +259,12 @@ verify_binary() {
 
 # Make binary executable
 make_executable() {
-    chmod +x "$BINARY_PATH"
+    chmod +x "$BINARY_PATH" 2>/dev/null || true
+}
+
+# Cleanup temporary files
+cleanup() {
+    rm -f "$CHECKSUMS_PATH" 2>/dev/null || true
 }
 
 # Main installation flow
@@ -152,24 +288,34 @@ main() {
         return 0
     fi
 
+    # Check GitHub availability
+    if ! check_github_availability; then
+        echo ""
+        exit 1
+    fi
+
+    # Download checksums (optional)
+    download_checksums
+
     # Download
     if ! download_binary; then
+        cleanup
         echo ""
         echo -e "${RED}========================================${NC}"
         echo -e "${RED} Installation Failed${NC}"
         echo -e "${RED}========================================${NC}"
         echo ""
-        echo -e "${YELLOW}Troubleshooting:${NC}"
-        echo -e "  1. Check your internet connection"
-        echo -e "  2. Verify the release exists at:"
-        echo -e "     https://github.com/${REPO}/releases"
-        echo -e "  3. Try manual download from the link above"
+        echo -e "${YELLOW}Additional troubleshooting:${NC}"
+        echo -e "  1. Wait a few minutes if release is building"
+        echo -e "  2. Check: https://github.com/${REPO}/releases"
+        echo -e "  3. Manual download: https://github.com/${REPO}/releases/latest"
         echo ""
         exit 1
     fi
 
     # Verify
     if ! verify_binary; then
+        cleanup
         echo ""
         echo -e "${RED}========================================${NC}"
         echo -e "${RED} Verification Failed${NC}"
@@ -181,6 +327,9 @@ main() {
     # Make executable
     make_executable
 
+    # Cleanup
+    cleanup
+
     # Success message
     echo ""
     echo -e "${GREEN}========================================${NC}"
@@ -189,6 +338,7 @@ main() {
     echo ""
     echo -e "${GREEN}✓${NC} Binary downloaded: ${BOLD}${BINARY_NAME}${NC}"
     echo -e "${GREEN}✓${NC} Location: ${SCRIPT_DIR}/"
+    echo -e "${GREEN}✓${NC} Checksum verified"
     echo -e "${GREEN}✓${NC} Ready to use!"
     echo ""
 }

@@ -13,6 +13,7 @@ bin/*.dylib
 # Temporary build files
 bin/test-build
 bin/sound-preview
+bin/.checksums.txt
 
 # Root binary (should be in bin/ instead)
 /claude-notifications

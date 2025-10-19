@@ -10,6 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Colors
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Detect platform and architecture
@@ -20,15 +21,19 @@ detect_platform() {
     case "$os" in
         darwin)
             PLATFORM="darwin"
+            OS_NAME="macOS"
             ;;
         linux)
             PLATFORM="linux"
+            OS_NAME="Linux"
             ;;
         mingw*|msys*|cygwin*)
             PLATFORM="windows"
+            OS_NAME="Windows"
             ;;
         *)
             echo -e "${RED}Error: Unsupported OS: $os${NC}" >&2
+            echo -e "${YELLOW}Supported: macOS, Linux, Windows${NC}" >&2
             exit 1
             ;;
     esac
@@ -36,12 +41,15 @@ detect_platform() {
     case "$arch" in
         x86_64|amd64)
             ARCH="amd64"
+            ARCH_NAME="x86_64"
             ;;
         arm64|aarch64)
             ARCH="arm64"
+            ARCH_NAME="ARM64"
             ;;
         *)
             echo -e "${RED}Error: Unsupported architecture: $arch${NC}" >&2
+            echo -e "${YELLOW}Supported: x86_64 (amd64), ARM64${NC}" >&2
             exit 1
             ;;
     esac
@@ -53,7 +61,40 @@ detect_platform() {
         BINARY_NAME="claude-notifications-${PLATFORM}-${ARCH}"
     fi
 
+    # Handle Windows path conversion (Git Bash/MSYS/Cygwin)
+    if [[ "$PLATFORM" = "windows" ]] && command -v cygpath &> /dev/null; then
+        # Convert Unix path to Windows path
+        SCRIPT_DIR="$(cygpath -m "$SCRIPT_DIR")"
+    fi
+
     BINARY_PATH="${SCRIPT_DIR}/${BINARY_NAME}"
+}
+
+# Show helpful error message
+show_not_found_error() {
+    echo ""
+    echo -e "${RED}========================================${NC}" >&2
+    echo -e "${RED} Binary Not Found${NC}" >&2
+    echo -e "${RED}========================================${NC}" >&2
+    echo "" >&2
+    echo -e "${BLUE}Platform:${NC} ${OS_NAME} (${PLATFORM})" >&2
+    echo -e "${BLUE}Architecture:${NC} ${ARCH_NAME} (${ARCH})" >&2
+    echo -e "${BLUE}Expected binary:${NC} ${BINARY_NAME}" >&2
+    echo -e "${BLUE}Location:${NC} ${SCRIPT_DIR}/" >&2
+    echo "" >&2
+    echo -e "${YELLOW}To fix this issue:${NC}" >&2
+    echo "" >&2
+    echo -e "  Run the setup command to download the binary:" >&2
+    echo -e "  ${BLUE}/setup-notifications${NC}" >&2
+    echo "" >&2
+    echo -e "${YELLOW}This will automatically:${NC}" >&2
+    echo -e "  1. Download the correct binary for your platform" >&2
+    echo -e "  2. Configure notification sounds" >&2
+    echo -e "  3. Set up the plugin for use" >&2
+    echo "" >&2
+    echo -e "${YELLOW}Alternative (manual download):${NC}" >&2
+    echo -e "  https://github.com/777genius/claude-notifications-go/releases" >&2
+    echo "" >&2
 }
 
 # Main
@@ -61,18 +102,21 @@ detect_platform
 
 # Check if binary exists
 if [ ! -f "$BINARY_PATH" ]; then
-    echo -e "${RED}Error: Binary not found: ${BINARY_NAME}${NC}" >&2
-    echo -e "${YELLOW}Please run the setup command first:${NC}" >&2
-    echo "" >&2
-    echo -e "  ${YELLOW}/setup-notifications${NC}" >&2
-    echo "" >&2
-    echo -e "${YELLOW}This will download the binary for your platform.${NC}" >&2
+    show_not_found_error
     exit 1
 fi
 
 # Check if binary is executable
 if [ ! -x "$BINARY_PATH" ]; then
-    chmod +x "$BINARY_PATH"
+    # Try to make it executable
+    if chmod +x "$BINARY_PATH" 2>/dev/null; then
+        : # Success, continue
+    else
+        echo -e "${RED}Error: Binary exists but is not executable${NC}" >&2
+        echo -e "${YELLOW}Location: ${BINARY_PATH}${NC}" >&2
+        echo -e "${YELLOW}Try: chmod +x \"${BINARY_PATH}\"${NC}" >&2
+        exit 1
+    fi
 fi
 
 # Execute the platform-specific binary
