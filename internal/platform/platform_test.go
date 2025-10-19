@@ -123,6 +123,8 @@ func TestNormalizePath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			result := NormalizePath(tt.input)
+			// Convert to forward slashes for cross-platform comparison
+			result = filepath.ToSlash(result)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
