@@ -139,7 +139,7 @@ func TestRetryBackoffProgression(t *testing.T) {
 	}
 
 	start := time.Now()
-	retryer.Do(context.Background(), fn)
+	_ = retryer.Do(context.Background(), fn)
 	elapsed := time.Since(start)
 
 	// Should have made 4 attempts

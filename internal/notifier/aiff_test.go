@@ -479,7 +479,9 @@ func TestDecodeAudio_SupportedExtensions(t *testing.T) {
 		tmpPath := tmpFile.Name()
 
 		// Write some dummy data (not valid audio, but tests path handling)
-		tmpFile.Write([]byte("dummy data"))
+		if _, err := tmpFile.Write([]byte("dummy data")); err != nil {
+			t.Fatalf("failed to write test data: %v", err)
+		}
 		tmpFile.Close()
 		defer os.Remove(tmpPath)
 

@@ -51,7 +51,7 @@ func TestSenderSendSuccess(t *testing.T) {
 	// Mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}))
 	defer server.Close()
 
@@ -135,7 +135,7 @@ func TestSenderSendCircuitBreaker(t *testing.T) {
 
 	// Trigger circuit breaker by failing threshold times
 	for i := 0; i < 3; i++ {
-		sender.Send(analyzer.StatusTaskComplete, "Test", "session-123")
+		_ = sender.Send(analyzer.StatusTaskComplete, "Test", "session-123")
 	}
 
 	// Next request should fail with circuit open
@@ -163,7 +163,7 @@ func TestSenderSendRateLimit(t *testing.T) {
 
 	// Exhaust the rate limiter bucket (starts with 60 tokens)
 	for i := 0; i < 70; i++ {
-		sender.Send(analyzer.StatusTaskComplete, "Test", "session-123")
+		_ = sender.Send(analyzer.StatusTaskComplete, "Test", "session-123")
 	}
 
 	// Next request should be rate limited

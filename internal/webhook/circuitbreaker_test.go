@@ -59,7 +59,7 @@ func TestCircuitBreakerHalfOpen(t *testing.T) {
 
 	// Open the circuit
 	for i := 0; i < 2; i++ {
-		cb.Execute(context.Background(), func() error {
+		_ = cb.Execute(context.Background(), func() error {
 			return errors.New("service error")
 		})
 	}
@@ -73,7 +73,7 @@ func TestCircuitBreakerHalfOpen(t *testing.T) {
 
 	// Next call should transition to half-open
 	executed := false
-	cb.Execute(context.Background(), func() error {
+	_ = cb.Execute(context.Background(), func() error {
 		executed = true
 		return nil
 	})
@@ -88,7 +88,7 @@ func TestCircuitBreakerHalfOpenToClosedSuccess(t *testing.T) {
 
 	// Open the circuit
 	for i := 0; i < 2; i++ {
-		cb.Execute(context.Background(), func() error {
+		_ = cb.Execute(context.Background(), func() error {
 			return errors.New("service error")
 		})
 	}

@@ -106,7 +106,7 @@ func (n *Notifier) initSpeaker() error {
 		// Initialize speaker with standard sample rate (44100 Hz) and buffer size (4096 samples)
 		// Buffer size of 4096 samples = ~93ms latency at 44100 Hz
 		sampleRate := beep.SampleRate(44100)
-		speaker.Init(sampleRate, sampleRate.N(time.Second/10))
+		initErr = speaker.Init(sampleRate, sampleRate.N(time.Second/10))
 
 		n.mu.Lock()
 		n.speakerInited = true
