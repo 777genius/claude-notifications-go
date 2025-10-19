@@ -11,7 +11,10 @@ import (
 // Example demonstrates the error handler usage with console output
 func Example() {
 	// Initialize logger (in real usage this would be done in main.go)
-	logging.InitLogger(".")
+	if _, err := logging.InitLogger("."); err != nil {
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		return
+	}
 	defer logging.Close()
 
 	// Initialize error handler with console output enabled
