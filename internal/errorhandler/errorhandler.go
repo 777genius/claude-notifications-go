@@ -22,8 +22,10 @@ var (
 	handlerOnce    sync.Once
 )
 
-// Init initializes the global error handler
+// Init initializes the global error handler with custom settings
+// If handler is already initialized, returns the existing handler
 func Init(logToConsole, exitOnCritical, recoveryEnabled bool) *ErrorHandler {
+	// Use handlerOnce to ensure only one initialization
 	handlerOnce.Do(func() {
 		defaultHandler = &ErrorHandler{
 			logToConsole:    logToConsole,
@@ -39,22 +41,29 @@ func Init(logToConsole, exitOnCritical, recoveryEnabled bool) *ErrorHandler {
 	return defaultHandler
 }
 
-// GetHandler returns the default error handler (auto-initializes if needed)
+// GetHandler returns the default error handler (auto-initializes with defaults if needed)
 func GetHandler() *ErrorHandler {
 	// Use handlerOnce to ensure thread-safe initialization
 	// This prevents data races when multiple goroutines call GetHandler concurrently
 	handlerOnce.Do(func() {
-		if defaultHandler == nil {
-			defaultHandler = &ErrorHandler{
-				logToConsole:    true,
-				exitOnCritical:  false,
-				recoveryEnabled: true,
-			}
-			// Enable console output in logging if requested
-			logging.EnableConsoleOutput()
+		// Only init if not already done by explicit Init() call
+		defaultHandler = &ErrorHandler{
+			logToConsole:    true,
+			exitOnCritical:  false,
+			recoveryEnabled: true,
 		}
+		// Enable console output in logging
+		logging.EnableConsoleOutput()
 	})
 	return defaultHandler
+}
+
+// Reset resets the error handler (for testing only)
+// WARNING: This is not thread-safe and should only be called in tests
+// when no other goroutines are using the error handler
+func Reset() {
+	defaultHandler = nil
+	handlerOnce = sync.Once{}
 }
 
 // HandleError handles a general error
