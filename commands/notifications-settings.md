@@ -1,11 +1,11 @@
 ---
-description: Interactive setup wizard for claude-notifications plugin
+description: Configure notification sounds and settings for claude-notifications plugin
 allowed-tools: Bash, AskUserQuestion, Write, Read
 ---
 
-# 🎵 Claude Notifications Setup Wizard
+# 🎵 Claude Notifications Settings
 
-Welcome! This interactive setup will help you configure notification sounds for Claude Code.
+Welcome! This interactive wizard will help you configure notification sounds for Claude Code.
 
 Let's make your Claude experience more delightful with custom audio notifications!
 
@@ -24,25 +24,27 @@ This setup wizard is INTERACTIVE. Users can preview sounds at ANY time by saying
 **Your job:**
 1. Detect when user wants to preview a sound (keywords: play, preview, прослушать, проиграть)
 2. Extract the sound name from their message
-3. Run `bin/sound-preview <path>` to play it
+3. Run `${PLUGIN_ROOT}/bin/sound-preview <path>` to play it
 4. Ask if they want to hear more sounds
 5. When they're ready, proceed with AskUserQuestion selections
 
 **Flow:**
-- Step 1-2: Detect system and list available sounds
+- Step 1: Check binary installation (auto-install if missing)
+- Step 2: Detect system and list available sounds
 - Step 3: **INTERACTIVE PREVIEW PHASE** - let user explore sounds freely
 - Step 4: Ask 4 questions (Task/Review/Question/Plan) - remind about preview before each
-- Step 5: Webhook configuration
-- Step 6: Generate config.json
-- Step 7: Summary & test
+- Step 5: Volume configuration
+- Step 6: Webhook configuration
+- Step 7: Generate config.json
+- Step 8: Summary & test
 
 **Be patient and encouraging** - sound selection is personal!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-## Step 1: Setup Plugin Binary
+## Step 1: Check Binary Installation
 
-First, let me find the plugin location and download the binary if needed:
+First, let me verify the notification binary is installed:
 
 ```bash
 # Get plugin root directory
@@ -51,21 +53,39 @@ if [ -z "$PLUGIN_ROOT" ]; then
   echo "Warning: CLAUDE_PLUGIN_ROOT not set, using current directory"
   PLUGIN_ROOT="$(pwd)"
 fi
-echo "Plugin root: $PLUGIN_ROOT"
 
-# Run the installer to download the binary for your platform
+echo "Plugin root: $PLUGIN_ROOT"
 echo ""
-echo "Checking for notification binary..."
-if ! "${PLUGIN_ROOT}/bin/install.sh"; then
-  echo ""
-  echo "Error: Failed to install notification binary"
-  echo "Please check your internet connection and try again"
-  exit 1
+
+# Check if binary exists (platform-agnostic check)
+BINARY_EXISTS=false
+if [ -f "${PLUGIN_ROOT}/bin/claude-notifications" ] || \
+   [ -f "${PLUGIN_ROOT}/bin/claude-notifications-darwin-amd64" ] || \
+   [ -f "${PLUGIN_ROOT}/bin/claude-notifications-darwin-arm64" ] || \
+   [ -f "${PLUGIN_ROOT}/bin/claude-notifications-linux-amd64" ] || \
+   [ -f "${PLUGIN_ROOT}/bin/claude-notifications-windows-amd64.exe" ]; then
+  BINARY_EXISTS=true
 fi
-echo ""
+
+if [ "$BINARY_EXISTS" = "false" ]; then
+  echo "⚠️  Notification binary not found. Installing..."
+  echo ""
+  if ! "${PLUGIN_ROOT}/bin/install.sh"; then
+    echo ""
+    echo "❌ Error: Failed to install notification binary"
+    echo "Please run /notifications-init or check your internet connection"
+    exit 1
+  fi
+  echo ""
+  echo "✅ Binary installed successfully!"
+  echo ""
+else
+  echo "✅ Notification binary is already installed"
+  echo ""
+fi
 ```
 
-This will automatically download the correct binary for your platform (macOS, Linux, or Windows) from GitHub Releases on first run. Subsequent runs will skip this step if the binary is already installed.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ## Step 2: Discover Available Sounds
 
@@ -584,7 +604,7 @@ echo "✓ Sound test complete!"
 ## Additional Notes
 
 **Editing Later:**
-- You can re-run `/setup-notifications` anytime to reconfigure
+- You can re-run `/notifications-settings` anytime to reconfigure
 - Or manually edit `config/config.json`
 
 **Webhook Configuration:**

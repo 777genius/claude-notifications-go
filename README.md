@@ -75,7 +75,7 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 - **Volume control**: 0-100% customizable volume
 - **Built-in sounds**: Professional notification sounds included
 - **System sounds**: Use macOS/Linux system sounds (optional)
-- **Sound preview**: Test sounds before choosing with `/setup-notifications`
+- **Sound preview**: Test sounds before choosing with `/notifications-settings`
 
 ### 🌐 Enterprise-Grade Webhooks
 - **Retry logic** with exponential backoff
@@ -86,7 +86,7 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 - **→ [Complete Webhook Documentation](docs/webhooks/README.md)**
 
 ### 🛠️ Developer Experience
-- **Interactive setup wizard**: `/setup-notifications` command with guided configuration
+- **Interactive setup wizards**: `/notifications-init` for binary setup, `/notifications-settings` for configuration
 - **JSONL streaming parser** for efficient large file processing
 - **Comprehensive testing**: Unit tests with race detection
 - **Two-phase lock deduplication** prevents duplicate notifications
@@ -117,16 +117,19 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 
 # Restart Claude Code
 
-# Run setup wizard (downloads binary + configures sounds)
-/setup-notifications
+# Download the binary for your platform
+/notifications-init
+
+# Configure sounds and settings
+/notifications-settings
 ```
 
-**That's it!** On first run, `/setup-notifications` will:
-1. Automatically download the correct binary for your platform (macOS/Linux/Windows) from GitHub Releases
-2. Show a progress bar during download
-3. Guide you through sound configuration with an interactive wizard
+**That's it!**
 
-The binary is downloaded once and cached locally. Subsequent runs are instant.
+1. `/notifications-init` downloads the correct binary for your platform (macOS/Linux/Windows) from GitHub Releases with a progress bar
+2. `/notifications-settings` guides you through sound configuration with an interactive wizard
+
+The binary is downloaded once and cached locally. You can re-run `/notifications-settings` anytime to reconfigure.
 
 ## Platform Support
 
@@ -151,10 +154,16 @@ The binary is downloaded once and cached locally. Subsequent runs are instant.
 
 ### Interactive Setup (Recommended)
 
-Run the interactive setup wizard to configure notification sounds:
+First, download the notification binary:
 
 ```
-/setup-notifications
+/notifications-init
+```
+
+Then configure your notification sounds:
+
+```
+/notifications-settings
 ```
 
 This will:
@@ -276,7 +285,8 @@ internal/
 pkg/
   jsonl/                    # JSONL streaming parser
 commands/
-  setup-notifications.md    # Interactive setup wizard
+  notifications-init.md     # Binary download wizard
+  notifications-settings.md # Interactive settings configuration wizard
 sounds/                     # Custom notification sounds (MP3)
 claude_icon.png             # Plugin icon for desktop notifications
 ```
@@ -315,11 +325,12 @@ make build
 
 # 5. Restart Claude Code for hooks to take effect
 
-# 6. Run setup (will use your locally built binary)
-/setup-notifications
+# 6. Download binary and configure settings
+/notifications-init
+/notifications-settings
 ```
 
-**Note:** For local development, build the binary with `make build` first. The `/setup-notifications` command will use your locally built binary if it exists, otherwise it will download from GitHub Releases.
+**Note:** For local development, build the binary with `make build` first. The `/notifications-init` command will use your locally built binary if it exists, otherwise it will download from GitHub Releases.
 
 ### Building binaries
 

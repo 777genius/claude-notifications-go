@@ -1,0 +1,54 @@
+---
+description: Download notification binary for claude-notifications plugin
+allowed-tools: Bash
+---
+
+# 📥 Initialize Claude Notifications Binary
+
+This command downloads the notification binary for your platform (macOS, Linux, or Windows).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## Download Binary
+
+Downloading the notification binary for your platform...
+
+```bash
+# Get plugin root directory
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+if [ -z "$PLUGIN_ROOT" ]; then
+  echo "Warning: CLAUDE_PLUGIN_ROOT not set, using current directory"
+  PLUGIN_ROOT="$(pwd)"
+fi
+
+echo "Plugin root: $PLUGIN_ROOT"
+echo ""
+
+# Run the installer to download the binary for your platform
+echo "Downloading notification binary from GitHub Releases..."
+if ! "${PLUGIN_ROOT}/bin/install.sh"; then
+  echo ""
+  echo "❌ Error: Failed to install notification binary"
+  echo ""
+  echo "Possible causes:"
+  echo "  • No internet connection"
+  echo "  • GitHub is unreachable"
+  echo "  • Unsupported platform"
+  echo ""
+  echo "Please check your connection and try again."
+  exit 1
+fi
+
+echo ""
+echo "✅ Binary installed successfully!"
+echo ""
+echo "Next steps:"
+echo "  Run /notifications-settings to configure sounds and notifications"
+```
+
+This will automatically download the correct binary for your platform from GitHub Releases with a progress bar. The binary is cached locally - subsequent runs will skip the download if already installed.
+
+**Supported platforms:**
+- macOS (Intel & Apple Silicon)
+- Linux (x64)
+- Windows (x64)
