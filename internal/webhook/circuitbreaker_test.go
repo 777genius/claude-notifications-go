@@ -269,7 +269,7 @@ func TestCircuitBreakerPartialSuccessInHalfOpen(t *testing.T) {
 
 	// Execute 2 successful calls (need 3 for threshold)
 	for i := 0; i < 2; i++ {
-		cb.Execute(context.Background(), func() error {
+		_ = cb.Execute(context.Background(), func() error {
 			return nil
 		})
 	}
@@ -284,7 +284,7 @@ func TestCircuitBreakerPartialSuccessInHalfOpen(t *testing.T) {
 	}
 
 	// One more success should close it
-	cb.Execute(context.Background(), func() error {
+	_ = cb.Execute(context.Background(), func() error {
 		return nil
 	})
 

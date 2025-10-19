@@ -139,7 +139,7 @@ func TestManager_UpdateInteractiveTool_ExistingState(t *testing.T) {
 func TestManager_UpdateTaskComplete_NewState(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-task-new"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	err := mgr.UpdateTaskComplete(sessionID)
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestManager_UpdateTaskComplete_NewState(t *testing.T) {
 func TestManager_UpdateTaskComplete_ExistingState(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-task-existing"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Create initial state
 	initial := &SessionState{
@@ -185,7 +185,7 @@ func TestManager_UpdateTaskComplete_ExistingState(t *testing.T) {
 func TestManager_UpdateLastNotification_NewState(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-notif-new"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	err := mgr.UpdateLastNotification(sessionID, analyzer.StatusPlanReady)
 	require.NoError(t, err)
