@@ -1,0 +1,30 @@
+# Ensure consistent line endings across platforms
+* text=auto
+
+# Go source files should always use LF
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+
+# Windows scripts
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# JSON, YAML, Markdown
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+
+# Binary files
+*.mp3 binary
+*.wav binary
+*.aiff binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.exe binary
