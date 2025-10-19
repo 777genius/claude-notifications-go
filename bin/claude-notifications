@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+#
+# Claude Notifications Wrapper
+# Automatically selects the correct binary for the current platform
+#
+
+set -e
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Detect OS
+OS="$(uname -s)"
+case "$OS" in
+    Darwin*)
+        PLATFORM="darwin"
+        ;;
+    Linux*)
+        PLATFORM="linux"
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        PLATFORM="windows"
+        ;;
+    *)
+        echo "Error: Unsupported operating system: $OS" >&2
+        exit 1
+        ;;
+esac
+
+# Detect architecture
+ARCH="$(uname -m)"
+case "$ARCH" in
+    x86_64|amd64)
+        ARCH="amd64"
+        ;;
+    aarch64|arm64)
+        ARCH="arm64"
+        ;;
+    *)
+        echo "Error: Unsupported architecture: $ARCH" >&2
+        exit 1
+        ;;
+esac
+
+# Construct binary name
+if [ "$PLATFORM" = "windows" ]; then
+    BINARY="$SCRIPT_DIR/claude-notifications-${PLATFORM}-${ARCH}.exe"
+else
+    BINARY="$SCRIPT_DIR/claude-notifications-${PLATFORM}-${ARCH}"
+fi
+
+# Check if binary exists
+if [ ! -f "$BINARY" ]; then
+    echo "Error: Binary not found for $PLATFORM-$ARCH at: $BINARY" >&2
+    echo "" >&2
+    echo "Available binaries:" >&2
+    ls -1 "$SCRIPT_DIR"/claude-notifications-* 2>/dev/null || echo "  (none found)" >&2
+    exit 1
+fi
+
+# Execute the binary with all arguments
+exec "$BINARY" "$@"
