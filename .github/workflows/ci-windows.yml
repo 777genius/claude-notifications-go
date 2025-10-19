@@ -19,6 +19,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Ensure LF line endings on Windows (respect .gitattributes)
+          autocrlf: false
 
       - name: Set up Go
         uses: actions/setup-go@v4
