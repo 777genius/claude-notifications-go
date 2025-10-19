@@ -6,56 +6,97 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/777genius/claude-notifications-go)](https://goreportcard.com/report/github.com/777genius/claude-notifications-go)
 [![codecov](https://codecov.io/gh/777genius/claude-notifications-go/branch/master/graph/badge.svg)](https://codecov.io/gh/777genius/claude-notifications-go)
 
-<img width="700" height="478" alt="image" src="https://github.com/user-attachments/assets/06824578-772c-4d16-95e8-67de008d516b" />
+<img width="350" height="239" alt="image" src="https://github.com/user-attachments/assets/42b7a306-f56f-4499-94cf-f3d573416b6d" />
 
 Smart notifications for Claude Code task statuses with cross-platform support, webhook integrations.
 
+## Table of Contents
+
+- [Claude Notifications (Go)](#claude-notifications-go)
+  - [Table of Contents](#table-of-contents)
+  - [Supported Notification Types](#supported-notification-types)
+  - [Features](#features)
+    - [🖥️ Cross-Platform Support](#️-cross-platform-support)
+    - [🧠 Smart Detection](#-smart-detection)
+    - [🔔 Flexible Notifications](#-flexible-notifications)
+    - [🔊 Audio Customization](#-audio-customization)
+    - [🌐 Enterprise-Grade Webhooks](#-enterprise-grade-webhooks)
+    - [🛠️ Developer Experience](#️-developer-experience)
+  - [Installation](#installation)
+    - [Prerequisites](#prerequisites)
+    - [Install from GitHub](#install-from-github)
+  - [Platform Support](#platform-support)
+  - [Quick Start](#quick-start)
+    - [Interactive Setup (Recommended)](#interactive-setup-recommended)
+    - [Manual Configuration](#manual-configuration)
+    - [Sound Options](#sound-options)
+    - [Test Sound Playback](#test-sound-playback)
+  - [Architecture](#architecture)
+  - [Usage](#usage)
+  - [Development](#development)
+    - [Local installation for development](#local-installation-for-development)
+    - [Building binaries](#building-binaries)
+  - [Testing](#testing)
+  - [Documentation](#documentation)
+  - [License](#license)
+
+## Supported Notification Types
+
+| Status | Icon | Description | Trigger |
+|--------|------|-------------|---------|
+| Task Complete | ✅ | Main task completed | Stop/SubagentStop hooks (state machine detects active tools like Write/Edit/Bash, or ExitPlanMode followed by tool usage) |
+| Review Complete | 🔍 | Code review finished | Stop/SubagentStop hooks (state machine detects only read-like tools: Read/Grep/Glob with no active tools, plus long text response >200 chars) |
+| Question | ❓ | Claude has a question | PreToolUse hook (AskUserQuestion) OR Notification hook |
+| Plan Ready | 📋 | Plan ready for approval | PreToolUse hook (ExitPlanMode) |
+| Session Limit Reached | ⏱️ | Session limit reached | Stop/SubagentStop hooks (state machine detects "Session limit reached" text in last 3 assistant messages) |
+
+
 ## Features
 
-- ✅ **Cross-platform**: macOS, Linux, Windows (Git Bash/WSL)
-- ✅ **Smart status detection**: State machine-based analysis with temporal locality
-- ✅ **PreToolUse integration**: Instant notifications for ExitPlanMode and AskUserQuestion
-- ✅ **Session names**: Friendly names like "[bold-cat]" for easy session identification
-- ✅ **Multi-format support**: MP3, WAV, FLAC, OGG, AIFF
-- ✅ **Interactive setup**: `/setup-notifications` command with sound preview
-- ✅ **Volume control**: Customizable notification volume (0-100%) for all environments
-- ✅ **Webhook support**: Slack, Discord, Telegram, and custom endpoints with enterprise reliability patterns
-  - Retry with exponential backoff
-  - Circuit breaker for fault tolerance
-  - Rate limiting with token bucket
-  - Rich platform-specific formatting
-  - Request tracing and metrics
-  - **→ [Complete Webhook Documentation](docs/webhooks/README.md)**
-- ✅ **JSONL parsing**: Efficient streaming parser for large transcripts
-- ✅ **Comprehensive testing**: Unit tests with race detection
-- ✅ **Cooldown system**: Suppress noisy back-to-back alerts
-- ✅ **Deduplication**: Two-phase lock mechanism prevents duplicate notifications
+### 🖥️ Cross-Platform Support
+- **macOS** (Intel & Apple Silicon), **Linux** (x64 & ARM64), **Windows 10+** (x64)
+- Works in PowerShell, CMD, Git Bash, or WSL
+- Pre-built binaries included - no compilation needed
 
-## Architecture
+### 🧠 Smart Detection
+- **State machine analysis** with temporal locality for accurate status detection
+- **5 notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit
+- **PreToolUse integration** for instant alerts when Claude asks questions or creates plans
+- Analyzes conversation context to avoid false positives
 
-```
-cmd/
-  claude-notifications/     # CLI entry point
-  sound-preview/            # Sound preview utility
-internal/
-  config/                   # Configuration loading and validation
-  logging/                  # Structured logging to notification-debug.log
-  platform/                 # Cross-platform utilities (temp dirs, mtime, etc.)
-  analyzer/                 # JSONL parsing and state machine
-  state/                    # Per-session state and cooldown management
-  dedup/                    # Two-phase lock deduplication
-  notifier/                 # Desktop notifications and native sound playback
-  webhook/                  # Webhook integrations (Slack/Discord/Telegram/Custom)
-  hooks/                    # Hook routing (PreToolUse/Stop/SubagentStop/Notification)
-  summary/                  # Message summarization and markdown cleanup
-  sessionname/              # Friendly session name generation ([bold-cat], etc.)
-pkg/
-  jsonl/                    # JSONL streaming parser
-commands/
-  setup-notifications.md    # Interactive setup wizard
-sounds/                     # Custom notification sounds (MP3)
-claude_icon.png             # Plugin icon for desktop notifications
-```
+### 🔔 Flexible Notifications
+- **Desktop notifications** with custom icons and sounds
+- **Webhook integrations**: Slack, Discord, Telegram, and custom endpoints
+- **Session names**: Friendly identifiers like `[bold-cat]` for multi-session tracking
+- **Cooldown system** to prevent notification spam
+
+### 🔊 Audio Customization
+- **Multi-format support**: MP3, WAV, FLAC, OGG, AIFF
+- **Volume control**: 0-100% customizable volume
+- **Built-in sounds**: Professional notification sounds included
+- **System sounds**: Use macOS/Linux system sounds (optional)
+- **Sound preview**: Test sounds before choosing with `/setup-notifications`
+
+### 🌐 Enterprise-Grade Webhooks
+- **Retry logic** with exponential backoff
+- **Circuit breaker** for fault tolerance
+- **Rate limiting** with token bucket algorithm
+- **Rich formatting** with platform-specific embeds/attachments
+- **Request tracing** and performance metrics
+- **→ [Complete Webhook Documentation](docs/webhooks/README.md)**
+
+### 🛠️ Developer Experience
+- **Interactive setup wizard**: `/setup-notifications` command with guided configuration
+- **JSONL streaming parser** for efficient large file processing
+- **Comprehensive testing**: Unit tests with race detection
+- **Two-phase lock deduplication** prevents duplicate notifications
+- **Structured logging** to `notification-debug.log` for troubleshooting
+
+**Notes:**
+- **PreToolUse hooks** trigger instantly when Claude is about to use ExitPlanMode or AskUserQuestion tools
+- **Stop/SubagentStop hooks** analyze the conversation transcript using a state machine to determine the task status
+- **Notification hook** is triggered when Claude needs user input (permission dialogs, questions)
+- The state machine uses temporal locality (last 15 messages) and tool analysis to accurately detect task completion
 
 ## Installation
 
@@ -202,6 +243,33 @@ bin/sound-preview --help
 ```
 
 **Volume flag:** Use `--volume` to control playback volume (0.0 to 1.0). Default is 1.0 (full volume).
+
+
+## Architecture
+
+```
+cmd/
+  claude-notifications/     # CLI entry point
+  sound-preview/            # Sound preview utility
+internal/
+  config/                   # Configuration loading and validation
+  logging/                  # Structured logging to notification-debug.log
+  platform/                 # Cross-platform utilities (temp dirs, mtime, etc.)
+  analyzer/                 # JSONL parsing and state machine
+  state/                    # Per-session state and cooldown management
+  dedup/                    # Two-phase lock deduplication
+  notifier/                 # Desktop notifications and native sound playback
+  webhook/                  # Webhook integrations (Slack/Discord/Telegram/Custom)
+  hooks/                    # Hook routing (PreToolUse/Stop/SubagentStop/Notification)
+  summary/                  # Message summarization and markdown cleanup
+  sessionname/              # Friendly session name generation ([bold-cat], etc.)
+pkg/
+  jsonl/                    # JSONL streaming parser
+commands/
+  setup-notifications.md    # Interactive setup wizard
+sounds/                     # Custom notification sounds (MP3)
+claude_icon.png             # Plugin icon for desktop notifications
+```
 
 ## Usage
 
