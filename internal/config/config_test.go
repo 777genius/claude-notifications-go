@@ -179,3 +179,110 @@ func TestDefaultConfigPathsNoMixedSeparators(t *testing.T) {
 	assert.Contains(t, cfg.Statuses["task_complete"].Sound, "task-complete.mp3")
 	assert.Contains(t, cfg.Statuses["question"].Sound, "question.mp3")
 }
+
+func TestLoadFromPluginRoot_Success(t *testing.T) {
+	// Create temp plugin root with config
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "config")
+	err := os.MkdirAll(configDir, 0755)
+	require.NoError(t, err)
+
+	configPath := filepath.Join(configDir, "config.json")
+	configJSON := `{
+		"notifications": {
+			"desktop": {"enabled": false, "sound": false},
+			"webhook": {"enabled": true, "url": "https://test.com/webhook"}
+		}
+	}`
+	err = os.WriteFile(configPath, []byte(configJSON), 0644)
+	require.NoError(t, err)
+
+	// Load config from plugin root
+	cfg, err := LoadFromPluginRoot(tmpDir)
+
+	require.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.False(t, cfg.Notifications.Desktop.Enabled)
+	assert.True(t, cfg.Notifications.Webhook.Enabled)
+	assert.Equal(t, "https://test.com/webhook", cfg.Notifications.Webhook.URL)
+}
+
+func TestLoadFromPluginRoot_NoConfigFile(t *testing.T) {
+	// Create empty plugin root (no config file)
+	tmpDir := t.TempDir()
+
+	// Should return default config without error
+	cfg, err := LoadFromPluginRoot(tmpDir)
+
+	require.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.True(t, cfg.Notifications.Desktop.Enabled, "should use default config")
+}
+
+func TestLoadFromPluginRoot_MalformedJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "config")
+	err := os.MkdirAll(configDir, 0755)
+	require.NoError(t, err)
+
+	configPath := filepath.Join(configDir, "config.json")
+	err = os.WriteFile(configPath, []byte("{ invalid json }"), 0644)
+	require.NoError(t, err)
+
+	// Should return error for malformed JSON
+	cfg, err := LoadFromPluginRoot(tmpDir)
+
+	assert.Error(t, err)
+	assert.Nil(t, cfg)
+	assert.Contains(t, err.Error(), "failed to parse config file")
+}
+
+func TestLoadFromPluginRoot_NonexistentRoot(t *testing.T) {
+	// Use nonexistent plugin root
+	nonexistentDir := "/nonexistent/plugin/root"
+
+	// Should return default config (file doesn't exist)
+	cfg, err := LoadFromPluginRoot(nonexistentDir)
+
+	require.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.True(t, cfg.Notifications.Desktop.Enabled)
+}
+
+func TestLoadFromPluginRoot_EmptyRoot(t *testing.T) {
+	// Empty string as plugin root
+	cfg, err := LoadFromPluginRoot("")
+
+	require.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.True(t, cfg.Notifications.Desktop.Enabled)
+}
+
+func TestLoadFromPluginRoot_WithEnvironmentVariables(t *testing.T) {
+	// Set test environment variable
+	os.Setenv("TEST_WEBHOOK_URL", "https://example.com/hook")
+	defer os.Unsetenv("TEST_WEBHOOK_URL")
+
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "config")
+	err := os.MkdirAll(configDir, 0755)
+	require.NoError(t, err)
+
+	configPath := filepath.Join(configDir, "config.json")
+	configJSON := `{
+		"notifications": {
+			"webhook": {
+				"enabled": true,
+				"url": "$TEST_WEBHOOK_URL"
+			}
+		}
+	}`
+	err = os.WriteFile(configPath, []byte(configJSON), 0644)
+	require.NoError(t, err)
+
+	// Load config - should expand environment variables
+	cfg, err := LoadFromPluginRoot(tmpDir)
+
+	require.NoError(t, err)
+	assert.Equal(t, "https://example.com/hook", cfg.Notifications.Webhook.URL)
+}

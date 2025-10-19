@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup.sh - Build notification plugin binary
+# setup.sh - Verify notification plugin installation
 
 set -e
 
@@ -8,38 +8,61 @@ echo " Claude Notifications Plugin - Setup"
 echo "=========================================="
 echo ""
 
-# Check if Go is installed
-if ! command -v go &> /dev/null; then
-    echo "❌ Error: Go is not installed."
-    echo ""
-    echo "Please install Go 1.21 or later from:"
-    echo "  https://golang.org/dl/"
-    echo ""
-    exit 1
-fi
-
-# Check Go version
-GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-echo "✓ Go version: $GO_VERSION"
-
-# Build binary
+echo "Checking pre-built binaries..."
 echo ""
-echo "Building claude-notifications binary..."
-mkdir -p bin
 
-if go build -o bin/claude-notifications ./cmd/claude-notifications; then
-    echo "✓ Build successful!"
-else
-    echo "❌ Build failed"
+# Check if wrapper exists
+if [ ! -f "bin/claude-notifications" ]; then
+    echo "❌ Error: bin/claude-notifications wrapper not found"
+    echo ""
+    echo "This file should be included in the repository."
+    echo "If missing, run 'make build-all' to rebuild binaries."
     exit 1
 fi
 
-# Make binary executable
+# Make wrapper executable
 chmod +x bin/claude-notifications
 
-# Show binary info
-BINARY_SIZE=$(ls -lh bin/claude-notifications | awk '{print $5}')
-echo "✓ Binary created: bin/claude-notifications ($BINARY_SIZE)"
+# Check platform-specific binaries
+PLATFORMS=(
+    "darwin-amd64"
+    "darwin-arm64"
+    "linux-amd64"
+    "linux-arm64"
+    "windows-amd64.exe"
+)
+
+MISSING=0
+FOUND=0
+
+for platform in "${PLATFORMS[@]}"; do
+    if [ -f "bin/claude-notifications-${platform}" ]; then
+        FOUND=$((FOUND + 1))
+        echo "  ✓ $platform"
+    else
+        MISSING=$((MISSING + 1))
+        echo "  ⚠  $platform (missing)"
+    fi
+done
+
+echo ""
+
+if [ $MISSING -gt 0 ]; then
+    echo "⚠️  Warning: $MISSING platform binary(ies) missing"
+    echo ""
+    echo "For development: Run 'make build-all' to rebuild (requires Go 1.21+)"
+    echo "Or trigger GitHub Actions to build all platforms automatically"
+    echo ""
+fi
+
+if [ $FOUND -eq 0 ]; then
+    echo "❌ Error: No platform binaries found!"
+    echo ""
+    echo "Please run 'make build-all' or check GitHub Actions builds"
+    exit 1
+fi
+
+echo "✓ Setup verified! Found $FOUND/$((FOUND + MISSING)) platform binaries"
 
 echo ""
 echo "=========================================="

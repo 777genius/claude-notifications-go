@@ -1,7 +1,7 @@
 {
     "name": "claude-notifications-go",
     "owner": {
-        "name": "belief",
+        "name": "777genius",
         "email": "[email protected]"
     },
     "metadata": {
@@ -14,10 +14,10 @@
         "description": "Smart notifications for Claude Code task statuses (Go implementation)",
         "version": "1.0.0",
         "author": {
-            "name": "belief",
+            "name": "777genius",
             "email": "[email protected]"
         },
-        "repository": "https://github.com/belief/claude-notifications-go",
+        "repository": "https://github.com/777genius/claude-notifications-go",
         "license": "MIT",
         "keywords": [
             "notifications",

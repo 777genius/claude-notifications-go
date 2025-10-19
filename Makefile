@@ -52,6 +52,18 @@ clean: ## Clean build artifacts
 	@rm -rf bin/ dist/ coverage.* *.log
 	@echo "Clean complete!"
 
+# Rebuild and prepare for commit
+rebuild-and-commit: build-all ## Rebuild binaries and prepare for commit
+	@echo "Moving binaries to bin/..."
+	@cp dist/* bin/ 2>/dev/null || true
+	@rm -rf dist
+	@echo "✓ Binaries ready in bin/"
+	@echo ""
+	@echo "Platform binaries updated:"
+	@ls -1 bin/claude-notifications-* 2>/dev/null || echo "  (none found)"
+	@echo ""
+	@echo "To commit: git add bin/claude-notifications-* && git commit -m 'chore: rebuild binaries'"
+
 # Help
 help: ## Show this help message
 	@echo "Available targets:"

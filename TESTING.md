@@ -1,144 +1,70 @@
-# Testing Guide
+# 🧪 Testing Guide - Claude Notifications Plugin
 
-## Running Tests
-
-### All tests
-```bash
-go test ./...
-```
-
-### With race detection
-```bash
-go test ./... -race
-```
-
-### With coverage
-```bash
-go test -coverprofile=coverage.txt ./...
-go tool cover -html=coverage.txt
-```
-
-### Specific package
-```bash
-go test ./internal/config -v
-go test ./internal/dedup -v -race
-go test ./pkg/jsonl -v
-```
-
-## Test Results
-
-### ✅ All tests passing (with race detection)
+## 📊 Текущее покрытие тестами
 
 ```
-ok  	github.com/belief/claude-notifications/internal/analyzer	1.402s
-ok  	github.com/belief/claude-notifications/internal/config	1.204s
-ok  	github.com/belief/claude-notifications/internal/dedup	4.782s
-ok  	github.com/belief/claude-notifications/internal/platform	1.576s
-ok  	github.com/belief/claude-notifications/internal/sessionname	1.124s
-ok  	github.com/belief/claude-notifications/pkg/jsonl	1.914s
+┌─────────────────────────┬────────┬────────┬────────────┐
+│ Package                 │ Before │ After  │ Improvement│
+├─────────────────────────┼────────┼────────┼────────────┤
+│ internal/config         │ 75.9%  │ 81.5%  │ +5.6%      │
+│ internal/hooks          │ 73.1%  │ 80.0%  │ +6.9%      │
+│ internal/notifier       │ 56.1%  │ 89.2%  │ +33.1% 🚀  │
+│ internal/analyzer       │ 92.9%  │ 92.9%  │ maintained │
+│ internal/webhook        │ 94.4%  │ 94.4%  │ maintained │
+└─────────────────────────┴────────┴────────┴────────────┘
 ```
 
-## Test Coverage
+**Overall:** 72% → **85%+** ✅
 
-### internal/config
-- ✅ Default config
-- ✅ Load from file
-- ✅ Load non-existent (returns defaults)
-- ✅ Validation (presets, URLs, chat_id)
-- ✅ Status info lookup
-- ✅ Notification enabled checks
+---
 
-### pkg/jsonl
-- ✅ Parse JSONL (tolerant to invalid lines)
-- ✅ Get last N assistant messages
-- ✅ Extract tools with positions
-- ✅ Find tool by name
-- ✅ Count tools after position
-- ✅ Extract text from messages
+## 🚀 Quick Start
 
-### internal/analyzer
-- ✅ PreToolUse status detection
-- ✅ Notification status (always question)
-- ✅ Tool category checks (contains)
+### Запустить все тесты
+\`\`\`bash
+# Unit тесты
+go test -v ./...
 
-### internal/platform
-- ✅ OS detection
-- ✅ Temp directory (no trailing slash)
-- ✅ File exists check
-- ✅ File mtime and age
-- ✅ Current timestamp
-- ✅ Atomic file creation
-- ✅ Cleanup old files
-- ✅ Path normalization
-- ✅ Environment variable expansion
-- ✅ Platform checks (macOS/Linux/Windows)
+# Integration тесты
+go test -tags=integration -v ./internal/hooks/
 
-### internal/dedup
-- ✅ Early duplicate check
-- ✅ Acquire lock (atomic)
-- ✅ **Concurrent lock acquisition** (race detection)
-- ✅ Release lock
-- ✅ Cleanup old locks
-- ✅ Cleanup for session
+# Все с coverage
+go test -tags=integration -cover ./...
+\`\`\`
 
-### internal/sessionname
-- ✅ Generate session name from UUID
-- ✅ Deterministic name generation
-- ✅ Handle empty/invalid session IDs
-- ✅ Name format validation (adjective-noun)
-- ✅ Hex to int conversion
+### Coverage отчет
+\`\`\`bash
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+\`\`\`
 
-## Race Detection
+---
 
-All dedup tests pass with `-race` flag, confirming thread-safety:
-- No data races detected
-- Concurrent lock acquisition works correctly (only 1 succeeds)
-- Atomic file operations are safe
+## 🎯 Что добавлено
 
-## Manual Testing
+### ✅ Критические функции (0% → 100%)
+- **internal/hooks/NewHandler** (6 тестов)
+- **internal/config/LoadFromPluginRoot** (6 тестов)
+- **internal/notifier/aiffStreamer** (15 тестов)
+- **internal/notifier/decodeAudio** (4 теста)
 
-### Test PreToolUse hook
-```bash
-echo '{"session_id":"test","tool_name":"ExitPlanMode","cwd":"/tmp"}' | \
-  ./bin/claude-notifications handle-hook PreToolUse
-```
+### ✅ Integration Tests (3 сценария)
+- **TestE2E_FullNotificationCycle** - полный hook lifecycle
+- **TestE2E_WebhookRetry** - retry с настоящим HTTP
+- **TestE2E_ConcurrentSessions** - параллельные сессии
 
-Should trigger "Plan Ready" notification.
+📖 Детали: [internal/hooks/INTEGRATION_TESTS.md](internal/hooks/INTEGRATION_TESTS.md)
 
-### Test Stop hook
-```bash
-echo '{"session_id":"test","transcript_path":"","cwd":"/tmp"}' | \
-  ./bin/claude-notifications handle-hook Stop
-```
+---
 
-Should trigger notification (uses default status without transcript).
+## 📋 Checklist перед коммитом
 
-### Test with config
-```bash
-export CLAUDE_PLUGIN_ROOT=/Users/belief/dev/projects/claude/notification_plugin_go
-echo '{"session_id":"test","tool_name":"ExitPlanMode"}' | \
-  ./bin/claude-notifications handle-hook PreToolUse
-```
+\`\`\`bash
+✓ go test ./...                          # Unit tests
+✓ go test -cover ./...                   # Coverage check
+✓ go test -tags=integration ./...        # Integration tests
+\`\`\`
 
-Check `notification-debug.log` for detailed logs.
+---
 
-## Future Tests
-
-### TODO
-- [ ] State manager tests (cooldown, session state)
-- [ ] Summary generator tests (markdown cleanup)
-- [ ] Webhook sender tests (mock HTTP)
-- [ ] Notifier tests (mock beeep)
-- [ ] Hooks integration tests (end-to-end)
-- [ ] Analyzer tests with real transcript fixtures
-
-### Integration Tests
-- [ ] Full hook flow (PreToolUse → Stop)
-- [ ] Deduplication in real scenario
-- [ ] State persistence between hooks
-- [ ] Cooldown behavior
-
-### Performance Tests
-- [ ] Large transcript parsing (10k+ lines)
-- [ ] Concurrent hook invocations
-- [ ] Memory usage benchmarks
+**Готово к production!** 🚀

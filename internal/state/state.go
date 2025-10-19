@@ -6,17 +6,19 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/belief/claude-notifications/internal/analyzer"
-	"github.com/belief/claude-notifications/internal/platform"
+	"github.com/777genius/claude-notifications/internal/analyzer"
+	"github.com/777genius/claude-notifications/internal/platform"
 )
 
 // SessionState represents per-session state
 type SessionState struct {
-	SessionID            string `json:"session_id"`
-	LastInteractiveTool  string `json:"last_interactive_tool"`
-	LastTimestamp        int64  `json:"last_ts"`
-	LastTaskCompleteTime int64  `json:"last_task_complete_ts,omitempty"`
-	CWD                  string `json:"cwd"`
+	SessionID              string `json:"session_id"`
+	LastInteractiveTool    string `json:"last_interactive_tool"`
+	LastTimestamp          int64  `json:"last_ts"`
+	LastTaskCompleteTime   int64  `json:"last_task_complete_ts,omitempty"`
+	LastNotificationTime   int64  `json:"last_notification_ts,omitempty"`
+	LastNotificationStatus string `json:"last_notification_status,omitempty"`
+	CWD                    string `json:"cwd"`
 }
 
 // Manager manages session state
@@ -164,4 +166,46 @@ func (m *Manager) UpdateState(sessionID string, status analyzer.Status, toolName
 // Cleanup cleans up old state files (older than maxAge seconds)
 func (m *Manager) Cleanup(maxAge int64) error {
 	return platform.CleanupOldFiles(m.tempDir, "claude-session-state-*.json", maxAge)
+}
+
+// UpdateLastNotification updates the last notification timestamp and status
+func (m *Manager) UpdateLastNotification(sessionID string, status analyzer.Status) error {
+	state, err := m.Load(sessionID)
+	if err != nil {
+		return err
+	}
+
+	if state == nil {
+		state = &SessionState{
+			SessionID: sessionID,
+		}
+	}
+
+	state.LastNotificationTime = platform.CurrentTimestamp()
+	state.LastNotificationStatus = string(status)
+
+	return m.Save(state)
+}
+
+// ShouldSuppressQuestionAfterAnyNotification checks if a question notification should be suppressed
+// due to being within the cooldown window after ANY notification
+func (m *Manager) ShouldSuppressQuestionAfterAnyNotification(sessionID string, cooldownSeconds int) (bool, error) {
+	if cooldownSeconds <= 0 {
+		return false, nil
+	}
+
+	state, err := m.Load(sessionID)
+	if err != nil {
+		return false, err
+	}
+
+	if state == nil || state.LastNotificationTime == 0 {
+		return false, nil
+	}
+
+	// Check if we're within the cooldown window
+	now := platform.CurrentTimestamp()
+	elapsed := now - state.LastNotificationTime
+
+	return elapsed < int64(cooldownSeconds), nil
 }

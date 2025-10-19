@@ -1,13 +1,15 @@
 package summary
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/belief/claude-notifications/internal/analyzer"
-	"github.com/belief/claude-notifications/internal/config"
-	"github.com/belief/claude-notifications/pkg/jsonl"
+	"github.com/777genius/claude-notifications/internal/analyzer"
+	"github.com/777genius/claude-notifications/internal/config"
+	"github.com/777genius/claude-notifications/pkg/jsonl"
 )
 
 func TestFormatDuration(t *testing.T) {
@@ -78,29 +80,84 @@ func TestBuildActionsString(t *testing.T) {
 
 func TestCleanMarkdown(t *testing.T) {
 	tests := []struct {
+		name     string
 		input    string
 		expected string
 	}{
 		{
+			name:     "Headers",
 			input:    "# Header\nSome text",
 			expected: "Header Some text",
 		},
 		{
+			name:     "Bullet lists",
 			input:    "- Item 1\n- Item 2",
 			expected: "Item 1 Item 2",
 		},
 		{
-			input:    "`code` and **bold**",
-			expected: "code and **bold**", // Only backticks removed, not **
+			name:     "Bold with **",
+			input:    "This is **bold text** here",
+			expected: "This is bold text here",
 		},
 		{
+			name:     "Bold with __",
+			input:    "This is __bold text__ here",
+			expected: "This is bold text here",
+		},
+		{
+			name:     "Italic with *",
+			input:    "This is *italic text* here",
+			expected: "This is italic text here",
+		},
+		{
+			name:     "Italic with _",
+			input:    "This is _italic text_ here",
+			expected: "This is italic text here",
+		},
+		{
+			name:     "Links",
+			input:    "Check [this link](https://example.com) out",
+			expected: "Check this link out",
+		},
+		{
+			name:     "Images",
+			input:    "See ![cat image](https://example.com/cat.jpg) here",
+			expected: "See cat image here",
+		},
+		{
+			name:     "Strikethrough",
+			input:    "This is ~~deleted~~ text",
+			expected: "This is deleted text",
+		},
+		{
+			name:     "Code blocks",
+			input:    "Some text\n```python\nprint('hello')\n```\nMore text",
+			expected: "Some text More text",
+		},
+		{
+			name:     "Inline code",
+			input:    "`code` and text",
+			expected: "code and text",
+		},
+		{
+			name:     "Blockquotes",
+			input:    "> This is a quote\nNormal text",
+			expected: "This is a quote Normal text",
+		},
+		{
+			name:     "Multiple markdown",
+			input:    "# Title\n**Bold** and *italic* with [link](url)",
+			expected: "Title Bold and italic with link",
+		},
+		{
+			name:     "Multiple spaces",
 			input:    "Multiple    spaces",
 			expected: "Multiple spaces",
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			result := CleanMarkdown(tt.input)
 			if result != tt.expected {
 				t.Errorf("CleanMarkdown(%q) = %q, want %q", tt.input, result, tt.expected)
@@ -111,35 +168,57 @@ func TestCleanMarkdown(t *testing.T) {
 
 func TestTruncateText(t *testing.T) {
 	tests := []struct {
+		name     string
 		text     string
 		maxLen   int
 		expected string
 	}{
 		{
+			name:     "Short text",
 			text:     "Short text",
 			maxLen:   100,
 			expected: "Short text",
 		},
 		{
-			text:     strings.Repeat("a", 200),
+			name:     "Truncate at sentence boundary",
+			text:     "This is first sentence. This is second sentence. This is third sentence.",
 			maxLen:   50,
-			expected: strings.Repeat("a", 47) + "...",
+			expected: "This is first sentence.",
 		},
 		{
+			name:     "Truncate with exclamation",
+			text:     "Hello world! This is great! How are you doing today?",
+			maxLen:   30,
+			expected: "Hello world!",
+		},
+		{
+			name:     "Truncate with question mark",
+			text:     "What is this? Something else here with more text.",
+			maxLen:   25,
+			expected: "What is this?",
+		},
+		{
+			name:     "No sentence boundary - truncate at word",
 			text:     "This is a long text that should be truncated at word boundary",
 			maxLen:   30,
 			expected: "This is a long text that...",
 		},
+		{
+			name:     "Very long word",
+			text:     strings.Repeat("a", 200),
+			maxLen:   50,
+			expected: strings.Repeat("a", 47) + "...",
+		},
 	}
 
 	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			result := truncateText(tt.text, tt.maxLen)
 			if len(result) > tt.maxLen {
 				t.Errorf("truncateText() returned text longer than maxLen: %d > %d", len(result), tt.maxLen)
 			}
-			if !strings.HasPrefix(result, tt.expected[:10]) {
-				t.Errorf("truncateText() = %s, want prefix %s", result, tt.expected[:10])
+			if result != tt.expected {
+				t.Errorf("truncateText() = %q, want %q", result, tt.expected)
 			}
 		})
 	}
@@ -147,32 +226,52 @@ func TestTruncateText(t *testing.T) {
 
 func TestExtractFirstSentence(t *testing.T) {
 	tests := []struct {
+		name     string
 		text     string
 		expected string
 	}{
 		{
-			text:     "First sentence. Second sentence.",
-			expected: "First sentence",
+			name:     "Long first sentence",
+			text:     "First sentence is long enough. Second sentence.",
+			expected: "First sentence is long enough.",
 		},
 		{
-			text:     "Question? Answer.",
-			expected: "Question",
+			name:     "Short first sentence - include second",
+			text:     "Short! This is longer second sentence.",
+			expected: "Short! This is longer second sentence.",
 		},
 		{
-			text:     "Exclamation! More text.",
-			expected: "Exclamation",
+			name:     "Question with answer",
+			text:     "Question? This is a detailed answer that follows.",
+			expected: "Question? This is a detailed answer that follows.",
 		},
 		{
+			name:     "User case: Идеально",
+			text:     "Идеально! Все тесты исправлены! Создам краткий отчет.",
+			expected: "Идеально! Все тесты исправлены!",
+		},
+		{
+			name:     "Very long sentence - only first",
+			text:     "This is a long first sentence that is already over twenty characters. Second sentence.",
+			expected: "This is a long first sentence that is already over twenty characters.",
+		},
+		{
+			name:     "No punctuation",
 			text:     strings.Repeat("a", 150),
 			expected: strings.Repeat("a", 100),
+		},
+		{
+			name:     "Single short sentence",
+			text:     "Done!",
+			expected: "Done!",
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			result := extractFirstSentence(tt.text)
 			if result != tt.expected {
-				t.Errorf("extractFirstSentence() = %s, want %s", result, tt.expected)
+				t.Errorf("extractFirstSentence() = %q, want %q", result, tt.expected)
 			}
 		})
 	}
@@ -346,5 +445,272 @@ func TestGetDefaultMessage(t *testing.T) {
 				t.Errorf("GetDefaultMessage(%s) = %s, want to contain %s", tt.status, result, tt.expected)
 			}
 		})
+	}
+}
+
+// === Tests for GenerateFromTranscript ===
+
+func TestGenerateFromTranscript_TaskComplete(t *testing.T) {
+	// Create temp transcript with task_complete scenario
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/transcript.jsonl"
+
+	messages := buildTestTranscript([]string{"Write", "Edit", "Bash"}, "Created auth module", time.Now())
+	writeTranscript(t, transcriptPath, messages)
+
+	cfg := config.DefaultConfig()
+	result := GenerateFromTranscript(transcriptPath, analyzer.StatusTaskComplete, cfg)
+
+	// Should contain action summary
+	if !strings.Contains(result, "Created") || !strings.Contains(result, "Edited") {
+		t.Errorf("TaskComplete summary should mention actions, got: %s", result)
+	}
+}
+
+func TestGenerateFromTranscript_Question(t *testing.T) {
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/transcript.jsonl"
+
+	// Build transcript with AskUserQuestion
+	now := time.Now()
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: now.Add(-10 * time.Second).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "Help me"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{
+						Type: "tool_use",
+						Name: "AskUserQuestion",
+						Input: map[string]interface{}{
+							"questions": []interface{}{
+								map[string]interface{}{
+									"question": "Which library should we use?",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	writeTranscript(t, transcriptPath, messages)
+
+	cfg := config.DefaultConfig()
+	result := GenerateFromTranscript(transcriptPath, analyzer.StatusQuestion, cfg)
+
+	if !strings.Contains(result, "Which library") {
+		t.Errorf("Question summary should contain question text, got: %s", result)
+	}
+}
+
+func TestGenerateFromTranscript_PlanReady(t *testing.T) {
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/transcript.jsonl"
+
+	now := time.Now()
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: now.Add(-10 * time.Second).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "Create auth"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{
+						Type: "tool_use",
+						Name: "ExitPlanMode",
+						Input: map[string]interface{}{
+							"plan": "1. Create user model\n2. Add authentication\n3. Test endpoints",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	writeTranscript(t, transcriptPath, messages)
+
+	cfg := config.DefaultConfig()
+	result := GenerateFromTranscript(transcriptPath, analyzer.StatusPlanReady, cfg)
+
+	if !strings.Contains(result, "Create user model") {
+		t.Errorf("Plan summary should contain plan text, got: %s", result)
+	}
+}
+
+func TestGenerateFromTranscript_ReviewComplete(t *testing.T) {
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/transcript.jsonl"
+
+	messages := buildTestTranscript([]string{"Read", "Read", "Grep"}, "Analyzed the codebase", time.Now())
+	writeTranscript(t, transcriptPath, messages)
+
+	cfg := config.DefaultConfig()
+	result := GenerateFromTranscript(transcriptPath, analyzer.StatusReviewComplete, cfg)
+
+	// Should contain either "Reviewed" or the extracted text
+	if result == "" {
+		t.Errorf("Review summary should not be empty")
+	}
+	// Just verify it's not empty and doesn't crash
+	if len(result) < 5 {
+		t.Errorf("Review summary too short: %s", result)
+	}
+}
+
+func TestGenerateFromTranscript_NonexistentFile(t *testing.T) {
+	cfg := config.DefaultConfig()
+	result := GenerateFromTranscript("/nonexistent/path.jsonl", analyzer.StatusTaskComplete, cfg)
+
+	// Should fallback to default message
+	if !strings.Contains(result, "Task Completed") {
+		t.Errorf("Should return default message for nonexistent file, got: %s", result)
+	}
+}
+
+func TestGenerateFromTranscript_EmptyTranscript(t *testing.T) {
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/empty.jsonl"
+
+	// Create empty file
+	writeTranscript(t, transcriptPath, []jsonl.Message{})
+
+	cfg := config.DefaultConfig()
+	result := GenerateFromTranscript(transcriptPath, analyzer.StatusTaskComplete, cfg)
+
+	// Should fallback to default message
+	if !strings.Contains(result, "Task Completed") {
+		t.Errorf("Should return default message for empty transcript, got: %s", result)
+	}
+}
+
+func TestGenerateFromTranscript_SessionLimitReached(t *testing.T) {
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/session_limit.jsonl"
+
+	// Create transcript with session limit message
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: time.Now().Add(-1 * time.Minute).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "Continue working"},
+				},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: time.Now().Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "Session limit reached. Please start a new conversation."},
+				},
+			},
+		},
+	}
+
+	writeTranscript(t, transcriptPath, messages)
+
+	cfg := config.DefaultConfig()
+	result := GenerateFromTranscript(transcriptPath, analyzer.StatusSessionLimitReached, cfg)
+
+	expected := "Session limit reached. Please start a new conversation."
+	if result != expected {
+		t.Errorf("Expected %q, got %q", expected, result)
+	}
+}
+
+// === Tests for GenerateSimple ===
+
+func TestGenerateSimple(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	tests := []struct {
+		status   analyzer.Status
+		expected string
+	}{
+		{analyzer.StatusTaskComplete, "Task Completed"},
+		{analyzer.StatusQuestion, "Claude Has Questions"},
+		{analyzer.StatusPlanReady, "Plan Ready"},
+		{analyzer.StatusReviewComplete, "Review Complete"},
+		{analyzer.StatusSessionLimitReached, "Session Limit Reached"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.status), func(t *testing.T) {
+			result := GenerateSimple(tt.status, cfg)
+			if !strings.Contains(result, tt.expected) {
+				t.Errorf("GenerateSimple(%s) = %s, want to contain %s", tt.status, result, tt.expected)
+			}
+		})
+	}
+}
+
+// === Helper functions ===
+
+func buildTestTranscript(tools []string, responseText string, timestamp time.Time) []jsonl.Message {
+	var content []jsonl.Content
+
+	// Add tools
+	for _, tool := range tools {
+		content = append(content, jsonl.Content{
+			Type: "tool_use",
+			Name: tool,
+		})
+	}
+
+	// Add text
+	content = append(content, jsonl.Content{
+		Type: "text",
+		Text: responseText,
+	})
+
+	return []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: timestamp.Add(-10 * time.Second).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "User request"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: timestamp.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: content,
+			},
+		},
+	}
+}
+
+func writeTranscript(t *testing.T, path string, messages []jsonl.Message) {
+	t.Helper()
+
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("failed to create transcript: %v", err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	for _, msg := range messages {
+		if err := encoder.Encode(msg); err != nil {
+			t.Fatalf("failed to encode message: %v", err)
+		}
 	}
 }

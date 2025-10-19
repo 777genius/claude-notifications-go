@@ -1,0 +1,68 @@
+name: macOS CI
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    name: Test on macOS
+    runs-on: macos-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.21', '1.22']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Display Go version
+        run: go version
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run go fmt check
+        run: |
+          fmt_output=$(go fmt ./...)
+          if [ -n "$fmt_output" ]; then
+            echo "The following files need formatting:"
+            echo "$fmt_output"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Build binary
+        run: go build -o bin/claude-notifications ./cmd/claude-notifications
+
+      - name: Test binary execution (help)
+        run: ./bin/claude-notifications help
+
+      - name: Test sound preview binary
+        run: go build -o bin/sound-preview ./cmd/sound-preview
+
+      - name: Check for system sounds
+        run: |
+          if [ -d "/System/Library/Sounds" ]; then
+            echo "✓ System sounds directory found"
+            ls -la /System/Library/Sounds/*.aiff | head -3
+          else
+            echo "⚠ System sounds directory not found (expected on macOS)"
+          fi

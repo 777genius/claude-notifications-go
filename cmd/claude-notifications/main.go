@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/belief/claude-notifications/internal/hooks"
-	"github.com/belief/claude-notifications/internal/logging"
+	"github.com/777genius/claude-notifications/internal/hooks"
+	"github.com/777genius/claude-notifications/internal/logging"
 )
 
 const version = "1.0.0"

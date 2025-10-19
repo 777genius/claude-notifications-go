@@ -5,16 +5,16 @@ import (
 
 	"github.com/gen2brain/beeep"
 
-	"github.com/belief/claude-notifications/internal/analyzer"
-	"github.com/belief/claude-notifications/internal/config"
+	"github.com/777genius/claude-notifications/internal/analyzer"
+	"github.com/777genius/claude-notifications/internal/config"
 )
 
 func TestExtractSessionName(t *testing.T) {
 	tests := []struct {
-		name               string
-		message            string
-		expectedSession    string
-		expectedCleanMsg   string
+		name             string
+		message          string
+		expectedSession  string
+		expectedCleanMsg string
 	}{
 		{
 			name:             "Valid session name with message",

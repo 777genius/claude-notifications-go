@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/belief/claude-notifications/internal/platform"
+	"github.com/777genius/claude-notifications/internal/platform"
 )
 
 // Config represents the plugin configuration
@@ -17,26 +17,53 @@ type Config struct {
 
 // NotificationsConfig represents notification settings
 type NotificationsConfig struct {
-	Desktop                                DesktopConfig  `json:"desktop"`
-	Webhook                                WebhookConfig  `json:"webhook"`
-	SuppressQuestionAfterTaskCompleteSeconds int            `json:"suppressQuestionAfterTaskCompleteSeconds"`
+	Desktop                                     DesktopConfig `json:"desktop"`
+	Webhook                                     WebhookConfig `json:"webhook"`
+	SuppressQuestionAfterTaskCompleteSeconds    int           `json:"suppressQuestionAfterTaskCompleteSeconds"`
+	SuppressQuestionAfterAnyNotificationSeconds int           `json:"suppressQuestionAfterAnyNotificationSeconds"`
 }
 
 // DesktopConfig represents desktop notification settings
 type DesktopConfig struct {
-	Enabled bool   `json:"enabled"`
-	Sound   bool   `json:"sound"`
-	AppIcon string `json:"appIcon"`
+	Enabled bool    `json:"enabled"`
+	Sound   bool    `json:"sound"`
+	Volume  float64 `json:"volume"` // Volume level 0.0-1.0, default 1.0 (full volume)
+	AppIcon string  `json:"appIcon"`
 }
 
 // WebhookConfig represents webhook settings
 type WebhookConfig struct {
-	Enabled bool              `json:"enabled"`
-	Preset  string            `json:"preset"`
-	URL     string            `json:"url"`
-	ChatID  string            `json:"chat_id"`
-	Format  string            `json:"format"`
-	Headers map[string]string `json:"headers"`
+	Enabled        bool                 `json:"enabled"`
+	Preset         string               `json:"preset"`
+	URL            string               `json:"url"`
+	ChatID         string               `json:"chat_id"`
+	Format         string               `json:"format"`
+	Headers        map[string]string    `json:"headers"`
+	Retry          RetryConfig          `json:"retry"`
+	CircuitBreaker CircuitBreakerConfig `json:"circuitBreaker"`
+	RateLimit      RateLimitConfig      `json:"rateLimit"`
+}
+
+// RetryConfig represents retry settings
+type RetryConfig struct {
+	Enabled        bool   `json:"enabled"`
+	MaxAttempts    int    `json:"maxAttempts"`
+	InitialBackoff string `json:"initialBackoff"` // e.g. "1s"
+	MaxBackoff     string `json:"maxBackoff"`     // e.g. "10s"
+}
+
+// CircuitBreakerConfig represents circuit breaker settings
+type CircuitBreakerConfig struct {
+	Enabled          bool   `json:"enabled"`
+	FailureThreshold int    `json:"failureThreshold"` // failures before opening
+	Timeout          string `json:"timeout"`          // time to wait in open state, e.g. "30s"
+	SuccessThreshold int    `json:"successThreshold"` // successes needed in half-open
+}
+
+// RateLimitConfig represents rate limiting settings
+type RateLimitConfig struct {
+	Enabled           bool `json:"enabled"`
+	RequestsPerMinute int  `json:"requestsPerMinute"`
 }
 
 // StatusInfo represents configuration for a specific status
@@ -58,6 +85,7 @@ func DefaultConfig() *Config {
 			Desktop: DesktopConfig{
 				Enabled: true,
 				Sound:   true,
+				Volume:  1.0, // Full volume by default
 				AppIcon: filepath.Join(pluginRoot, "claude_icon.png"),
 			},
 			Webhook: WebhookConfig{
@@ -67,8 +95,25 @@ func DefaultConfig() *Config {
 				ChatID:  "",
 				Format:  "json",
 				Headers: make(map[string]string),
+				Retry: RetryConfig{
+					Enabled:        true,
+					MaxAttempts:    3,
+					InitialBackoff: "1s",
+					MaxBackoff:     "10s",
+				},
+				CircuitBreaker: CircuitBreakerConfig{
+					Enabled:          true,
+					FailureThreshold: 5,
+					Timeout:          "30s",
+					SuccessThreshold: 2,
+				},
+				RateLimit: RateLimitConfig{
+					Enabled:           true,
+					RequestsPerMinute: 10,
+				},
 			},
-			SuppressQuestionAfterTaskCompleteSeconds: 7,
+			SuppressQuestionAfterTaskCompleteSeconds:    7,
+			SuppressQuestionAfterAnyNotificationSeconds: 7,
 		},
 		Statuses: map[string]StatusInfo{
 			"task_complete": {
@@ -86,6 +131,10 @@ func DefaultConfig() *Config {
 			"plan_ready": {
 				Title: "📋 Plan Ready for Review",
 				Sound: filepath.Join(pluginRoot, "sounds", "plan-ready.mp3"),
+			},
+			"session_limit_reached": {
+				Title: "⏱️ Session Limit Reached",
+				Sound: filepath.Join(pluginRoot, "sounds", "question.mp3"), // reuse question sound
 			},
 		},
 	}
@@ -134,6 +183,9 @@ func LoadFromPluginRoot(pluginRoot string) (*Config, error) {
 // ApplyDefaults fills in missing fields with default values
 func (c *Config) ApplyDefaults() {
 	// Desktop defaults
+	if c.Notifications.Desktop.Volume == 0 {
+		c.Notifications.Desktop.Volume = 1.0 // Default to full volume
+	}
 	if c.Notifications.Desktop.AppIcon == "" {
 		// Keep empty if not set
 	}
@@ -170,6 +222,11 @@ func (c *Config) ApplyDefaults() {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	// Validate volume
+	if c.Notifications.Desktop.Volume < 0.0 || c.Notifications.Desktop.Volume > 1.0 {
+		return fmt.Errorf("desktop volume must be between 0.0 and 1.0 (got %.2f)", c.Notifications.Desktop.Volume)
+	}
+
 	// Validate webhook preset
 	validPresets := map[string]bool{
 		"slack":    true,
