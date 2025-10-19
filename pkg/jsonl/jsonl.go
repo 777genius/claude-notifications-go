@@ -10,10 +10,10 @@ import (
 
 // Message represents a Claude Code transcript message
 type Message struct {
-	ParentUUID string          `json:"parentUuid"`
-	Type       string          `json:"type"`
-	Message    MessageContent  `json:"message"`
-	Timestamp  string          `json:"timestamp"`
+	ParentUUID string         `json:"parentUuid"`
+	Type       string         `json:"type"`
+	Message    MessageContent `json:"message"`
+	Timestamp  string         `json:"timestamp"`
 }
 
 // MessageContent represents the content of a message

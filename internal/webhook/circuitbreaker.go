@@ -29,11 +29,11 @@ type CircuitBreaker struct {
 	successThreshold int
 	timeout          time.Duration
 
-	mu               sync.RWMutex
-	state            CircuitBreakerState
-	failureCount     int
-	successCount     int
-	lastStateChange  time.Time
+	mu              sync.RWMutex
+	state           CircuitBreakerState
+	failureCount    int
+	successCount    int
+	lastStateChange time.Time
 }
 
 // NewCircuitBreaker creates a new circuit breaker

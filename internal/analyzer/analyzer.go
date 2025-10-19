@@ -14,10 +14,12 @@ import (
 // Could be improved by parsing command strings to differentiate:
 //   - Passive: ls, cd, pwd, git status, git log, git diff, find, grep
 //   - Active: mkdir, rm, mv, cp, git commit, npm install, etc.
+//
 // This requires:
-//   1. Storing tool Input in ToolUse struct (pkg/jsonl)
-//   2. Parsing command string from Input["command"]
-//   3. Handling complex cases: pipes (|), redirects (>), chains (&&)
+//  1. Storing tool Input in ToolUse struct (pkg/jsonl)
+//  2. Parsing command string from Input["command"]
+//  3. Handling complex cases: pipes (|), redirects (>), chains (&&)
+//
 // Complexity: Medium-High. Edge cases are tricky (e.g. "cat file > output").
 var (
 	ActiveTools   = []string{"Write", "Edit", "Bash", "NotebookEdit", "SlashCommand", "KillShell"}

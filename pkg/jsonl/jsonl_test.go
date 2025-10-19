@@ -266,9 +266,9 @@ func TestHasAnyActiveTool(t *testing.T) {
 	activeTools := []string{"Write", "Edit", "Bash", "NotebookEdit", "SlashCommand", "KillShell"}
 
 	tests := []struct {
-		name string
+		name  string
 		tools []ToolUse
-		want bool
+		want  bool
 	}{
 		{
 			name:  "has_single_active_tool",

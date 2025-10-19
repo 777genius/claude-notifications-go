@@ -192,10 +192,10 @@ func TestAIFFStreamer_Len(t *testing.T) {
 		numSamples  int
 		wantLen     int
 	}{
-		{"Mono", 1, 100, 100},      // 100 samples * 1 channel = 100 data points, Len = 100 / 1 = 100
-		{"Stereo", 2, 100, 100},    // 100 samples * 2 channels = 200 data points, Len = 200 / 2 = 100
+		{"Mono", 1, 100, 100},         // 100 samples * 1 channel = 100 data points, Len = 100 / 1 = 100
+		{"Stereo", 2, 100, 100},       // 100 samples * 2 channels = 200 data points, Len = 200 / 2 = 100
 		{"5.1 Surround", 6, 100, 100}, // 100 samples * 6 channels = 600 data points, Len = 600 / 6 = 100
-		{"Zero channels", 0, 100, 0}, // 100 samples * 0 channels = 0 data points, Len = 0 / 1 = 0
+		{"Zero channels", 0, 100, 0},  // 100 samples * 0 channels = 0 data points, Len = 0 / 1 = 0
 	}
 
 	for _, tt := range tests {
