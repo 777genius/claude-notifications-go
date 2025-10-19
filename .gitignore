@@ -1,8 +1,13 @@
-# Binaries (keep bin/ directory with wrapper and cross-platform binaries)
-# bin/ directory should be committed with wrapper script and platform binaries
-*.dll
-*.so
-*.dylib
+# Binaries
+# IMPORTANT: bin/ directory should be committed with:
+# - bin/claude-notifications (wrapper script)
+# - bin/claude-notifications-* (platform binaries)
+# Only exclude temporary/development binaries:
+bin/test-build
+bin/sound-preview
+bin/*.dll
+bin/*.so
+bin/*.dylib
 
 # Test binaries
 *.test
@@ -34,6 +39,6 @@ notification-debug.log
 .state/
 *.lock
 
-# Build artifacts
+# Build artifacts (temporary directory for builds)
 dist/
 build/

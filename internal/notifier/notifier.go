@@ -2,21 +2,37 @@ package notifier
 
 import (
 	"fmt"
-	"os/exec"
+	"math"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gen2brain/beeep"
+	"github.com/go-audio/aiff"
+	"github.com/go-audio/audio"
+	"github.com/gopxl/beep"
+	"github.com/gopxl/beep/effects"
+	"github.com/gopxl/beep/flac"
+	"github.com/gopxl/beep/mp3"
+	"github.com/gopxl/beep/speaker"
+	"github.com/gopxl/beep/vorbis"
+	"github.com/gopxl/beep/wav"
 
-	"github.com/belief/claude-notifications/internal/analyzer"
-	"github.com/belief/claude-notifications/internal/config"
-	"github.com/belief/claude-notifications/internal/logging"
-	"github.com/belief/claude-notifications/internal/platform"
+	"github.com/777genius/claude-notifications/internal/analyzer"
+	"github.com/777genius/claude-notifications/internal/config"
+	"github.com/777genius/claude-notifications/internal/logging"
+	"github.com/777genius/claude-notifications/internal/platform"
 )
 
 // Notifier sends desktop notifications
 type Notifier struct {
-	cfg *config.Config
+	cfg           *config.Config
+	speakerInit   sync.Once
+	speakerInited bool
+	mu            sync.Mutex
+	wg            sync.WaitGroup
 }
 
 // New creates a new notifier
@@ -70,72 +86,288 @@ func (n *Notifier) SendDesktop(status analyzer.Status, message string) error {
 
 	logging.Debug("Desktop notification sent via beeep: title=%s", title)
 
-	// Play sound if enabled (platform-specific, as beeep doesn't support custom sounds)
+	// Play sound if enabled (sequential playback handled by speaker mixer)
 	if n.cfg.Notifications.Desktop.Sound && statusInfo.Sound != "" {
-		go n.playSound(statusInfo.Sound)
+		n.wg.Add(1)
+		go func(soundPath string) {
+			defer n.wg.Done()
+			n.playSound(soundPath)
+		}(statusInfo.Sound)
 	}
 
 	return nil
 }
 
-// playSound plays a sound file (platform-specific)
+// initSpeaker initializes the speaker once with sync.Once
+func (n *Notifier) initSpeaker() error {
+	var initErr error
+
+	n.speakerInit.Do(func() {
+		// Initialize speaker with standard sample rate (44100 Hz) and buffer size (4096 samples)
+		// Buffer size of 4096 samples = ~93ms latency at 44100 Hz
+		sampleRate := beep.SampleRate(44100)
+		speaker.Init(sampleRate, sampleRate.N(time.Second/10))
+
+		n.mu.Lock()
+		n.speakerInited = true
+		n.mu.Unlock()
+
+		logging.Debug("Speaker initialized: sampleRate=%d Hz, buffer=4096 samples", sampleRate)
+	})
+
+	return initErr
+}
+
+// decodeAudio decodes an audio file and returns a streamer and format
+// Supports: MP3, WAV, FLAC, AIFF, Vorbis (OGG)
+func (n *Notifier) decodeAudio(soundPath string) (beep.StreamSeekCloser, beep.Format, error) {
+	f, err := os.Open(soundPath)
+	if err != nil {
+		return nil, beep.Format{}, fmt.Errorf("failed to open audio file: %w", err)
+	}
+
+	ext := strings.ToLower(filepath.Ext(soundPath))
+
+	switch ext {
+	case ".mp3":
+		streamer, format, err := mp3.Decode(f)
+		if err != nil {
+			f.Close()
+			return nil, beep.Format{}, fmt.Errorf("failed to decode MP3: %w", err)
+		}
+		return streamer, format, nil
+
+	case ".wav":
+		streamer, format, err := wav.Decode(f)
+		if err != nil {
+			f.Close()
+			return nil, beep.Format{}, fmt.Errorf("failed to decode WAV: %w", err)
+		}
+		return streamer, format, nil
+
+	case ".flac":
+		streamer, format, err := flac.Decode(f)
+		if err != nil {
+			f.Close()
+			return nil, beep.Format{}, fmt.Errorf("failed to decode FLAC: %w", err)
+		}
+		return streamer, format, nil
+
+	case ".ogg":
+		streamer, format, err := vorbis.Decode(f)
+		if err != nil {
+			f.Close()
+			return nil, beep.Format{}, fmt.Errorf("failed to decode Vorbis: %w", err)
+		}
+		return streamer, format, nil
+
+	case ".aiff", ".aif":
+		// AIFF requires special handling - decode to PCM then convert to beep streamer
+		decoder := aiff.NewDecoder(f)
+		if !decoder.IsValidFile() {
+			f.Close()
+			return nil, beep.Format{}, fmt.Errorf("invalid AIFF file")
+		}
+
+		// Read AIFF format info
+		decoder.ReadInfo()
+
+		// Create custom streamer for AIFF
+		format := beep.Format{
+			SampleRate:  beep.SampleRate(decoder.SampleRate),
+			NumChannels: int(decoder.NumChans),
+			Precision:   2, // 16-bit
+		}
+
+		// Read all PCM data
+		buf, err := decoder.FullPCMBuffer()
+		if err != nil {
+			f.Close()
+			return nil, beep.Format{}, fmt.Errorf("failed to read AIFF data: %w", err)
+		}
+
+		// Convert PCM buffer to beep.StreamSeekCloser
+		streamer := &aiffStreamer{
+			buffer: buf,
+			pos:    0,
+			file:   f,
+		}
+
+		return streamer, format, nil
+
+	default:
+		f.Close()
+		return nil, beep.Format{}, fmt.Errorf("unsupported audio format: %s", ext)
+	}
+}
+
+// aiffStreamer implements beep.StreamSeekCloser for AIFF files
+type aiffStreamer struct {
+	buffer *audio.IntBuffer
+	pos    int
+	file   *os.File
+}
+
+func (s *aiffStreamer) Stream(samples [][2]float64) (n int, ok bool) {
+	if s.buffer == nil || len(s.buffer.Data) == 0 {
+		return 0, false
+	}
+
+	numChannels := s.buffer.Format.NumChannels
+	intData := s.buffer.Data
+
+	for i := range samples {
+		if s.pos >= len(intData) {
+			return i, i > 0
+		}
+
+		// Convert int samples to float64 in range [-1, 1]
+		// Mono or multi-channel handling
+		samples[i][0] = float64(intData[s.pos]) / 32768.0
+		s.pos++
+
+		if numChannels == 1 {
+			// Mono: duplicate to both channels
+			samples[i][1] = samples[i][0]
+		} else {
+			// Stereo or multi-channel: read second channel
+			if s.pos >= len(intData) {
+				return i + 1, i >= 0
+			}
+			samples[i][1] = float64(intData[s.pos]) / 32768.0
+			s.pos++
+		}
+
+		// Skip additional channels if more than 2
+		for c := 2; c < numChannels && s.pos < len(intData); c++ {
+			s.pos++
+		}
+	}
+
+	return len(samples), true
+}
+
+func (s *aiffStreamer) Err() error {
+	return nil
+}
+
+func (s *aiffStreamer) Len() int {
+	if s.buffer == nil || len(s.buffer.Data) == 0 {
+		return 0
+	}
+	numChannels := s.buffer.Format.NumChannels
+	if numChannels == 0 {
+		numChannels = 1
+	}
+	return len(s.buffer.Data) / numChannels
+}
+
+func (s *aiffStreamer) Position() int {
+	numChannels := s.buffer.Format.NumChannels
+	if numChannels == 0 {
+		numChannels = 1
+	}
+	return s.pos / numChannels
+}
+
+func (s *aiffStreamer) Seek(p int) error {
+	numChannels := s.buffer.Format.NumChannels
+	if numChannels == 0 {
+		numChannels = 1
+	}
+	s.pos = p * numChannels
+	return nil
+}
+
+func (s *aiffStreamer) Close() error {
+	if s.file != nil {
+		return s.file.Close()
+	}
+	return nil
+}
+
+// playSound plays a sound file using gopxl/beep (cross-platform) with volume control
 func (n *Notifier) playSound(soundPath string) {
 	if !platform.FileExists(soundPath) {
 		logging.Warn("Sound file not found: %s", soundPath)
 		return
 	}
 
-	var cmd *exec.Cmd
+	// Initialize speaker once
+	if err := n.initSpeaker(); err != nil {
+		logging.Error("Failed to initialize speaker: %v", err)
+		return
+	}
 
-	switch platform.OS() {
-	case "macos":
-		// Use afplay on macOS
-		cmd = exec.Command("afplay", soundPath)
-	case "linux":
-		// Try paplay (PulseAudio) or aplay (ALSA) on Linux
-		if _, err := exec.LookPath("paplay"); err == nil {
-			cmd = exec.Command("paplay", soundPath)
-		} else if _, err := exec.LookPath("aplay"); err == nil {
-			cmd = exec.Command("aplay", soundPath)
-		} else {
-			logging.Warn("No sound player found on Linux (paplay or aplay)")
-			return
+	// Decode audio file
+	streamer, format, err := n.decodeAudio(soundPath)
+	if err != nil {
+		logging.Error("Failed to decode audio %s: %v", soundPath, err)
+		return
+	}
+	defer streamer.Close()
+
+	// Resample if needed (convert to speaker's sample rate: 44100 Hz)
+	resampled := beep.Resample(4, format.SampleRate, beep.SampleRate(44100), streamer)
+
+	// Apply volume control from config
+	volume := n.cfg.Notifications.Desktop.Volume
+	var volumeStreamer beep.Streamer = resampled
+	if volume < 1.0 {
+		volumeStreamer = &effects.Volume{
+			Streamer: resampled,
+			Base:     2,
+			Volume:   volumeToBase(volume),
+			Silent:   false,
 		}
-	case "windows":
-		// Use PowerShell to play sound on Windows
-		// Escape quotes in path to prevent command injection
-		escapedPath := strings.ReplaceAll(soundPath, `"`, `\"`)
-		cmd = exec.Command("powershell", "-NoProfile", "-Command",
-			fmt.Sprintf(`(New-Object Media.SoundPlayer "%s").PlaySync()`, escapedPath))
-	default:
-		logging.Warn("Sound playback not supported on this platform")
-		return
+		logging.Debug("Applying volume control: %.0f%%", volume*100)
 	}
 
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	// Create done channel to wait for playback completion
+	done := make(chan bool)
 
-	if err := cmd.Start(); err != nil {
-		logging.Error("Failed to play sound: %v", err)
-		return
-	}
+	// Play sound with callback when finished
+	speaker.Play(beep.Seq(volumeStreamer, beep.Callback(func() {
+		done <- true
+	})))
 
-	// Set timeout for sound playback
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Wait()
-	}()
-
+	// Wait for playback to complete with timeout
 	select {
 	case <-done:
-		logging.Debug("Sound played: %s", soundPath)
-	case <-time.After(5 * time.Second):
-		// Timeout
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-			logging.Warn("Sound playback timed out")
-		}
+		logging.Debug("Sound played successfully: %s (volume: %.0f%%)", soundPath, volume*100)
+	case <-time.After(30 * time.Second):
+		logging.Warn("Sound playback timed out: %s", soundPath)
 	}
+}
+
+// volumeToBase converts linear volume (0.0-1.0) to logarithmic scale for effects.Volume
+// Uses same algorithm as sound-preview utility
+func volumeToBase(volume float64) float64 {
+	if volume <= 0 {
+		return -10 // Very quiet (almost silent)
+	}
+	if volume >= 1.0 {
+		return 0 // Full volume
+	}
+	// log2(volume) gives natural-sounding volume scaling
+	// Examples: 0.5 → -1.0, 0.3 → -1.7, 0.1 → -3.3
+	return math.Log(volume) / math.Log(2)
+}
+
+// Close waits for all sounds to finish playing and cleans up resources
+func (n *Notifier) Close() error {
+	// Wait for all sounds to finish
+	n.wg.Wait()
+
+	// Close speaker if it was initialized
+	n.mu.Lock()
+	if n.speakerInited {
+		speaker.Close()
+		logging.Debug("Speaker closed")
+	}
+	n.mu.Unlock()
+
+	return nil
 }
 
 // extractSessionName extracts session name from message with format "[session-name] message"

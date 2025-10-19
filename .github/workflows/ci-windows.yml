@@ -1,0 +1,61 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    name: Test on Windows
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.21', '1.22']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Display Go version
+        run: go version
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run go fmt check
+        run: |
+          $fmt_output = go fmt ./...
+          if ($fmt_output) {
+            Write-Host "The following files need formatting:"
+            Write-Host $fmt_output
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Build binary
+        run: go build -o bin/claude-notifications.exe ./cmd/claude-notifications
+
+      - name: Test binary execution (help)
+        run: ./bin/claude-notifications.exe help
+        shell: bash
+
+      - name: Test sound preview binary
+        run: go build -o bin/sound-preview.exe ./cmd/sound-preview

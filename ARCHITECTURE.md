@@ -104,6 +104,7 @@ type Config struct {
 **Purpose**: Determine task status using state machine logic.
 
 **State Machine**:
+0. Text contains "Session limit reached" → `session_limit_reached` (priority check)
 1. Last tool = `ExitPlanMode` → `plan_ready`
 2. Last tool = `AskUserQuestion` → `question`
 3. `ExitPlanMode` exists + tools after → `task_complete`

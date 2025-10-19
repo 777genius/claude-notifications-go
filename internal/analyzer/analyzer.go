@@ -1,27 +1,41 @@
 package analyzer
 
 import (
+	"strings"
+
 	"github.com/belief/claude-notifications/internal/config"
 	"github.com/belief/claude-notifications/pkg/jsonl"
 )
 
 // Tool categories for state machine classification
+//
+// TODO: Future improvement - detect passive Bash commands
+// Currently all Bash commands are treated as "active" (code-changing).
+// Could be improved by parsing command strings to differentiate:
+//   - Passive: ls, cd, pwd, git status, git log, git diff, find, grep
+//   - Active: mkdir, rm, mv, cp, git commit, npm install, etc.
+// This requires:
+//   1. Storing tool Input in ToolUse struct (pkg/jsonl)
+//   2. Parsing command string from Input["command"]
+//   3. Handling complex cases: pipes (|), redirects (>), chains (&&)
+// Complexity: Medium-High. Edge cases are tricky (e.g. "cat file > output").
 var (
 	ActiveTools   = []string{"Write", "Edit", "Bash", "NotebookEdit", "SlashCommand", "KillShell"}
 	QuestionTools = []string{"AskUserQuestion"}
 	PlanningTools = []string{"ExitPlanMode", "TodoWrite"}
-	PassiveTools  = []string{"Read", "Grep", "Glob", "WebFetch", "WebSearch", "Task"}
+	PassiveTools  = []string{"Read", "Grep", "Glob", "WebFetch", "WebSearch", "Search", "Fetch", "Task"}
 )
 
 // Status represents the current task status
 type Status string
 
 const (
-	StatusTaskComplete   Status = "task_complete"
-	StatusReviewComplete Status = "review_complete"
-	StatusQuestion       Status = "question"
-	StatusPlanReady      Status = "plan_ready"
-	StatusUnknown        Status = "unknown"
+	StatusTaskComplete        Status = "task_complete"
+	StatusReviewComplete      Status = "review_complete"
+	StatusQuestion            Status = "question"
+	StatusPlanReady           Status = "plan_ready"
+	StatusSessionLimitReached Status = "session_limit_reached"
+	StatusUnknown             Status = "unknown"
 )
 
 // AnalyzeTranscript analyzes a transcript file and determines the current status
@@ -30,6 +44,12 @@ func AnalyzeTranscript(transcriptPath string, cfg *config.Config) (Status, error
 	messages, err := jsonl.ParseFile(transcriptPath)
 	if err != nil {
 		return StatusUnknown, err
+	}
+
+	// PRIORITY CHECK: Session limit reached
+	// This takes precedence over all other status detection
+	if detectSessionLimitReached(messages) {
+		return StatusSessionLimitReached, nil
 	}
 
 	// Find last user message timestamp
@@ -78,12 +98,29 @@ func AnalyzeTranscript(transcriptPath string, cfg *config.Config) (Status, error
 			}
 		}
 
-		// 1d. Last tool is active (Write/Edit/Bash) → work completed
+		// 1d. Review detection: only read-like tools + long text response
+		// Read-like tools: Read, Grep, Glob (searching/analyzing code)
+		// No active tools: no Write, Edit, Bash, etc.
+		// Long text: >200 chars (indicates substantial analysis/review)
+		readLikeTools := []string{"Read", "Grep", "Glob"}
+		readLikeCount := jsonl.CountToolsByNames(tools, readLikeTools)
+		hasActiveTools := jsonl.HasAnyActiveTool(tools, ActiveTools)
+
+		if readLikeCount >= 1 && !hasActiveTools {
+			// Extract recent text to check length
+			recentText := jsonl.ExtractRecentText(recentMessages, 5)
+
+			if len(recentText) > 200 {
+				return StatusReviewComplete, nil
+			}
+		}
+
+		// 1e. Last tool is active (Write/Edit/Bash) → work completed
 		if contains(ActiveTools, lastTool) {
 			return StatusTaskComplete, nil
 		}
 
-		// 1e. Any tool usage at all → likely task completed
+		// 1f. Any tool usage at all → likely task completed
 		// (matches bash version: toolCount >= 1 → task_complete)
 		return StatusTaskComplete, nil
 	}
@@ -112,4 +149,31 @@ func GetStatusForPreToolUse(toolName string) Status {
 		return StatusQuestion
 	}
 	return StatusUnknown
+}
+
+// detectSessionLimitReached checks if the last assistant messages contain "Session limit reached"
+func detectSessionLimitReached(messages []jsonl.Message) bool {
+	// Check last 3 assistant messages for the session limit text
+	recentMessages := jsonl.GetLastAssistantMessages(messages, 3)
+	if len(recentMessages) == 0 {
+		return false
+	}
+
+	// Extract text from recent messages
+	texts := jsonl.ExtractTextFromMessages(recentMessages)
+
+	// Check each text for the session limit phrase
+	for _, text := range texts {
+		if containsIgnoreCase(text, "Session limit reached") ||
+			containsIgnoreCase(text, "session limit has been reached") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// containsIgnoreCase checks if string contains substring (case insensitive)
+func containsIgnoreCase(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }

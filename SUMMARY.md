@@ -202,7 +202,7 @@ GOOS=windows GOARCH=amd64 go build -o bin/claude-notifications.exe ./cmd/claude-
 
 2. **Добавить marketplace**:
 ```bash
-/plugin marketplace add /Users/belief/dev/projects/claude/notification_plugin_go
+/plugin marketplace add /Users/777genius/dev/projects/claude/notification_plugin_go
 ```
 
 3. **Установить плагин**:

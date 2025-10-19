@@ -15,22 +15,25 @@ func TestCheckEarlyDuplicate(t *testing.T) {
 	mgr := NewManager()
 
 	// First check should be false (no lock exists)
-	isDup := mgr.CheckEarlyDuplicate("Stop", "test-session")
+	isDup := mgr.CheckEarlyDuplicate("test-session")
 	assert.False(t, isDup)
 
 	// Create a fresh lock
-	lockPath := mgr.getLockPath("Stop", "test-session")
+	lockPath := mgr.getLockPath("test-session")
 	err := os.WriteFile(lockPath, []byte(""), 0644)
 	require.NoError(t, err)
 	defer os.Remove(lockPath)
 
+	// Add small delay to ensure file system flush (important for race detector)
+	time.Sleep(10 * time.Millisecond)
+
 	// Immediately check again - should be duplicate
-	isDup = mgr.CheckEarlyDuplicate("Stop", "test-session")
+	isDup = mgr.CheckEarlyDuplicate("test-session")
 	assert.True(t, isDup)
 
 	// Wait 3 seconds and check again - should not be duplicate (stale)
 	time.Sleep(3 * time.Second)
-	isDup = mgr.CheckEarlyDuplicate("Stop", "test-session")
+	isDup = mgr.CheckEarlyDuplicate("test-session")
 	assert.False(t, isDup)
 }
 
@@ -38,16 +41,16 @@ func TestAcquireLock(t *testing.T) {
 	mgr := NewManager()
 
 	// First acquisition should succeed
-	acquired, err := mgr.AcquireLock("Stop", "test-session")
+	acquired, err := mgr.AcquireLock("test-session")
 	require.NoError(t, err)
 	assert.True(t, acquired)
 
 	// Cleanup
-	lockPath := mgr.getLockPath("Stop", "test-session")
+	lockPath := mgr.getLockPath("test-session")
 	defer os.Remove(lockPath)
 
 	// Second acquisition immediately should fail (fresh lock)
-	acquired, err = mgr.AcquireLock("Stop", "test-session")
+	acquired, err = mgr.AcquireLock("test-session")
 	require.NoError(t, err)
 	assert.False(t, acquired)
 
@@ -57,7 +60,7 @@ func TestAcquireLock(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should succeed now (stale lock replaced)
-	acquired, err = mgr.AcquireLock("Stop", "test-session")
+	acquired, err = mgr.AcquireLock("test-session")
 	require.NoError(t, err)
 	assert.True(t, acquired)
 }
@@ -65,10 +68,9 @@ func TestAcquireLock(t *testing.T) {
 func TestAcquireLockConcurrent(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "concurrent-test"
-	hookEvent := "Stop"
 
 	// Cleanup
-	lockPath := mgr.getLockPath(hookEvent, sessionID)
+	lockPath := mgr.getLockPath(sessionID)
 	defer os.Remove(lockPath)
 
 	// Run 10 goroutines trying to acquire lock
@@ -80,7 +82,7 @@ func TestAcquireLockConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			acquired, err := mgr.AcquireLock(hookEvent, sessionID)
+			acquired, err := mgr.AcquireLock(sessionID)
 			require.NoError(t, err)
 			if acquired {
 				mu.Lock()
@@ -100,15 +102,15 @@ func TestReleaseLock(t *testing.T) {
 	mgr := NewManager()
 
 	// Acquire lock
-	acquired, err := mgr.AcquireLock("Stop", "test-session")
+	acquired, err := mgr.AcquireLock("test-session")
 	require.NoError(t, err)
 	assert.True(t, acquired)
 
-	lockPath := mgr.getLockPath("Stop", "test-session")
+	lockPath := mgr.getLockPath("test-session")
 	assert.FileExists(t, lockPath)
 
 	// Release lock
-	err = mgr.ReleaseLock("Stop", "test-session")
+	err = mgr.ReleaseLock("test-session")
 	require.NoError(t, err)
 
 	// Lock file should be gone
@@ -116,7 +118,7 @@ func TestReleaseLock(t *testing.T) {
 	assert.True(t, os.IsNotExist(err))
 
 	// Releasing non-existent lock should not error
-	err = mgr.ReleaseLock("Stop", "test-session")
+	err = mgr.ReleaseLock("test-session")
 	require.NoError(t, err)
 }
 
@@ -157,32 +159,30 @@ func TestCleanupForSession(t *testing.T) {
 
 	sessionID := "test-session-123"
 
-	// Create locks for this session
-	_, err := mgr.AcquireLock("Stop", sessionID)
-	require.NoError(t, err)
-
-	_, err = mgr.AcquireLock("PreToolUse", sessionID)
+	// Create lock for this session
+	_, err := mgr.AcquireLock(sessionID)
 	require.NoError(t, err)
 
 	// Create lock for different session
-	_, err = mgr.AcquireLock("Stop", "other-session")
+	_, err = mgr.AcquireLock("other-session")
 	require.NoError(t, err)
-	defer mgr.ReleaseLock("Stop", "other-session")
+	defer mgr.ReleaseLock("other-session")
+
+	// Verify both locks exist
+	testLock := mgr.getLockPath(sessionID)
+	otherLock := mgr.getLockPath("other-session")
+	assert.FileExists(t, testLock)
+	assert.FileExists(t, otherLock)
 
 	// Cleanup for specific session
 	err = mgr.CleanupForSession(sessionID)
 	require.NoError(t, err)
 
-	// Locks for test-session-123 should be gone
-	stopLock := mgr.getLockPath("Stop", sessionID)
-	preToolLock := mgr.getLockPath("PreToolUse", sessionID)
-	_, err1 := os.Stat(stopLock)
-	_, err2 := os.Stat(preToolLock)
-	assert.True(t, os.IsNotExist(err1))
-	assert.True(t, os.IsNotExist(err2))
+	// Lock for test-session-123 should be gone
+	_, err = os.Stat(testLock)
+	assert.True(t, os.IsNotExist(err))
 
 	// Other session lock should remain
-	otherLock := mgr.getLockPath("Stop", "other-session")
 	_, err = os.Stat(otherLock)
 	assert.NoError(t, err)
 }

@@ -6,16 +6,16 @@ import (
 	"io"
 	"os"
 
-	"github.com/belief/claude-notifications/internal/analyzer"
-	"github.com/belief/claude-notifications/internal/config"
-	"github.com/belief/claude-notifications/internal/dedup"
-	"github.com/belief/claude-notifications/internal/logging"
-	"github.com/belief/claude-notifications/internal/notifier"
-	"github.com/belief/claude-notifications/internal/platform"
-	"github.com/belief/claude-notifications/internal/sessionname"
-	"github.com/belief/claude-notifications/internal/state"
-	"github.com/belief/claude-notifications/internal/summary"
-	"github.com/belief/claude-notifications/internal/webhook"
+	"github.com/777genius/claude-notifications/internal/analyzer"
+	"github.com/777genius/claude-notifications/internal/config"
+	"github.com/777genius/claude-notifications/internal/dedup"
+	"github.com/777genius/claude-notifications/internal/logging"
+	"github.com/777genius/claude-notifications/internal/notifier"
+	"github.com/777genius/claude-notifications/internal/platform"
+	"github.com/777genius/claude-notifications/internal/sessionname"
+	"github.com/777genius/claude-notifications/internal/state"
+	"github.com/777genius/claude-notifications/internal/summary"
+	"github.com/777genius/claude-notifications/internal/webhook"
 )
 
 // HookData represents the data received from Claude Code hooks
@@ -27,14 +27,25 @@ type HookData struct {
 	HookEventName  string `json:"hook_event_name,omitempty"`
 }
 
+// notifierInterface defines the interface for sending desktop notifications
+type notifierInterface interface {
+	SendDesktop(status analyzer.Status, message string) error
+	Close() error
+}
+
+// webhookInterface defines the interface for sending webhook notifications
+type webhookInterface interface {
+	SendAsync(status analyzer.Status, message, sessionID string)
+}
+
 // Handler handles hook events
 type Handler struct {
-	cfg          *config.Config
-	dedupMgr     *dedup.Manager
-	stateMgr     *state.Manager
-	notifierSvc  *notifier.Notifier
-	webhookSvc   *webhook.Sender
-	pluginRoot   string
+	cfg         *config.Config
+	dedupMgr    *dedup.Manager
+	stateMgr    *state.Manager
+	notifierSvc notifierInterface
+	webhookSvc  webhookInterface
+	pluginRoot  string
 }
 
 // NewHandler creates a new hook handler
@@ -62,6 +73,13 @@ func NewHandler(pluginRoot string) (*Handler, error) {
 
 // HandleHook handles a hook event
 func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
+	// Ensure notifier resources are cleaned up when function exits
+	defer func() {
+		if err := h.notifierSvc.Close(); err != nil {
+			logging.Warn("Failed to close notifier: %v", err)
+		}
+	}()
+
 	logging.SetPrefix(fmt.Sprintf("PID:%d", os.Getpid()))
 	logging.Debug("=== Hook triggered: %s ===", hookEvent)
 
@@ -80,8 +98,8 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 		logging.Warn("Session ID is empty, using 'unknown'")
 	}
 
-	// Phase 1: Early duplicate check
-	if h.dedupMgr.CheckEarlyDuplicate(hookEvent, hookData.SessionID) {
+	// Phase 1: Early duplicate check (per hook event type)
+	if h.dedupMgr.CheckEarlyDuplicate(hookData.SessionID, hookEvent) {
 		logging.Debug("Early duplicate detected, skipping")
 		return nil
 	}
@@ -111,8 +129,9 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 		if err != nil {
 			return err
 		}
-		// Cleanup session state only for Stop/SubagentStop
-		defer h.cleanupSession(hookData.SessionID)
+		// Note: We don't delete session state here to preserve cooldown info
+		// State files have TTL and will be cleaned up automatically
+		defer h.cleanupOldLocks()
 	default:
 		return fmt.Errorf("unknown hook event: %s", hookEvent)
 	}
@@ -123,22 +142,8 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 		return nil
 	}
 
-	// Check cooldown for question status
-	if status == analyzer.StatusQuestion {
-		suppress, err := h.stateMgr.ShouldSuppressQuestion(
-			hookData.SessionID,
-			h.cfg.Notifications.SuppressQuestionAfterTaskCompleteSeconds,
-		)
-		if err != nil {
-			logging.Warn("Failed to check cooldown: %v", err)
-		} else if suppress {
-			logging.Debug("Question suppressed due to cooldown")
-			return nil
-		}
-	}
-
-	// Phase 2: Acquire lock before sending
-	acquired, err := h.dedupMgr.AcquireLock(hookEvent, hookData.SessionID)
+	// Phase 2: Acquire lock before sending (per hook event type)
+	acquired, err := h.dedupMgr.AcquireLock(hookData.SessionID, hookEvent)
 	if err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
@@ -148,12 +153,47 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	}
 
 	logging.Debug("Lock acquired, proceeding with notification")
+	// Note: Lock is NOT released - it ages out naturally after 2s to prevent rapid duplicates
+
+	// Check cooldown for question status BEFORE updating notification time
+	if status == analyzer.StatusQuestion {
+		// First, check if we should suppress question after ANY notification (not just task_complete)
+		suppressAfterAny, err := h.stateMgr.ShouldSuppressQuestionAfterAnyNotification(
+			hookData.SessionID,
+			h.cfg.Notifications.SuppressQuestionAfterAnyNotificationSeconds,
+		)
+		if err != nil {
+			logging.Warn("Failed to check cooldown after any notification: %v", err)
+		} else if suppressAfterAny {
+			logging.Debug("Question suppressed due to recent notification from this session")
+			// Lock will be released by defer
+			return nil
+		}
+
+		// Also check legacy cooldown after task_complete
+		suppress, err := h.stateMgr.ShouldSuppressQuestion(
+			hookData.SessionID,
+			h.cfg.Notifications.SuppressQuestionAfterTaskCompleteSeconds,
+		)
+		if err != nil {
+			logging.Warn("Failed to check cooldown: %v", err)
+		} else if suppress {
+			logging.Debug("Question suppressed due to cooldown after task complete")
+			// Lock will be released by defer
+			return nil
+		}
+	}
 
 	// Update state (only for task_complete, PreToolUse already updated state)
 	if status == analyzer.StatusTaskComplete {
 		if err := h.stateMgr.UpdateTaskComplete(hookData.SessionID); err != nil {
 			logging.Warn("Failed to update task complete state: %v", err)
 		}
+	}
+
+	// Update last notification time AFTER cooldown checks (inside lock region)
+	if err := h.stateMgr.UpdateLastNotification(hookData.SessionID, status); err != nil {
+		logging.Warn("Failed to update last notification time: %v", err)
 	}
 
 	// Generate message
@@ -185,74 +225,30 @@ func (h *Handler) handlePreToolUse(hookData *HookData) analyzer.Status {
 	return status
 }
 
-// handleNotificationEvent handles Notification hook with duplicate protection
+// handleNotificationEvent handles Notification hook
+// Always returns StatusQuestion as per design: Notification hook is triggered
+// when Claude needs user input (e.g., permission dialogs, questions)
 func (h *Handler) handleNotificationEvent(hookData *HookData) (analyzer.Status, error) {
-	logging.Debug("Notification event received; duplicate protection with session state + transcript")
-
-	// 1) Try session state first (written by PreToolUse). TTL = 60 seconds.
-	state, err := h.stateMgr.Load(hookData.SessionID)
-	if err != nil {
-		logging.Warn("Failed to load session state: %v", err)
-	}
-
-	if state != nil {
-		age := platform.CurrentTimestamp() - state.LastTimestamp
-		logging.Debug("Notification: session state found (tool=%s, age=%ds)", state.LastInteractiveTool, age)
-
-		if age < 60 {
-			if state.LastInteractiveTool == "ExitPlanMode" {
-				logging.Debug("Notification suppressed by session state: recent ExitPlanMode (<60s)")
-				return analyzer.StatusUnknown, nil
-			}
-			if state.LastInteractiveTool == "AskUserQuestion" {
-				// PreToolUse already sent a 'question' notification; suppress Notification duplicate
-				logging.Debug("Notification suppressed by session state: recent AskUserQuestion (<60s)")
-				return analyzer.StatusUnknown, nil
-			}
-		}
-	}
-
-	// 2) Fallback: analyze transcript (temporal window) to infer state
-	if hookData.TranscriptPath != "" && platform.FileExists(hookData.TranscriptPath) {
-		status, err := analyzer.AnalyzeTranscript(hookData.TranscriptPath, h.cfg)
-		if err != nil {
-			logging.Error("Failed to analyze transcript: %v", err)
-			return analyzer.StatusQuestion, nil
-		}
-		logging.Debug("Notification: status by transcript = %s", status)
-
-		if status == analyzer.StatusPlanReady {
-			logging.Debug("Notification suppressed: ExitPlanMode is last tool (plan already notified)")
-			return analyzer.StatusUnknown, nil
-		}
-		if status == analyzer.StatusQuestion {
-			return analyzer.StatusQuestion, nil
-		}
-		// Return other statuses as-is
-		return status, nil
-	}
-
-	// 3) Final fallback: treat as generic question
-	logging.Debug("Notification fallback → question status")
+	logging.Debug("Notification event received → question status")
 	return analyzer.StatusQuestion, nil
 }
 
 // handleStopEvent handles Stop/SubagentStop hooks
 func (h *Handler) handleStopEvent(hookData *HookData) (analyzer.Status, error) {
 	if hookData.TranscriptPath == "" {
-		logging.Warn("Transcript path is empty, using default status")
-		return analyzer.StatusTaskComplete, nil
+		logging.Warn("Transcript path is empty, skipping notification")
+		return analyzer.StatusUnknown, nil
 	}
 
 	if !platform.FileExists(hookData.TranscriptPath) {
 		logging.Warn("Transcript file not found: %s", hookData.TranscriptPath)
-		return analyzer.StatusTaskComplete, nil
+		return analyzer.StatusUnknown, nil
 	}
 
 	status, err := analyzer.AnalyzeTranscript(hookData.TranscriptPath, h.cfg)
 	if err != nil {
 		logging.Error("Failed to analyze transcript: %v", err)
-		return analyzer.StatusTaskComplete, nil
+		return analyzer.StatusUnknown, nil
 	}
 
 	logging.Debug("Analyzed status: %s", status)
@@ -293,12 +289,26 @@ func (h *Handler) sendNotifications(status analyzer.Status, message, sessionID s
 }
 
 // cleanupSession cleans up session-related files
+// Deprecated: Use cleanupOldLocks instead to preserve cooldown state
 func (h *Handler) cleanupSession(sessionID string) {
 	// Delete session state
 	if err := h.stateMgr.Delete(sessionID); err != nil {
 		logging.Warn("Failed to delete session state: %v", err)
 	}
 
+	// Cleanup old locks (older than 60 seconds)
+	if err := h.dedupMgr.Cleanup(60); err != nil {
+		logging.Warn("Failed to cleanup old locks: %v", err)
+	}
+
+	// Cleanup old state files (older than 60 seconds)
+	if err := h.stateMgr.Cleanup(60); err != nil {
+		logging.Warn("Failed to cleanup old state files: %v", err)
+	}
+}
+
+// cleanupOldLocks cleans up old lock and state files but preserves session state for cooldown
+func (h *Handler) cleanupOldLocks() {
 	// Cleanup old locks (older than 60 seconds)
 	if err := h.dedupMgr.Cleanup(60); err != nil {
 		logging.Warn("Failed to cleanup old locks: %v", err)

@@ -264,3 +264,45 @@ func filterAssistantMessages(messages []Message) []Message {
 	}
 	return filtered
 }
+
+// CountToolsByNames counts tools matching any of the given names
+func CountToolsByNames(tools []ToolUse, names []string) int {
+	count := 0
+	for _, tool := range tools {
+		for _, name := range names {
+			if tool.Name == name {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+// HasAnyActiveTool checks if any active tool was used
+func HasAnyActiveTool(tools []ToolUse, activeTools []string) bool {
+	for _, tool := range tools {
+		for _, active := range activeTools {
+			if tool.Name == active {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ExtractRecentText extracts concatenated text from last N assistant messages
+func ExtractRecentText(messages []Message, count int) string {
+	recentMessages := GetLastAssistantMessages(messages, count)
+	texts := ExtractTextFromMessages(recentMessages)
+
+	// Join all texts with spaces
+	var result string
+	for i, text := range texts {
+		if i > 0 {
+			result += " "
+		}
+		result += text
+	}
+
+	return result
+}
