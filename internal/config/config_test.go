@@ -15,7 +15,7 @@ func TestDefaultConfig(t *testing.T) {
 	assert.True(t, cfg.Notifications.Desktop.Enabled)
 	assert.True(t, cfg.Notifications.Desktop.Sound)
 	assert.False(t, cfg.Notifications.Webhook.Enabled)
-	assert.Equal(t, 7, cfg.Notifications.SuppressQuestionAfterTaskCompleteSeconds)
+	assert.Equal(t, 12, cfg.Notifications.SuppressQuestionAfterTaskCompleteSeconds)
 
 	// Check statuses
 	assert.Contains(t, cfg.Statuses, "task_complete")

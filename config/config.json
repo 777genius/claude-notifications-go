@@ -14,8 +14,8 @@
       "format": "json",
       "headers": {}
     },
-    "suppressQuestionAfterTaskCompleteSeconds": 7,
-    "suppressQuestionAfterAnyNotificationSeconds": 7
+    "suppressQuestionAfterTaskCompleteSeconds": 12,
+    "suppressQuestionAfterAnyNotificationSeconds": 12
   },
   "statuses": {
     "task_complete": {

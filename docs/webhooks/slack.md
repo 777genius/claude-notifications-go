@@ -123,7 +123,7 @@ Messages use Slack's **Attachments API**:
       "preset": "slack",
       "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
     },
-    "suppressQuestionAfterTaskCompleteSeconds": 7
+    "suppressQuestionAfterTaskCompleteSeconds": 12
   }
 }
 ```

@@ -180,7 +180,7 @@ Alternatively, edit `config/config.json` directly:
       "format": "json",
       "headers": {}
     },
-    "suppressQuestionAfterTaskCompleteSeconds": 7
+    "suppressQuestionAfterTaskCompleteSeconds": 12
   },
   "statuses": {
     "task_complete": {

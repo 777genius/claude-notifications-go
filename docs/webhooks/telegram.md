@@ -138,7 +138,7 @@ Messages are sent via `sendMessage` method:
       "url": "https://api.telegram.org/bot123456789:ABCdefGHIjklMNOpqrsTUVwxyz/sendMessage",
       "chat_id": "123456789"
     },
-    "suppressQuestionAfterTaskCompleteSeconds": 7
+    "suppressQuestionAfterTaskCompleteSeconds": 12
   }
 }
 ```

@@ -125,7 +125,7 @@ Messages use Discord's **Embeds API**:
       "preset": "discord",
       "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_TOKEN"
     },
-    "suppressQuestionAfterTaskCompleteSeconds": 7
+    "suppressQuestionAfterTaskCompleteSeconds": 12
   }
 }
 ```

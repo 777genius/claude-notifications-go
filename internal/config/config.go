@@ -112,8 +112,8 @@ func DefaultConfig() *Config {
 					RequestsPerMinute: 10,
 				},
 			},
-			SuppressQuestionAfterTaskCompleteSeconds:    7,
-			SuppressQuestionAfterAnyNotificationSeconds: 7,
+			SuppressQuestionAfterTaskCompleteSeconds:    12,
+			SuppressQuestionAfterAnyNotificationSeconds: 12,
 		},
 		Statuses: map[string]StatusInfo{
 			"task_complete": {
@@ -201,10 +201,10 @@ func (c *Config) ApplyDefaults() {
 
 	// Cooldown defaults
 	if c.Notifications.SuppressQuestionAfterTaskCompleteSeconds == 0 {
-		c.Notifications.SuppressQuestionAfterTaskCompleteSeconds = 7
+		c.Notifications.SuppressQuestionAfterTaskCompleteSeconds = 12
 	}
 	if c.Notifications.SuppressQuestionAfterAnyNotificationSeconds == 0 {
-		c.Notifications.SuppressQuestionAfterAnyNotificationSeconds = 7
+		c.Notifications.SuppressQuestionAfterAnyNotificationSeconds = 12
 	}
 
 	// Status defaults
