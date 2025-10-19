@@ -170,7 +170,7 @@ func TestCircuitBreakerResetOnSuccess(t *testing.T) {
 
 	// Execute 2 more failing calls (would open if count wasn't reset)
 	for i := 0; i < 2; i++ {
-		cb.Execute(context.Background(), func() error {
+		_ = cb.Execute(context.Background(), func() error {
 			return errors.New("service error")
 		})
 	}
@@ -186,7 +186,7 @@ func TestCircuitBreakerGetStats(t *testing.T) {
 
 	// Execute some failures
 	for i := 0; i < 2; i++ {
-		cb.Execute(context.Background(), func() error {
+		_ = cb.Execute(context.Background(), func() error {
 			return errors.New("service error")
 		})
 	}
@@ -231,7 +231,7 @@ func TestCircuitBreakerConcurrency(t *testing.T) {
 	done := make(chan bool, 20)
 	for i := 0; i < 20; i++ {
 		go func(idx int) {
-			cb.Execute(context.Background(), func() error {
+			_ = cb.Execute(context.Background(), func() error {
 				time.Sleep(1 * time.Millisecond)
 				if idx%2 == 0 {
 					return nil

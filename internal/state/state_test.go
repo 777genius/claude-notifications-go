@@ -27,7 +27,7 @@ func TestManager_SaveAndLoad(t *testing.T) {
 	sessionID := "test-session-save-load"
 
 	// Clean up after test
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Create and save state
 	state := &SessionState{
@@ -89,7 +89,7 @@ func TestManager_DeleteNonExistent(t *testing.T) {
 func TestManager_UpdateInteractiveTool_NewState(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-interactive-new"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	err := mgr.UpdateInteractiveTool(sessionID, "ExitPlanMode", "/test/dir")
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestManager_UpdateInteractiveTool_NewState(t *testing.T) {
 func TestManager_UpdateInteractiveTool_ExistingState(t *testing.T) {
 	mgr := NewManager()
 	sessionID := "test-interactive-existing"
-	defer mgr.Delete(sessionID)
+	defer func() { _ = mgr.Delete(sessionID) }()
 
 	// Create initial state
 	initial := &SessionState{

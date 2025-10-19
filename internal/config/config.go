@@ -186,9 +186,7 @@ func (c *Config) ApplyDefaults() {
 	if c.Notifications.Desktop.Volume == 0 {
 		c.Notifications.Desktop.Volume = 1.0 // Default to full volume
 	}
-	if c.Notifications.Desktop.AppIcon == "" {
-		// Keep empty if not set
-	}
+	// AppIcon: Keep empty if not set (no default)
 
 	// Webhook defaults
 	if c.Notifications.Webhook.Preset == "" {

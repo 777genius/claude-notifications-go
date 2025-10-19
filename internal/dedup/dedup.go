@@ -76,9 +76,7 @@ func (m *Manager) AcquireLock(sessionID string, hookEvent ...string) (bool, erro
 	}
 
 	// Lock is stale - try to replace it
-	if err := os.Remove(lockPath); err != nil {
-		// Someone else might have deleted it, try to create anyway
-	}
+	_ = os.Remove(lockPath) // Ignore error - someone else might have deleted it
 
 	// Try again
 	created, err = platform.AtomicCreateFile(lockPath)

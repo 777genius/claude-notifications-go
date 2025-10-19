@@ -303,25 +303,6 @@ func (h *Handler) sendNotifications(status analyzer.Status, message, sessionID s
 	}
 }
 
-// cleanupSession cleans up session-related files
-// Deprecated: Use cleanupOldLocks instead to preserve cooldown state
-func (h *Handler) cleanupSession(sessionID string) {
-	// Delete session state
-	if err := h.stateMgr.Delete(sessionID); err != nil {
-		logging.Warn("Failed to delete session state: %v", err)
-	}
-
-	// Cleanup old locks (older than 60 seconds)
-	if err := h.dedupMgr.Cleanup(60); err != nil {
-		logging.Warn("Failed to cleanup old locks: %v", err)
-	}
-
-	// Cleanup old state files (older than 60 seconds)
-	if err := h.stateMgr.Cleanup(60); err != nil {
-		logging.Warn("Failed to cleanup old state files: %v", err)
-	}
-}
-
 // cleanupOldLocks cleans up old lock and state files but preserves session state for cooldown
 func (h *Handler) cleanupOldLocks() {
 	// Cleanup old locks (older than 60 seconds)
