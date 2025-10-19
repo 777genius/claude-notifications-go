@@ -100,13 +100,26 @@ func (n *Notifier) SendDesktop(status analyzer.Status, message string) error {
 
 // initSpeaker initializes the speaker once with sync.Once
 func (n *Notifier) initSpeaker() error {
+	// Check if already initialized
+	n.mu.Lock()
+	if n.speakerInited {
+		n.mu.Unlock()
+		return nil
+	}
+	n.mu.Unlock()
+
 	var initErr error
 
 	n.speakerInit.Do(func() {
 		// Initialize speaker with standard sample rate (44100 Hz) and buffer size (4096 samples)
 		// Buffer size of 4096 samples = ~93ms latency at 44100 Hz
 		sampleRate := beep.SampleRate(44100)
-		initErr = speaker.Init(sampleRate, sampleRate.N(time.Second/10))
+		err := speaker.Init(sampleRate, sampleRate.N(time.Second/10))
+
+		// Ignore "already initialized" error - can happen in tests
+		if err != nil && err.Error() != "speaker cannot be initialized more than once" {
+			initErr = err
+		}
 
 		n.mu.Lock()
 		n.speakerInited = true
