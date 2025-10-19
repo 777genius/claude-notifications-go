@@ -142,21 +142,24 @@ if [ "$HAS_SYSTEM_SOUNDS" = "true" ]; then
   echo ""
   echo "System sounds detected at: $SYSTEM_SOUNDS_DIR"
 
-  if [ "$OS_TYPE" = "Darwin"* ]; then
-    # macOS system sounds
-    echo "Available macOS system sounds:"
-    ls -1 /System/Library/Sounds/*.aiff 2>/dev/null | while read file; do
-      name=$(basename "$file" .aiff)
-      echo "  • $name"
-    done
-  elif [ "$OS_TYPE" = "Linux"* ]; then
-    # Linux system sounds (varies by distribution)
-    echo "Available Linux system sounds (sample):"
-    find /usr/share/sounds -type f \( -name "*.ogg" -o -name "*.wav" \) 2>/dev/null | head -10 | while read file; do
-      name=$(basename "$file")
-      echo "  • $name"
-    done
-  fi
+  case "$OS_TYPE" in
+    Darwin*)
+      # macOS system sounds
+      echo "Available macOS system sounds:"
+      ls -1 /System/Library/Sounds/*.aiff 2>/dev/null | while read file; do
+        name=$(basename "$file" .aiff)
+        echo "  • $name"
+      done
+      ;;
+    Linux*)
+      # Linux system sounds (varies by distribution)
+      echo "Available Linux system sounds (sample):"
+      find /usr/share/sounds -type f \( -name "*.ogg" -o -name "*.wav" \) 2>/dev/null | head -10 | while read file; do
+        name=$(basename "$file")
+        echo "  • $name"
+      done
+      ;;
+  esac
 else
   echo ""
   echo "⚠️  No system sounds detected on this platform."

@@ -1,4 +1,4 @@
-# Claude Notifications (Go)
+# Claude Notifications (plugin)
 
 [![Ubuntu CI](https://github.com/777genius/claude-notifications-go/workflows/Ubuntu%20CI/badge.svg)](https://github.com/777genius/claude-notifications-go/actions)
 [![macOS CI](https://github.com/777genius/claude-notifications-go/workflows/macOS%20CI/badge.svg)](https://github.com/777genius/claude-notifications-go/actions)
@@ -12,7 +12,7 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 
 ## Table of Contents
 
-- [Claude Notifications (Go)](#claude-notifications-go)
+- [Claude Notifications (plugin)](#claude-notifications-plugin)
   - [Table of Contents](#table-of-contents)
   - [Supported Notification Types](#supported-notification-types)
   - [Installation](#installation)
