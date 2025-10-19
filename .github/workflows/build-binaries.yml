@@ -61,6 +61,10 @@ jobs:
         with:
           go-version: '1.21'
 
+      - name: Install Linux dependencies
+        if: matrix.os == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
