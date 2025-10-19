@@ -11,6 +11,14 @@ import (
 	"github.com/777genius/claude-notifications/pkg/jsonl"
 )
 
+const (
+	// Message window sizes for different notification types
+	// These determine how many recent assistant messages to analyze
+	QuestionMessagesWindow = 8 // Based on bash version, good balance for question detection
+	ReviewMessagesWindow   = 5 // Smaller window for focused review summaries
+	TaskMessagesWindow     = 5 // Smaller window for task completion summaries
+)
+
 var (
 	// Regex patterns for markdown cleanup
 	headerPattern     = regexp.MustCompile(`^#+\s*`)
@@ -28,6 +36,26 @@ var (
 	strikethroughPattern = regexp.MustCompile(`~~(.+?)~~`)               // ~~text~~
 	blockquotePattern    = regexp.MustCompile(`^>\s*`)                   // > quote
 )
+
+// getRecentAssistantMessages safely extracts recent assistant messages from current response
+// Filters by last user timestamp to ensure we only get messages from the CURRENT response,
+// not from previous user requests. Falls back to last N messages if filtering fails.
+func getRecentAssistantMessages(messages []jsonl.Message, limit int) []jsonl.Message {
+	// Filter by user timestamp (current response only)
+	userTS := jsonl.GetLastUserTimestamp(messages)
+	filteredMessages := jsonl.FilterMessagesAfterTimestamp(messages, userTS)
+
+	// If filtered result is not empty, use it (limited to window size)
+	if len(filteredMessages) > 0 {
+		if len(filteredMessages) > limit {
+			return filteredMessages[len(filteredMessages)-limit:]
+		}
+		return filteredMessages
+	}
+
+	// Fallback: last N messages (for backward compatibility and edge cases)
+	return jsonl.GetLastAssistantMessages(messages, limit)
+}
 
 // GenerateFromTranscript generates a status-specific summary from transcript
 func GenerateFromTranscript(transcriptPath string, status analyzer.Status, cfg *config.Config) string {
@@ -67,24 +95,8 @@ func generateQuestionSummary(messages []jsonl.Message, cfg *config.Config) strin
 		return truncateText(cleaned, 150)
 	}
 
-	// 2) Filter to get only assistant messages AFTER last user message
-	// This ensures we only look at the CURRENT response, not previous ones
-	userTS := jsonl.GetLastUserTimestamp(messages)
-	filteredMessages := jsonl.FilterMessagesAfterTimestamp(messages, userTS)
-
-	// If no messages after user timestamp, fall back to last 8 assistant messages
-	var recentMessages []jsonl.Message
-	if len(filteredMessages) > 0 {
-		// Use filtered messages (only from current response)
-		recentMessages = filteredMessages
-		if len(filteredMessages) > 8 {
-			recentMessages = filteredMessages[len(filteredMessages)-8:]
-		}
-	} else {
-		// Fallback to last 8 assistant messages if filtering fails
-		recentMessages = jsonl.GetLastAssistantMessages(messages, 8)
-	}
-
+	// 2) Get recent messages from current response using helper
+	recentMessages := getRecentAssistantMessages(messages, QuestionMessagesWindow)
 	texts := jsonl.ExtractTextFromMessages(recentMessages)
 
 	// Strategy A: Find texts with "?" and prioritize short ones
@@ -151,8 +163,13 @@ func generatePlanSummary(messages []jsonl.Message, cfg *config.Config) string {
 // generateReviewSummary generates summary for review_complete status
 // Matches bash: lib/summarizer.sh lines 494-521
 func generateReviewSummary(messages []jsonl.Message, cfg *config.Config) string {
+	// TODO: Consider using getRecentAssistantMessages() for consistency
+	// Currently uses direct GetLastAssistantMessages which works for Stop/SubagentStop hooks
+	// but may pick up old messages in edge cases. Low priority since Stop hook always
+	// contains current response. See generateQuestionSummary for reference implementation.
+
 	// Look for review-related messages
-	recentMessages := jsonl.GetLastAssistantMessages(messages, 5)
+	recentMessages := jsonl.GetLastAssistantMessages(messages, ReviewMessagesWindow)
 	texts := jsonl.ExtractTextFromMessages(recentMessages)
 	combined := strings.Join(texts, " ")
 
@@ -193,8 +210,13 @@ func generateReviewSummary(messages []jsonl.Message, cfg *config.Config) string 
 // generateTaskSummary generates summary for task_complete status
 // Matches bash: lib/summarizer.sh lines 523-653
 func generateTaskSummary(messages []jsonl.Message, cfg *config.Config) string {
+	// TODO: Consider using getRecentAssistantMessages() for consistency
+	// Currently uses direct GetLastAssistantMessages which works for Stop/SubagentStop hooks
+	// but may pick up old messages in edge cases. Low priority since Stop hook always
+	// contains current response. See generateQuestionSummary for reference implementation.
+
 	// Get recent assistant messages
-	recentMessages := jsonl.GetLastAssistantMessages(messages, 5)
+	recentMessages := jsonl.GetLastAssistantMessages(messages, TaskMessagesWindow)
 	if len(recentMessages) == 0 {
 		return GetDefaultMessage(analyzer.StatusTaskComplete, cfg)
 	}
