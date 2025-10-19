@@ -201,9 +201,12 @@ func (c *Config) ApplyDefaults() {
 		c.Notifications.Webhook.Headers = make(map[string]string)
 	}
 
-	// Cooldown default
+	// Cooldown defaults
 	if c.Notifications.SuppressQuestionAfterTaskCompleteSeconds == 0 {
 		c.Notifications.SuppressQuestionAfterTaskCompleteSeconds = 7
+	}
+	if c.Notifications.SuppressQuestionAfterAnyNotificationSeconds == 0 {
+		c.Notifications.SuppressQuestionAfterAnyNotificationSeconds = 7
 	}
 
 	// Status defaults
