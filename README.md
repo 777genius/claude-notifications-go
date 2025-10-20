@@ -93,6 +93,7 @@ The binary is downloaded once and cached locally. You can re-run `/claude-notifi
 - Pre-built binaries included - no compilation needed
 
 ### 🧠 Smart Detection
+- **Operations count** File edits, file creates, ran commans + total time
 - **State machine analysis** with temporal locality for accurate status detection
 - **5 notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit
 - **PreToolUse integration** for instant alerts when Claude asks questions or creates plans
