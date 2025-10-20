@@ -32,11 +32,15 @@ jobs:
             arch: amd64
             binary: claude-notifications-linux-amd64
 
-          # Windows build
+          # Windows builds
           - os: windows-latest
             platform: windows
             arch: amd64
             binary: claude-notifications-windows-amd64.exe
+          - os: windows-latest
+            platform: windows
+            arch: arm64
+            binary: claude-notifications-windows-arm64.exe
 
     steps:
       - name: Checkout code

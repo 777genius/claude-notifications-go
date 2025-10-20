@@ -6,8 +6,11 @@ bin/*.dll
 bin/*.so
 bin/*.dylib
 
+# Windows wrapper (created dynamically by install.sh)
+bin/claude-notifications.bat
+
 # Keep these scripts in git:
-# - bin/claude-notifications (wrapper script)
+# - bin/claude-notifications (wrapper script for Unix)
 # - bin/install.sh (installer script)
 
 # Temporary build files

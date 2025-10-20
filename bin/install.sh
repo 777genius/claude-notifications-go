@@ -264,6 +264,34 @@ make_executable() {
 
 # Create symlink for hooks
 create_symlink() {
+    # On Windows, create a .bat wrapper instead of symlink
+    if [ "$PLATFORM" = "windows" ]; then
+        local bat_path="${SCRIPT_DIR}/claude-notifications.bat"
+
+        # Remove old .bat file if exists
+        rm -f "$bat_path" 2>/dev/null || true
+
+        # Create .bat wrapper that calls the platform-specific binary
+        cat > "$bat_path" << EOF
+@echo off
+REM claude-notifications Windows wrapper
+REM Automatically runs the platform-specific binary
+
+setlocal
+set SCRIPT_DIR=%~dp0
+"%SCRIPT_DIR%${BINARY_NAME}" %*
+EOF
+
+        if [ -f "$bat_path" ]; then
+            echo -e "${GREEN}✓ Created wrapper${NC} claude-notifications.bat → ${BINARY_NAME}"
+            return 0
+        else
+            echo -e "${YELLOW}⚠ Could not create .bat wrapper (hooks may not work)${NC}"
+            return 1
+        fi
+    fi
+
+    # Unix: create symlink or copy
     local symlink_path="${SCRIPT_DIR}/claude-notifications"
 
     # Remove old symlink if exists
