@@ -33,7 +33,7 @@ echo ""
 
 # Run the installer to download the binary for your platform
 echo "Downloading notification binary from GitHub Releases..."
-if ! "${PLUGIN_ROOT}/bin/install.sh"; then
+if ! bash "${PLUGIN_ROOT}/bin/install.sh"; then
   echo ""
   echo "❌ Error: Failed to install notification binary"
   echo ""

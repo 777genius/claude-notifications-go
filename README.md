@@ -57,22 +57,21 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 
 - Claude Code (tested on v2.0.15)
 - **Internet connection** (for first-time binary download)
-- **No additional software required** - binaries download automatically
+- **Windows users:** Git Bash (included with [Git for Windows](https://git-scm.com/download/win)) or WSL
+- **macOS/Linux users:** No additional software required - binaries download automatically
 
 ### Install from GitHub
 
 ```bash
-# Add marketplace
+# 1) Add marketplace
 /plugin marketplace add 777genius/claude-notifications-go
-
-# Install plugin
+# 2) Install plugin
 /plugin install claude-notifications-go@claude-notifications-go
-
-# Restart Claude Code
-
-# Download the binary for your platform
+# 3) Restart Claude Code
+# 4) Download the binary for your platform
 /claude-notifications-go:notifications-init
 
+# Optional
 # Configure sounds and settings
 /claude-notifications-go:notifications-settings
 ```
