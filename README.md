@@ -8,13 +8,13 @@
 
 <img width="250" height="350" alt="image" src="https://github.com/user-attachments/assets/e7aa6d8e-5d28-48f7-bafe-ad696857b938" />
 <img width="350" height="239" alt="image" src="https://github.com/user-attachments/assets/42b7a306-f56f-4499-94cf-f3d573416b6d" />
+<img width="220" alt="image" src="https://github.com/user-attachments/assets/4b5929d8-1a51-4a15-a3d5-dda5482554cc" />
+
 
 Smart notifications for Claude Code task statuses with cross-platform support, webhook integrations.
 
 ## Table of Contents
 
-- [Claude Notifications (plugin)](#claude-notifications-plugin)
-  - [Table of Contents](#table-of-contents)
   - [Supported Notification Types](#supported-notification-types)
   - [Installation](#installation)
     - [Prerequisites](#prerequisites)
@@ -57,9 +57,8 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 ### Prerequisites
 
 - Claude Code (tested on v2.0.15)
-- **Internet connection** (for first-time binary download)
 - **Windows users:** Git Bash (included with [Git for Windows](https://git-scm.com/download/win)) or WSL
-- **macOS/Linux users:** No additional software required - binaries download automatically
+- **macOS/Linux users:** No additional software required
 
 ### Install from GitHub
 
@@ -69,7 +68,7 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 # 2) Install plugin
 /plugin install claude-notifications-go@claude-notifications-go
 # 3) Restart Claude Code
-# 4) Download the binary for your platform
+# 4) Init
 /claude-notifications-go:notifications-init
 
 # Optional
@@ -79,7 +78,7 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 
 **That's it!**
 
-1. `/claude-notifications-go:notifications-init` downloads the correct binary for your platform (macOS/Linux/Windows) from GitHub Releases with a progress bar
+1. `/claude-notifications-go:notifications-init` downloads the correct binary for your platform (macOS/Linux/Windows) from GitHub Releases
 2. `/claude-notifications-go:notifications-settings` guides you through sound configuration with an interactive wizard
 
 The binary is downloaded once and cached locally. You can re-run `/claude-notifications-go:notifications-settings` anytime to reconfigure.
