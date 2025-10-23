@@ -228,23 +228,23 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("desktop volume must be between 0.0 and 1.0 (got %.2f)", c.Notifications.Desktop.Volume)
 	}
 
-	// Validate webhook preset
+	// Validate webhook preset (only if webhooks are enabled)
 	validPresets := map[string]bool{
 		"slack":    true,
 		"discord":  true,
 		"telegram": true,
 		"custom":   true,
 	}
-	if !validPresets[c.Notifications.Webhook.Preset] {
+	if c.Notifications.Webhook.Enabled && !validPresets[c.Notifications.Webhook.Preset] {
 		return fmt.Errorf("invalid webhook preset: %s (must be one of: slack, discord, telegram, custom)", c.Notifications.Webhook.Preset)
 	}
 
-	// Validate webhook format
+	// Validate webhook format (only if webhooks are enabled)
 	validFormats := map[string]bool{
 		"json": true,
 		"text": true,
 	}
-	if !validFormats[c.Notifications.Webhook.Format] {
+	if c.Notifications.Webhook.Enabled && !validFormats[c.Notifications.Webhook.Format] {
 		return fmt.Errorf("invalid webhook format: %s (must be one of: json, text)", c.Notifications.Webhook.Format)
 	}
 
