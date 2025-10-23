@@ -1,6 +1,7 @@
 package jsonl
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -657,6 +658,95 @@ func TestGetLastUserTimestamp_OnlyToolResults(t *testing.T) {
 
 	timestamp := GetLastUserTimestamp(messages)
 	assert.Equal(t, "", timestamp)
+}
+
+func TestGetLastUserTimestamp_StringContent(t *testing.T) {
+	// Test that string content (normal user text messages) is properly detected
+	messages := []Message{
+		{Type: "user", Timestamp: "2025-01-01T10:00:00Z", Message: MessageContent{
+			ContentString: "First message",
+		}},
+		{Type: "assistant", Timestamp: "2025-01-01T10:00:01Z"},
+		{Type: "user", Timestamp: "2025-01-01T10:00:05Z", Message: MessageContent{
+			ContentString: "Second message",
+		}},
+	}
+
+	timestamp := GetLastUserTimestamp(messages)
+	assert.Equal(t, "2025-01-01T10:00:05Z", timestamp)
+}
+
+func TestMessageContent_UnmarshalJSON_StringContent(t *testing.T) {
+	// Test parsing of user message with string content (normal text)
+	jsonStr := `{
+		"type": "user",
+		"message": {
+			"role": "user",
+			"content": "Hello, this is a test message"
+		},
+		"timestamp": "2025-01-01T10:00:00Z"
+	}`
+
+	var msg Message
+	err := json.Unmarshal([]byte(jsonStr), &msg)
+	assert.NoError(t, err)
+	assert.Equal(t, "user", msg.Type)
+	assert.Equal(t, "user", msg.Message.Role)
+	assert.Equal(t, "Hello, this is a test message", msg.Message.ContentString)
+	assert.Equal(t, 0, len(msg.Message.Content))
+}
+
+func TestMessageContent_UnmarshalJSON_ArrayContent(t *testing.T) {
+	// Test parsing of user message with array content (tool_result)
+	jsonStr := `{
+		"type": "user",
+		"message": {
+			"role": "user",
+			"content": [
+				{
+					"type": "tool_result",
+					"tool_use_id": "toolu_123",
+					"content": "No files found"
+				}
+			]
+		},
+		"timestamp": "2025-01-01T10:00:00Z"
+	}`
+
+	var msg Message
+	err := json.Unmarshal([]byte(jsonStr), &msg)
+	assert.NoError(t, err)
+	assert.Equal(t, "user", msg.Type)
+	assert.Equal(t, "user", msg.Message.Role)
+	assert.Equal(t, "", msg.Message.ContentString)
+	assert.Equal(t, 1, len(msg.Message.Content))
+	assert.Equal(t, "tool_result", msg.Message.Content[0].Type)
+}
+
+func TestMessageContent_UnmarshalJSON_ArrayTextContent(t *testing.T) {
+	// Test parsing of user message with array content type="text" (interrupted tool use)
+	jsonStr := `{
+		"type": "user",
+		"message": {
+			"role": "user",
+			"content": [
+				{
+					"type": "text",
+					"text": "[Request interrupted by user for tool use]"
+				}
+			]
+		},
+		"timestamp": "2025-01-01T10:00:00Z"
+	}`
+
+	var msg Message
+	err := json.Unmarshal([]byte(jsonStr), &msg)
+	assert.NoError(t, err)
+	assert.Equal(t, "user", msg.Type)
+	assert.Equal(t, "", msg.Message.ContentString)
+	assert.Equal(t, 1, len(msg.Message.Content))
+	assert.Equal(t, "text", msg.Message.Content[0].Type)
+	assert.Equal(t, "[Request interrupted by user for tool use]", msg.Message.Content[0].Text)
 }
 
 // === Tests for GetLastAssistantTimestamp ===

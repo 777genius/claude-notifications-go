@@ -17,9 +17,11 @@ type Message struct {
 }
 
 // MessageContent represents the content of a message
+// Content can be either a string (user text messages) or an array (tool results, assistant messages)
 type MessageContent struct {
-	Role    string    `json:"role"`
-	Content []Content `json:"content"`
+	Role          string    `json:"role"`
+	Content       []Content `json:"-"` // Array content (tool_result, assistant messages)
+	ContentString string    `json:"-"` // String content (user text messages)
 }
 
 // Content represents a content block in a message
@@ -28,6 +30,62 @@ type Content struct {
 	Name  string                 `json:"name,omitempty"`
 	Text  string                 `json:"text,omitempty"`
 	Input map[string]interface{} `json:"input,omitempty"`
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for MessageContent
+// Handles both string content (user text messages) and array content (tool results, assistant messages)
+func (m *MessageContent) UnmarshalJSON(data []byte) error {
+	// Create an alias to avoid recursion
+	type Alias MessageContent
+	aux := &struct {
+		Content json.RawMessage `json:"content"`
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+
+	// Unmarshal everything except content
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Try to unmarshal content as a string (user text messages)
+	var str string
+	if err := json.Unmarshal(aux.Content, &str); err == nil {
+		m.ContentString = str
+		return nil
+	}
+
+	// Try to unmarshal content as an array (tool results, assistant messages)
+	var arr []Content
+	if err := json.Unmarshal(aux.Content, &arr); err == nil {
+		m.Content = arr
+		return nil
+	}
+
+	// Content is neither string nor array (or is null/empty), that's okay
+	return nil
+}
+
+// MarshalJSON implements custom JSON marshaling for MessageContent
+// Outputs content as string if ContentString is set, otherwise as array
+func (m MessageContent) MarshalJSON() ([]byte, error) {
+	// Create auxiliary struct with content as interface{}
+	aux := &struct {
+		Role    string      `json:"role"`
+		Content interface{} `json:"content,omitempty"`
+	}{
+		Role: m.Role,
+	}
+
+	// Choose content format based on which field is set
+	if m.ContentString != "" {
+		aux.Content = m.ContentString
+	} else if len(m.Content) > 0 {
+		aux.Content = m.Content
+	}
+
+	return json.Marshal(aux)
 }
 
 // ParseFile parses a JSONL file and returns all messages
@@ -187,15 +245,18 @@ func ExtractToolInput(messages []Message, toolName string) map[string]interface{
 	return tool.Input
 }
 
-// GetLastUserTimestamp returns the timestamp of the last user message with string content
-// Excludes tool_result messages (which have array content)
+// GetLastUserTimestamp returns the timestamp of the last user message with text content
+// Includes both string content (normal user messages) and array content with type="text" (interrupted tool use)
+// Excludes tool_result messages
 func GetLastUserTimestamp(messages []Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 		if msg.Type == "user" {
-			// Check if content is string-like (typed message, not tool_result)
-			// In JSONL, user typed messages have string content in message.content
-			// We can detect this by checking if Content array is empty or has text type
+			// Check for string content (normal user text messages)
+			if msg.Message.ContentString != "" {
+				return msg.Timestamp
+			}
+			// Check for array content with type="text" (interrupted tool use: "[Request interrupted by user for tool use]")
 			if len(msg.Message.Content) > 0 && msg.Message.Content[0].Type == "text" {
 				return msg.Timestamp
 			}

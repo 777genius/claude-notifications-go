@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2025-10-24
+
+### Fixed
+- Critical bug in duration calculation ("Took" time in notifications)
+  - User text messages were not being detected in transcript parsing
+  - `GetLastUserTimestamp` now correctly parses string content format
+  - Duration now shows accurate time (e.g., "Took 5m" instead of "Took 2h 30m")
+  - Tool counting now accurate (prevents showing inflated counts like "Edited 32 files")
+- Added custom JSON marshaling/unmarshaling for `MessageContent` to handle both string and array content formats
+
+### Technical Details
+- Fixed `pkg/jsonl/jsonl.go`: Added `ContentString` field and custom `UnmarshalJSON`/`MarshalJSON` methods
+- User messages with `"content": "text"` format now properly parsed (previously only array format worked)
+- All existing tests pass + added new tests for string content parsing
+
 ## [1.0.2] - 2025-10-23
 
 ### Added
