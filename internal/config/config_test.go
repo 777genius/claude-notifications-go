@@ -124,6 +124,24 @@ func TestValidateConfig(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "webhook disabled with invalid preset (should pass)",
+			cfg: &Config{
+				Notifications: NotificationsConfig{
+					Desktop: DesktopConfig{
+						Enabled: true,
+						Sound:   true,
+						Volume:  1.0,
+					},
+					Webhook: WebhookConfig{
+						Enabled: false,
+						Preset:  "none", // Invalid preset, but webhooks are disabled
+						URL:     "",
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {

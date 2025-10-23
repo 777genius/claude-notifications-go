@@ -541,6 +541,13 @@ PLAN_READY_PATH=$(get_sound_path "$user_answer_4")
 
 **Configuration Template:**
 
+**IMPORTANT - Webhook Configuration Rules:**
+- If user selected "No webhooks": Set `"enabled": false` and `"preset": "custom"` (DO NOT use "none")
+- If user selected "Slack": Set `"enabled": true` and `"preset": "slack"`
+- If user selected "Discord": Set `"enabled": true` and `"preset": "discord"`
+- If user selected "Telegram": Set `"enabled": true` and `"preset": "telegram"`
+- If user selected "Custom": Set `"enabled": true` and `"preset": "custom"`
+
 ```json
 {
   "notifications": {
@@ -551,8 +558,8 @@ PLAN_READY_PATH=$(get_sound_path "$user_answer_4")
       "appIcon": "${CLAUDE_PLUGIN_ROOT}/claude_icon.png"
     },
     "webhook": {
-      "enabled": <true if webhook selected>,
-      "preset": "<slack|discord|telegram|custom>",
+      "enabled": <true if webhook selected, false for "No webhooks">,
+      "preset": "<slack|discord|telegram|custom - NEVER use 'none', use 'custom' if No webhooks>",
       "url": "<placeholder - user must edit>",
       "chat_id": "<for telegram only>",
       "format": "json",
