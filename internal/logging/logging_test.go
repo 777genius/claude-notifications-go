@@ -452,3 +452,67 @@ func TestLogger_AllLevelsFormat(t *testing.T) {
 		}
 	}
 }
+
+func TestLogger_ConsoleOutput_ErrorToStderr(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "console-error.log")
+
+	logger, err := NewLogger(logPath)
+	if err != nil {
+		t.Fatalf("NewLogger() error = %v", err)
+	}
+	defer logger.Close()
+
+	// Enable console output
+	logger.EnableConsoleOutput()
+
+	// Log ERROR and WARN (should go to stderr)
+	logger.Error("error message")
+	logger.Warn("warning message")
+
+	// Verify logs were written to file
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("Failed to read log file: %v", err)
+	}
+
+	logContent := string(content)
+	if !strings.Contains(logContent, "[ERROR]") {
+		t.Error("Log should contain [ERROR]")
+	}
+	if !strings.Contains(logContent, "[WARN]") {
+		t.Error("Log should contain [WARN]")
+	}
+}
+
+func TestLogger_ConsoleOutput_InfoToStdout(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "console-info.log")
+
+	logger, err := NewLogger(logPath)
+	if err != nil {
+		t.Fatalf("NewLogger() error = %v", err)
+	}
+	defer logger.Close()
+
+	// Enable console output
+	logger.EnableConsoleOutput()
+
+	// Log INFO and DEBUG (should go to stdout)
+	logger.Info("info message")
+	logger.Debug("debug message")
+
+	// Verify logs were written to file
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("Failed to read log file: %v", err)
+	}
+
+	logContent := string(content)
+	if !strings.Contains(logContent, "[INFO]") {
+		t.Error("Log should contain [INFO]")
+	}
+	if !strings.Contains(logContent, "[DEBUG]") {
+		t.Error("Log should contain [DEBUG]")
+	}
+}

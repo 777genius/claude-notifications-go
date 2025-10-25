@@ -200,3 +200,25 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+// TestVolumeToGain tests the volume to gain conversion
+func TestVolumeToGain(t *testing.T) {
+	tests := []struct {
+		volume   float64
+		expected float64
+	}{
+		{0.0, -1.0},
+		{0.3, -0.7},
+		{0.5, -0.5},
+		{1.0, 0.0},
+	}
+
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			result := volumeToGain(tt.volume)
+			if result != tt.expected {
+				t.Errorf("volumeToGain(%v) = %v, want %v", tt.volume, result, tt.expected)
+			}
+		})
+	}
+}

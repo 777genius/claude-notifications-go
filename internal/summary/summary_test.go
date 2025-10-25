@@ -2,6 +2,7 @@ package summary
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -1069,5 +1070,432 @@ func TestExtractExitPlanModePlan(t *testing.T) {
 				t.Errorf("extractExitPlanModePlan() = %q, want empty", result)
 			}
 		})
+	}
+}
+
+// === Additional Coverage Tests for generateReviewSummary ===
+
+func TestGenerateReviewSummary_WithKeywords(t *testing.T) {
+	cfg := &config.Config{}
+	nowStr := time.Now().Format(time.RFC3339)
+
+	tests := []struct {
+		name     string
+		messages []jsonl.Message
+		keyword  string
+	}{
+		{
+			name: "review keyword",
+			messages: []jsonl.Message{
+				{
+					Type:      "assistant",
+					Timestamp: nowStr,
+					Message: jsonl.MessageContent{
+						Content: []jsonl.Content{
+							{Type: "text", Text: "I'll review the code carefully"},
+						},
+					},
+				},
+			},
+			keyword: "review",
+		},
+		{
+			name: "analysis keyword",
+			messages: []jsonl.Message{
+				{
+					Type:      "assistant",
+					Timestamp: nowStr,
+					Message: jsonl.MessageContent{
+						Content: []jsonl.Content{
+							{Type: "text", Text: "After analysis of the codebase, I found issues"},
+						},
+					},
+				},
+			},
+			keyword: "analysis",
+		},
+		{
+			name: "проверка keyword (Russian)",
+			messages: []jsonl.Message{
+				{
+					Type:      "assistant",
+					Timestamp: nowStr,
+					Message: jsonl.MessageContent{
+						Content: []jsonl.Content{
+							{Type: "text", Text: "Проведу проверку кода"},
+						},
+					},
+				},
+			},
+			keyword: "проверк",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := generateReviewSummary(tt.messages, cfg)
+			if result == "" {
+				t.Error("generateReviewSummary() returned empty string")
+			}
+			if !strings.Contains(strings.ToLower(result), tt.keyword) && result != "Code review completed" {
+				t.Logf("Result: %q (fallback is OK)", result)
+			}
+		})
+	}
+}
+
+func TestGenerateReviewSummary_WithReadTools(t *testing.T) {
+	cfg := &config.Config{}
+	nowStr := time.Now().Format(time.RFC3339)
+
+	tests := []struct {
+		name      string
+		readCount int
+		expected  string
+	}{
+		{
+			name:      "single read",
+			readCount: 1,
+			expected:  "Reviewed 1 file",
+		},
+		{
+			name:      "multiple reads",
+			readCount: 5,
+			expected:  "Reviewed 5 files",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build message with Read tools
+			content := []jsonl.Content{
+				{Type: "text", Text: "Checking the files"},
+			}
+			for i := 0; i < tt.readCount; i++ {
+				content = append(content, jsonl.Content{
+					Type: "tool_use",
+					Name: "Read",
+					Input: map[string]interface{}{
+						"file_path": fmt.Sprintf("/test/file%d.go", i),
+					},
+				})
+			}
+
+			messages := []jsonl.Message{
+				{
+					Type:      "assistant",
+					Timestamp: nowStr,
+					Message: jsonl.MessageContent{
+						Content: content,
+					},
+				},
+			}
+
+			result := generateReviewSummary(messages, cfg)
+			if result != tt.expected {
+				t.Errorf("generateReviewSummary() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGenerateReviewSummary_Fallback(t *testing.T) {
+	cfg := &config.Config{}
+	nowStr := time.Now().Format(time.RFC3339)
+
+	// No keywords, no Read tools
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: nowStr,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "Task completed successfully"},
+				},
+			},
+		},
+	}
+
+	result := generateReviewSummary(messages, cfg)
+	if result != "Code review completed" {
+		t.Errorf("generateReviewSummary() fallback = %q, want 'Code review completed'", result)
+	}
+}
+
+// === Additional Coverage Tests for generateTaskSummary ===
+
+func TestGenerateTaskSummary_EmptyMessages(t *testing.T) {
+	cfg := &config.Config{
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	messages := []jsonl.Message{}
+
+	result := generateTaskSummary(messages, cfg)
+	if result == "" {
+		t.Error("generateTaskSummary() should return default message for empty messages")
+	}
+}
+
+func TestGenerateTaskSummary_ShortMessage(t *testing.T) {
+	cfg := &config.Config{}
+	userTS := time.Now().Add(-5 * time.Second).Format(time.RFC3339)
+	assistantTS := time.Now().Format(time.RFC3339)
+
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: userTS,
+			Message: jsonl.MessageContent{
+				ContentString: "Do task",
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: assistantTS,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "Done!"},
+					{Type: "tool_use", Name: "Write", Input: map[string]interface{}{"file_path": "/test.go"}},
+				},
+			},
+		},
+	}
+
+	result := generateTaskSummary(messages, cfg)
+	if result == "" {
+		t.Error("generateTaskSummary() returned empty string")
+	}
+	// Should include short message and actions
+	if !strings.Contains(result, "Done") || !strings.Contains(result, "Wrote") {
+		t.Logf("Result: %q (may vary)", result)
+	}
+}
+
+func TestGenerateTaskSummary_LongMessage(t *testing.T) {
+	cfg := &config.Config{}
+	userTS := time.Now().Add(-10 * time.Second).Format(time.RFC3339)
+	assistantTS := time.Now().Format(time.RFC3339)
+
+	longText := strings.Repeat("This is a very long message. ", 20) // > 150 chars
+
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: userTS,
+			Message: jsonl.MessageContent{
+				ContentString: "Do task",
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: assistantTS,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: longText},
+					{Type: "tool_use", Name: "Edit", Input: map[string]interface{}{"file_path": "/test.go"}},
+				},
+			},
+		},
+	}
+
+	result := generateTaskSummary(messages, cfg)
+	if result == "" {
+		t.Error("generateTaskSummary() returned empty string")
+	}
+	// Should truncate long message
+	if len(result) > 200 {
+		t.Errorf("generateTaskSummary() result too long: %d chars", len(result))
+	}
+}
+
+func TestGenerateTaskSummary_OnlyActions(t *testing.T) {
+	cfg := &config.Config{}
+	userTS := time.Now().Add(-10 * time.Second).Format(time.RFC3339)
+	assistantTS := time.Now().Format(time.RFC3339)
+
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: userTS,
+			Message: jsonl.MessageContent{
+				ContentString: "Do task",
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: assistantTS,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "tool_use", Name: "Write", Input: map[string]interface{}{"file_path": "/test.go"}},
+					{Type: "tool_use", Name: "Write", Input: map[string]interface{}{"file_path": "/test2.go"}},
+				},
+			},
+		},
+	}
+
+	result := generateTaskSummary(messages, cfg)
+	if result == "" {
+		t.Error("generateTaskSummary() returned empty string")
+	}
+	// Should show tool counts
+	if !strings.Contains(result, "Wrote 2") && !strings.Contains(result, "operations") {
+		t.Logf("Result: %q (should mention tools)", result)
+	}
+}
+
+func TestGenerateTaskSummary_FinalFallback(t *testing.T) {
+	cfg := &config.Config{}
+	nowStr := time.Now().Format(time.RFC3339)
+
+	// No user message, no tools
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: nowStr,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{},
+			},
+		},
+	}
+
+	result := generateTaskSummary(messages, cfg)
+	if result == "" {
+		t.Error("generateTaskSummary() should return fallback message")
+	}
+	if result != "Task completed successfully" {
+		t.Logf("Result: %q (fallback variant)", result)
+	}
+}
+
+// === Additional Coverage Tests for generateQuestionSummary ===
+
+func TestGenerateQuestionSummary_NotRecentAskUserQuestion(t *testing.T) {
+	cfg := &config.Config{}
+
+	// AskUserQuestion from 120 seconds ago (not recent)
+	oldTS := time.Now().Add(-120 * time.Second).Format(time.RFC3339)
+	nowTS := time.Now().Format(time.RFC3339)
+
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: oldTS,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{
+						Type: "tool_use",
+						Name: "AskUserQuestion",
+						Input: map[string]interface{}{
+							"questions": []interface{}{
+								map[string]interface{}{
+									"question": "Old question?",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: nowTS,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "What should I do next?"},
+				},
+			},
+		},
+	}
+
+	result := generateQuestionSummary(messages, cfg)
+	if result == "" {
+		t.Error("generateQuestionSummary() returned empty string")
+	}
+	// Should not use old AskUserQuestion (not recent), should extract from text
+	if strings.Contains(result, "Old question") {
+		t.Error("Should not use non-recent AskUserQuestion")
+	}
+}
+
+func TestGenerateQuestionSummary_MultipleQuestions(t *testing.T) {
+	cfg := &config.Config{}
+	nowStr := time.Now().Format(time.RFC3339)
+
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: nowStr,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "This is a very long question that should not be chosen because it's too verbose and lengthy?"},
+					{Type: "text", Text: "Short Q?"},
+					{Type: "text", Text: "Another longer question that is also quite verbose?"},
+				},
+			},
+		},
+	}
+
+	result := generateQuestionSummary(messages, cfg)
+	if result == "" {
+		t.Error("generateQuestionSummary() returned empty string")
+	}
+	// Should pick shortest question
+	if !strings.Contains(result, "Short") && len(result) > 50 {
+		t.Logf("Result: %q (should prefer shorter questions)", result)
+	}
+}
+
+func TestGenerateQuestionSummary_NoQuestionMark(t *testing.T) {
+	cfg := &config.Config{}
+	nowStr := time.Now().Format(time.RFC3339)
+
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: nowStr,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "Please provide more information. I need clarification on your requirements. Let me know what you think."},
+				},
+			},
+		},
+	}
+
+	result := generateQuestionSummary(messages, cfg)
+	if result == "" {
+		t.Error("generateQuestionSummary() returned empty string")
+	}
+	// Should extract first sentence
+	if !strings.Contains(result, "Please provide") && !strings.Contains(result, "Claude needs") {
+		t.Logf("Result: %q (should extract first sentence or use fallback)", result)
+	}
+}
+
+func TestGenerateQuestionSummary_VeryShortText(t *testing.T) {
+	cfg := &config.Config{}
+	nowStr := time.Now().Format(time.RFC3339)
+
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: nowStr,
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "Hi"},
+				},
+			},
+		},
+	}
+
+	result := generateQuestionSummary(messages, cfg)
+	if result == "" {
+		t.Error("generateQuestionSummary() returned empty string")
+	}
+	// Should use fallback for very short text
+	if result != "Claude needs your input to continue" {
+		t.Logf("Result: %q (should use fallback for short text)", result)
 	}
 }

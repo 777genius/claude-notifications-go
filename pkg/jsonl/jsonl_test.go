@@ -778,3 +778,40 @@ func TestGetLastAssistantTimestamp_EmptyMessages(t *testing.T) {
 	timestamp := GetLastAssistantTimestamp(messages)
 	assert.Equal(t, "", timestamp)
 }
+
+// === Tests for MarshalJSON ===
+
+func TestMessageContent_MarshalJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  MessageContent
+		expected string
+	}{
+		{
+			name: "with Content array",
+			content: MessageContent{
+				Role: "assistant",
+				Content: []Content{
+					{Type: "text", Text: "Hello"},
+				},
+			},
+			expected: `{"role":"assistant","content":[{"type":"text","text":"Hello"}]}`,
+		},
+		{
+			name: "with ContentString",
+			content: MessageContent{
+				Role:          "user",
+				ContentString: "Hello world",
+			},
+			expected: `{"role":"user","content":"Hello world"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := tt.content.MarshalJSON()
+			assert.NoError(t, err)
+			assert.JSONEq(t, tt.expected, string(data))
+		})
+	}
+}

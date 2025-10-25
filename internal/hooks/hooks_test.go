@@ -925,3 +925,93 @@ func TestNewHandler_EmptyPluginRoot(t *testing.T) {
 		t.Error("expected desktop notifications enabled by default")
 	}
 }
+
+// === Cleanup Tests ===
+
+func TestCleanupOldLocks_Success(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, _, _ := newTestHandler(t, cfg)
+
+	// Call cleanupOldLocks - should not panic
+	handler.cleanupOldLocks()
+
+	// Verify handler is still functional after cleanup
+	transcriptPath := createTempTranscript(t,
+		buildTranscriptWithTools([]string{"Write"}, 300))
+
+	hookData := buildHookDataJSON(HookData{
+		SessionID:      "test-after-cleanup",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	})
+
+	err := handler.HandleHook("Stop", hookData)
+	if err != nil {
+		t.Fatalf("Handler should work after cleanup: %v", err)
+	}
+}
+
+func TestHandleStopEvent_EmptyTranscriptPath(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, _, _ := newTestHandler(t, cfg)
+
+	// Send Stop hook with empty TranscriptPath
+	hookData := buildHookDataJSON(HookData{
+		SessionID:      "test-empty-transcript",
+		TranscriptPath: "", // Empty
+		CWD:            "/test",
+	})
+
+	err := handler.HandleHook("Stop", hookData)
+
+	// Should handle gracefully (no error)
+	if err != nil {
+		t.Errorf("should handle empty transcript gracefully, got error: %v", err)
+	}
+
+	// May or may not send notification (depends on fallback behavior)
+	// But should not crash
+}
+
+func TestHandleStopEvent_NonexistentTranscriptFile(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, _, _ := newTestHandler(t, cfg)
+
+	// Send Stop hook with nonexistent transcript file
+	hookData := buildHookDataJSON(HookData{
+		SessionID:      "test-nonexistent-transcript",
+		TranscriptPath: "/nonexistent/path/transcript.jsonl",
+		CWD:            "/test",
+	})
+
+	err := handler.HandleHook("Stop", hookData)
+
+	// Should handle gracefully (no error, graceful degradation)
+	if err != nil {
+		t.Errorf("should handle nonexistent transcript gracefully, got error: %v", err)
+	}
+}
