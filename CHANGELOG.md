@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Simplified volume conversion logic (linear instead of logarithmic)
   - Affects both notification sounds and `sound-preview` utility
   - All tests passing with new implementation
+- **GitHub Actions build step** - Windows builds now work correctly
+  - Added `shell: bash` to build step for all platforms
+  - Resolved PowerShell syntax error preventing Windows builds from completing
 
 ### Changed
 - Simplified `volumeToGain()` function - removed complex logarithmic calculations
