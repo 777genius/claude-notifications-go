@@ -204,3 +204,30 @@ func TestGetLockPath_WithHookEvent(t *testing.T) {
 	// Verify paths are different
 	assert.NotEqual(t, pathWithout, pathWith)
 }
+
+func TestCleanupForSession_RemoveError(t *testing.T) {
+	// Create a custom temp directory that we can control permissions on
+	testTempDir := filepath.Join(t.TempDir(), "locks")
+	err := os.MkdirAll(testTempDir, 0755)
+	require.NoError(t, err)
+
+	// Create manager with custom temp dir
+	mgr := &Manager{tempDir: testTempDir}
+	sessionID := "test-protected"
+
+	// Create a lock file
+	lockPath := mgr.getLockPath(sessionID)
+	err = os.WriteFile(lockPath, []byte(""), 0644)
+	require.NoError(t, err)
+
+	// Make the directory read-only to prevent deletion
+	err = os.Chmod(testTempDir, 0555) // Read + execute only
+	require.NoError(t, err)
+
+	// Cleanup should fail due to permissions
+	err = mgr.CleanupForSession(sessionID)
+	assert.Error(t, err, "CleanupForSession should fail on permission denied")
+
+	// Restore permissions for cleanup
+	os.Chmod(testTempDir, 0755)
+}

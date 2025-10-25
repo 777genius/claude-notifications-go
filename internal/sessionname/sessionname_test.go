@@ -87,3 +87,35 @@ func TestHexToInt(t *testing.T) {
 		})
 	}
 }
+
+func TestHexToInt_LongHex(t *testing.T) {
+	// Test that hex strings longer than 6 chars are truncated
+	result := hexToInt("1234567890")
+	expected := hexToInt("123456") // Should be truncated to first 6 chars
+	assert.Equal(t, expected, result)
+	assert.Equal(t, 0x123456, result)
+}
+
+func TestHexToInt_InvalidHex(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"invalid chars", "zzz"},
+		{"empty string", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hexToInt(tt.input)
+			assert.Equal(t, 0, result, "Invalid hex should return 0")
+		})
+	}
+}
+
+func TestHexToInt_PartiallyValid(t *testing.T) {
+	// fmt.Sscanf with %x parses valid hex prefix and stops at first invalid char
+	result := hexToInt("12z45")
+	assert.Equal(t, 0x12, result, "Should parse valid hex prefix '12'")
+	assert.Equal(t, 18, result)
+}

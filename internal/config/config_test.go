@@ -475,3 +475,34 @@ func TestValidateConfig_MoreCases(t *testing.T) {
 		})
 	}
 }
+
+func TestValidate_InvalidVolume(t *testing.T) {
+	tests := []struct {
+		name   string
+		volume float64
+	}{
+		{"volume too low", -0.1},
+		{"volume too high", 1.1},
+		{"volume way too high", 2.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.Notifications.Desktop.Volume = tt.volume
+
+			err := cfg.Validate()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "volume must be between 0.0 and 1.0")
+		})
+	}
+}
+
+func TestValidate_NegativeCooldown(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Notifications.SuppressQuestionAfterTaskCompleteSeconds = -1
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "suppressQuestionAfterTaskCompleteSeconds must be >= 0")
+}

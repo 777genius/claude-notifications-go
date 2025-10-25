@@ -568,3 +568,30 @@ func TestLoad_InvalidJSON(t *testing.T) {
 	assert.Nil(t, state)
 	assert.Contains(t, err.Error(), "failed to parse state file")
 }
+
+func TestDelete_PermissionDenied(t *testing.T) {
+	// Create a custom temp directory that we can control permissions on
+	testTempDir := filepath.Join(t.TempDir(), "states")
+	err := os.MkdirAll(testTempDir, 0755)
+	require.NoError(t, err)
+
+	// Create manager with custom temp dir
+	mgr := &Manager{tempDir: testTempDir}
+	sessionID := "test-delete-protected"
+
+	// Create a state file
+	state := &SessionState{SessionID: sessionID}
+	err = mgr.Save(state)
+	require.NoError(t, err)
+
+	// Make the directory read-only to prevent deletion
+	err = os.Chmod(testTempDir, 0555) // Read + execute only
+	require.NoError(t, err)
+
+	// Delete should fail due to permissions
+	err = mgr.Delete(sessionID)
+	assert.Error(t, err, "Delete should fail on permission denied")
+
+	// Restore permissions for cleanup
+	os.Chmod(testTempDir, 0755)
+}

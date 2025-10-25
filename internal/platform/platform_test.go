@@ -158,3 +158,24 @@ func TestPlatformChecks(t *testing.T) {
 	}
 	assert.LessOrEqual(t, count, 1)
 }
+
+func TestCleanupOldFiles_InvalidPattern(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Invalid glob pattern with malformed bracket expression
+	err := CleanupOldFiles(tmpDir, "[invalid", 0)
+	assert.Error(t, err, "Invalid glob pattern should return error")
+}
+
+func TestAtomicCreateFile_PermissionDenied(t *testing.T) {
+	tmpDir := t.TempDir()
+	readOnlyDir := filepath.Join(tmpDir, "readonly")
+	err := os.Mkdir(readOnlyDir, 0444) // Read-only directory
+	require.NoError(t, err)
+	defer os.Chmod(readOnlyDir, 0755) // Restore permissions for cleanup
+
+	filePath := filepath.Join(readOnlyDir, "test.lock")
+	created, err := AtomicCreateFile(filePath)
+	assert.False(t, created)
+	assert.Error(t, err, "Creating file in read-only directory should fail")
+}
