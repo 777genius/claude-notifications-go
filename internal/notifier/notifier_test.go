@@ -119,3 +119,25 @@ func TestSendDesktopRestoresAppName(t *testing.T) {
 		t.Errorf("AppName not restored after SendDesktop: got %q, want %q", beeep.AppName, testAppName)
 	}
 }
+
+func TestVolumeToGain(t *testing.T) {
+	tests := []struct {
+		name     string
+		volume   float64
+		expected float64
+	}{
+		{"0% volume", 0.0, -1.0},
+		{"30% volume", 0.3, -0.7},
+		{"50% volume", 0.5, -0.5},
+		{"100% volume", 1.0, 0.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := volumeToGain(tt.volume)
+			if result != tt.expected {
+				t.Errorf("volumeToGain(%.1f) = %.1f, want %.1f", tt.volume, result, tt.expected)
+			}
+		})
+	}
+}

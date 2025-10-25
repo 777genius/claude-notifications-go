@@ -186,3 +186,21 @@ func TestCleanupForSession(t *testing.T) {
 	_, err = os.Stat(otherLock)
 	assert.NoError(t, err)
 }
+
+func TestGetLockPath_WithHookEvent(t *testing.T) {
+	mgr := NewManager()
+	sessionID := "test-session-456"
+
+	// Test without hookEvent
+	pathWithout := mgr.getLockPath(sessionID)
+	assert.Contains(t, pathWithout, "claude-notification-test-session-456.lock")
+	assert.NotContains(t, pathWithout, "-Stop")
+
+	// Test with hookEvent
+	pathWith := mgr.getLockPath(sessionID, "Stop")
+	assert.Contains(t, pathWith, "claude-notification-test-session-456-Stop.lock")
+	assert.Contains(t, pathWith, "-Stop")
+
+	// Verify paths are different
+	assert.NotEqual(t, pathWithout, pathWith)
+}

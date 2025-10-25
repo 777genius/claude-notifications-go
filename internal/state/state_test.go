@@ -551,3 +551,20 @@ func TestManager_StateFilePath(t *testing.T) {
 	expectedFilename := "claude-session-state-test-abc-123.json"
 	assert.Equal(t, expectedFilename, filepath.Base(path))
 }
+
+func TestLoad_InvalidJSON(t *testing.T) {
+	mgr := NewManager()
+	sessionID := "test-invalid-json"
+
+	// Create a file with invalid JSON
+	path := mgr.getStatePath(sessionID)
+	err := os.WriteFile(path, []byte("{invalid json}"), 0644)
+	require.NoError(t, err)
+	defer os.Remove(path)
+
+	// Load should return error for invalid JSON
+	state, err := mgr.Load(sessionID)
+	assert.Error(t, err)
+	assert.Nil(t, state)
+	assert.Contains(t, err.Error(), "failed to parse state file")
+}

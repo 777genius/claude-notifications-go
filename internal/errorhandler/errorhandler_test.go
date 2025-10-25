@@ -210,3 +210,22 @@ func TestWithRecoveryFunc_WithError(t *testing.T) {
 		t.Errorf("WithRecoveryFunc should return error from function, got: %v", result)
 	}
 }
+
+func TestGetHandler_DefaultSettings(t *testing.T) {
+	// Test that GetHandler returns handler with default settings
+	handler := GetHandler()
+	if handler == nil {
+		t.Fatal("GetHandler() should return non-nil handler")
+	}
+
+	// Verify default settings
+	if !handler.logToConsole {
+		t.Error("Default handler should have logToConsole=true")
+	}
+	if handler.exitOnCritical {
+		t.Error("Default handler should have exitOnCritical=false")
+	}
+	if !handler.recoveryEnabled {
+		t.Error("Default handler should have recoveryEnabled=true")
+	}
+}
