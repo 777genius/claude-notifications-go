@@ -22,6 +22,7 @@ func TestPlaySoundWithBuiltInFiles(t *testing.T) {
 	}
 
 	cfg := config.DefaultConfig()
+	cfg.Notifications.Desktop.Volume = 0.3 // 30% volume for tests
 	n := New(cfg)
 	defer n.Close()
 
@@ -62,6 +63,7 @@ func TestDecodeAudioFormats(t *testing.T) {
 	}
 
 	cfg := config.DefaultConfig()
+	cfg.Notifications.Desktop.Volume = 0.3 // 30% volume for tests
 	n := New(cfg)
 	defer n.Close()
 
@@ -111,6 +113,7 @@ func TestDecodeAudioFormats(t *testing.T) {
 // TestUnsupportedFormat tests handling of unsupported audio formats
 func TestUnsupportedFormat(t *testing.T) {
 	cfg := config.DefaultConfig()
+	cfg.Notifications.Desktop.Volume = 0.3 // 30% volume for tests
 	n := New(cfg)
 	defer n.Close()
 
@@ -131,6 +134,7 @@ func TestUnsupportedFormat(t *testing.T) {
 // TestNonExistentFile tests handling of non-existent files
 func TestNonExistentFile(t *testing.T) {
 	cfg := config.DefaultConfig()
+	cfg.Notifications.Desktop.Volume = 0.3 // 30% volume for tests
 	n := New(cfg)
 	defer n.Close()
 
@@ -145,6 +149,7 @@ func TestNonExistentFile(t *testing.T) {
 // TestSpeakerInitialization tests speaker initialization
 func TestSpeakerInitialization(t *testing.T) {
 	cfg := config.DefaultConfig()
+	cfg.Notifications.Desktop.Volume = 0.3 // 30% volume for tests
 	n := New(cfg)
 	defer n.Close()
 
@@ -177,6 +182,7 @@ func TestGracefulShutdown(t *testing.T) {
 	}
 
 	cfg := config.DefaultConfig()
+	cfg.Notifications.Desktop.Volume = 0.3 // 30% volume for tests
 	n := New(cfg)
 
 	// Don't play any sounds, just test Close()
