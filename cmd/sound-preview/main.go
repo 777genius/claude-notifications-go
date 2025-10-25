@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -276,21 +275,14 @@ func playSound(soundPath string, volume float64) error {
 	// Resample if needed (convert to speaker's sample rate: 44100 Hz)
 	resampled := beep.Resample(4, format.SampleRate, beep.SampleRate(44100), streamer)
 
-	// Apply volume control
-	// effects.Volume uses a base of 2, so we need to convert:
-	// volume 1.0 (100%) -> base 0 (no change)
-	// volume 0.5 (50%)  -> base -1 (half volume)
-	// volume 0.3 (30%)  -> base ~-1.7
-	// Formula: base = log2(volume)
-	var volumeStreamer beep.Streamer = resampled
+	// Apply volume control using effects.Gain
+	// effects.Gain formula: output = input * (1 + Gain)
+	// Examples: volume 1.0 → Gain 0.0 (100%), volume 0.3 → Gain -0.7 (30%)
+	var gainStreamer beep.Streamer = resampled
 	if volume < 1.0 {
-		// Convert linear volume (0.0-1.0) to decibel-like scale
-		// Using Volume with base and silent flag
-		volumeStreamer = &effects.Volume{
+		gainStreamer = &effects.Gain{
 			Streamer: resampled,
-			Base:     2,
-			Volume:   volumeToBase(volume),
-			Silent:   false,
+			Gain:     volumeToGain(volume),
 		}
 	}
 
@@ -298,7 +290,7 @@ func playSound(soundPath string, volume float64) error {
 	done := make(chan bool)
 
 	// Play sound with callback when finished
-	speaker.Play(beep.Seq(volumeStreamer, beep.Callback(func() {
+	speaker.Play(beep.Seq(gainStreamer, beep.Callback(func() {
 		done <- true
 	})))
 
@@ -311,26 +303,9 @@ func playSound(soundPath string, volume float64) error {
 	}
 }
 
-// volumeToBase converts linear volume (0.0-1.0) to beep.Volume base
-// beep uses exponential scale: volume = base^units
-// We want: when volume=0.5, actual volume should be 0.5
-// So: 0.5 = 2^units => units = log2(0.5) = -1
-func volumeToBase(volume float64) float64 {
-	if volume <= 0 {
-		return -10 // Very quiet (almost silent)
-	}
-	if volume >= 1.0 {
-		return 0 // Full volume
-	}
-	// log2(volume) gives us the right units
-	// For volume=0.5: log2(0.5) = -1
-	// For volume=0.3: log2(0.3) ≈ -1.737
-	// For volume=0.1: log2(0.1) ≈ -3.322
-	return logBase2(volume)
-}
-
-// logBase2 calculates log base 2 of x
-func logBase2(x float64) float64 {
-	// log2(x) = ln(x) / ln(2)
-	return math.Log(x) / math.Log(2)
+// volumeToGain converts linear volume (0.0-1.0) to gain value for effects.Gain
+// effects.Gain formula: output = input * (1 + Gain)
+// Examples: volume 1.0 → Gain 0.0 (100%), volume 0.3 → Gain -0.7 (30%), volume 0.5 → Gain -0.5 (50%)
+func volumeToGain(volume float64) float64 {
+	return volume - 1.0
 }

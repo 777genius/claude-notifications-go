@@ -2,7 +2,6 @@ package notifier
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -327,13 +326,11 @@ func (n *Notifier) playSound(soundPath string) {
 
 	// Apply volume control from config
 	volume := n.cfg.Notifications.Desktop.Volume
-	var volumeStreamer beep.Streamer = resampled
+	var gainStreamer beep.Streamer = resampled
 	if volume < 1.0 {
-		volumeStreamer = &effects.Volume{
+		gainStreamer = &effects.Gain{
 			Streamer: resampled,
-			Base:     2,
-			Volume:   volumeToBase(volume),
-			Silent:   false,
+			Gain:     volumeToGain(volume),
 		}
 		logging.Debug("Applying volume control: %.0f%%", volume*100)
 	}
@@ -342,7 +339,7 @@ func (n *Notifier) playSound(soundPath string) {
 	done := make(chan bool)
 
 	// Play sound with callback when finished
-	speaker.Play(beep.Seq(volumeStreamer, beep.Callback(func() {
+	speaker.Play(beep.Seq(gainStreamer, beep.Callback(func() {
 		done <- true
 	})))
 
@@ -355,18 +352,11 @@ func (n *Notifier) playSound(soundPath string) {
 	}
 }
 
-// volumeToBase converts linear volume (0.0-1.0) to logarithmic scale for effects.Volume
-// Uses same algorithm as sound-preview utility
-func volumeToBase(volume float64) float64 {
-	if volume <= 0 {
-		return -10 // Very quiet (almost silent)
-	}
-	if volume >= 1.0 {
-		return 0 // Full volume
-	}
-	// log2(volume) gives natural-sounding volume scaling
-	// Examples: 0.5 → -1.0, 0.3 → -1.7, 0.1 → -3.3
-	return math.Log(volume) / math.Log(2)
+// volumeToGain converts linear volume (0.0-1.0) to gain value for effects.Gain
+// effects.Gain formula: output = input * (1 + Gain)
+// Examples: volume 1.0 → Gain 0.0 (100%), volume 0.3 → Gain -0.7 (30%), volume 0.5 → Gain -0.5 (50%)
+func volumeToGain(volume float64) float64 {
+	return volume - 1.0
 }
 
 // Close waits for all sounds to finish playing and cleans up resources
