@@ -37,6 +37,16 @@
       "title": "📋 Plan Ready for Review",
       "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/plan-ready.mp3",
       "keywords": ["plan", "план", "strategy"]
+    },
+    "session_limit_reached": {
+      "title": "⏱️ Session Limit Reached",
+      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3",
+      "keywords": ["session limit", "limit reached"]
+    },
+    "api_error": {
+      "title": "🔴 API Error: 401",
+      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3",
+      "keywords": ["api error", "401", "authentication", "login"]
     }
   }
 }

@@ -37,6 +37,7 @@ const (
 	StatusQuestion            Status = "question"
 	StatusPlanReady           Status = "plan_ready"
 	StatusSessionLimitReached Status = "session_limit_reached"
+	StatusAPIError            Status = "api_error"
 	StatusUnknown             Status = "unknown"
 )
 
@@ -48,10 +49,16 @@ func AnalyzeTranscript(transcriptPath string, cfg *config.Config) (Status, error
 		return StatusUnknown, err
 	}
 
-	// PRIORITY CHECK: Session limit reached
+	// PRIORITY CHECK 1: Session limit reached
 	// This takes precedence over all other status detection
 	if detectSessionLimitReached(messages) {
 		return StatusSessionLimitReached, nil
+	}
+
+	// PRIORITY CHECK 2: API authentication error
+	// Check for API 401 errors requiring re-login
+	if detectAPIError(messages) {
+		return StatusAPIError, nil
 	}
 
 	// Find last user message timestamp
@@ -173,6 +180,36 @@ func detectSessionLimitReached(messages []jsonl.Message) bool {
 	}
 
 	return false
+}
+
+// detectAPIError checks if the last assistant messages contain API 401 authentication error
+func detectAPIError(messages []jsonl.Message) bool {
+	// Check last 3 assistant messages for API error
+	recentMessages := jsonl.GetLastAssistantMessages(messages, 3)
+	if len(recentMessages) == 0 {
+		return false
+	}
+
+	// Extract text from recent messages
+	texts := jsonl.ExtractTextFromMessages(recentMessages)
+
+	// Check for both "API Error: 401" AND "Please run /login"
+	hasAPIError := false
+	hasLoginPrompt := false
+
+	for _, text := range texts {
+		if containsIgnoreCase(text, "API Error: 401") ||
+			containsIgnoreCase(text, "API Error 401") {
+			hasAPIError = true
+		}
+		if containsIgnoreCase(text, "Please run /login") ||
+			containsIgnoreCase(text, "run /login") {
+			hasLoginPrompt = true
+		}
+	}
+
+	// Both conditions must be present
+	return hasAPIError && hasLoginPrompt
 }
 
 // containsIgnoreCase checks if string contains substring (case insensitive)

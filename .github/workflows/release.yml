@@ -70,7 +70,7 @@ jobs:
           GOARCH: ${{ matrix.arch }}
         run: |
           mkdir -p dist
-          go build -o dist/${{ matrix.binary }} ./cmd/claude-notifications
+          go build -ldflags="-s -w" -trimpath -o dist/${{ matrix.binary }} ./cmd/claude-notifications
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4

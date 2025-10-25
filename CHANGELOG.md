@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-10-25
+
+### Added
+- **New notification type: API Error 401** 🔴
+  - Detects authentication errors when OAuth token expires
+  - Shows "🔴 API Error: 401" with message "Please run /login"
+  - Triggered when both "API Error: 401" and "Please run /login" appear in assistant messages
+  - Priority detection (checks before tool-based detection)
+  - Added comprehensive tests for API error detection
+
+### Improved
+- **Binary size optimization** - 30% smaller release binaries
+  - Production builds now use `-ldflags="-s -w" -trimpath` flags
+  - Binary size reduced from ~10 MB to ~7 MB per platform
+  - Faster download times for users (5 seconds instead of 8 seconds)
+  - Better privacy (no developer paths in binaries)
+  - Deterministic builds across different machines
+  - Development builds unchanged (still include debug symbols)
+
+### Changed
+- Updated notification count from 5 to 6 types in README
+- All tests passing with new features
+
 ## [1.0.3] - 2025-10-24
 
 ### Fixed

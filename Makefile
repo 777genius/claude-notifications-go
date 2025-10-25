@@ -4,20 +4,25 @@
 BINARY=claude-notifications
 BINARY_PATH=bin/$(BINARY)
 
+# Build flags
+# Development build: includes debug symbols for debugging
+# Production build: optimized for size and deployment
+RELEASE_FLAGS=-ldflags="-s -w" -trimpath
+
 # Build targets
-build: ## Build the binary
-	@echo "Building $(BINARY)..."
+build: ## Build the binary (development mode with debug symbols)
+	@echo "Building $(BINARY) (development mode)..."
 	@go build -o $(BINARY_PATH) ./cmd/claude-notifications
 
-build-all: ## Build for all platforms
-	@echo "Building for all platforms..."
+build-all: ## Build optimized binaries for all platforms
+	@echo "Building optimized release binaries for all platforms..."
 	@mkdir -p dist
-	@GOOS=darwin GOARCH=amd64 go build -o dist/$(BINARY)-darwin-amd64 ./cmd/claude-notifications
-	@GOOS=darwin GOARCH=arm64 go build -o dist/$(BINARY)-darwin-arm64 ./cmd/claude-notifications
-	@GOOS=linux GOARCH=amd64 go build -o dist/$(BINARY)-linux-amd64 ./cmd/claude-notifications
-	@GOOS=linux GOARCH=arm64 go build -o dist/$(BINARY)-linux-arm64 ./cmd/claude-notifications
-	@GOOS=windows GOARCH=amd64 go build -o dist/$(BINARY)-windows-amd64.exe ./cmd/claude-notifications
-	@echo "Build complete! Binaries in dist/"
+	@GOOS=darwin GOARCH=amd64 go build $(RELEASE_FLAGS) -o dist/$(BINARY)-darwin-amd64 ./cmd/claude-notifications
+	@GOOS=darwin GOARCH=arm64 go build $(RELEASE_FLAGS) -o dist/$(BINARY)-darwin-arm64 ./cmd/claude-notifications
+	@GOOS=linux GOARCH=amd64 go build $(RELEASE_FLAGS) -o dist/$(BINARY)-linux-amd64 ./cmd/claude-notifications
+	@GOOS=linux GOARCH=arm64 go build $(RELEASE_FLAGS) -o dist/$(BINARY)-linux-arm64 ./cmd/claude-notifications
+	@GOOS=windows GOARCH=amd64 go build $(RELEASE_FLAGS) -o dist/$(BINARY)-windows-amd64.exe ./cmd/claude-notifications
+	@echo "Build complete! Optimized binaries in dist/"
 
 # Test targets
 test: ## Run tests
@@ -53,11 +58,11 @@ clean: ## Clean build artifacts
 	@echo "Clean complete!"
 
 # Rebuild and prepare for commit
-rebuild-and-commit: build-all ## Rebuild binaries and prepare for commit
-	@echo "Moving binaries to bin/..."
+rebuild-and-commit: build-all ## Rebuild optimized binaries and prepare for commit
+	@echo "Moving optimized binaries to bin/..."
 	@cp dist/* bin/ 2>/dev/null || true
 	@rm -rf dist
-	@echo "✓ Binaries ready in bin/"
+	@echo "✓ Optimized binaries ready in bin/"
 	@echo ""
 	@echo "Platform binaries updated:"
 	@ls -1 bin/claude-notifications-* 2>/dev/null || echo "  (none found)"

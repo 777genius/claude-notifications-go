@@ -650,6 +650,95 @@ func TestAnalyzeTranscript_SessionLimitReached(t *testing.T) {
 	})
 }
 
+func TestAnalyzeTranscript_APIError(t *testing.T) {
+	cfg := &config.Config{}
+
+	t.Run("api_error_401_with_login_prompt", func(t *testing.T) {
+		messages := []jsonl.Message{
+			buildUserMessage("Continue working"),
+			buildAssistantWithTools([]string{}, `API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"OAuth token has expired"}} · Please run /login`),
+		}
+		transcriptPath := buildTranscriptFile(t, messages)
+
+		status, err := AnalyzeTranscript(transcriptPath, cfg)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if status != StatusAPIError {
+			t.Errorf("got %v, want StatusAPIError", status)
+		}
+	})
+
+	t.Run("api_error_case_insensitive", func(t *testing.T) {
+		messages := []jsonl.Message{
+			buildUserMessage("Continue working"),
+			buildAssistantWithTools([]string{}, "api error 401 - please run /login"),
+		}
+		transcriptPath := buildTranscriptFile(t, messages)
+
+		status, err := AnalyzeTranscript(transcriptPath, cfg)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if status != StatusAPIError {
+			t.Errorf("got %v, want StatusAPIError for case-insensitive match", status)
+		}
+	})
+
+	t.Run("api_error_without_login_prompt", func(t *testing.T) {
+		messages := []jsonl.Message{
+			buildUserMessage("Hello"),
+			buildAssistantWithTools([]string{}, "API Error: 401 - authentication failed"),
+		}
+		transcriptPath := buildTranscriptFile(t, messages)
+
+		status, err := AnalyzeTranscript(transcriptPath, cfg)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if status == StatusAPIError {
+			t.Errorf("got StatusAPIError without login prompt, expected different status")
+		}
+	})
+
+	t.Run("login_prompt_without_api_error", func(t *testing.T) {
+		messages := []jsonl.Message{
+			buildUserMessage("Hello"),
+			buildAssistantWithTools([]string{}, "Please run /login to authenticate"),
+		}
+		transcriptPath := buildTranscriptFile(t, messages)
+
+		status, err := AnalyzeTranscript(transcriptPath, cfg)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if status == StatusAPIError {
+			t.Errorf("got StatusAPIError without API error text, expected different status")
+		}
+	})
+
+	t.Run("no_api_error", func(t *testing.T) {
+		messages := []jsonl.Message{
+			buildUserMessage("Hello"),
+			buildAssistantWithTools([]string{"Write"}, "Task completed successfully"),
+		}
+		transcriptPath := buildTranscriptFile(t, messages)
+
+		status, err := AnalyzeTranscript(transcriptPath, cfg)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if status == StatusAPIError {
+			t.Errorf("got StatusAPIError, expected different status")
+		}
+	})
+}
+
 func TestContains(t *testing.T) {
 	slice := []string{"apple", "banana", "cherry"}
 

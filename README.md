@@ -50,6 +50,7 @@ Smart notifications for Claude Code task statuses with cross-platform support, w
 | Question | ❓ | Claude has a question | PreToolUse hook (AskUserQuestion) OR Notification hook |
 | Plan Ready | 📋 | Plan ready for approval | PreToolUse hook (ExitPlanMode) |
 | Session Limit Reached | ⏱️ | Session limit reached | Stop/SubagentStop hooks (state machine detects "Session limit reached" text in last 3 assistant messages) |
+| API Error: 401 | 🔴 | Authentication expired | Stop/SubagentStop hooks (state machine detects "API Error: 401" and "Please run /login" in last 3 assistant messages) |
 
 
 ## Installation
@@ -94,7 +95,7 @@ The binary is downloaded once and cached locally. You can re-run `/claude-notifi
 ### 🧠 Smart Detection
 - **Operations count** File edits, file creates, ran commans + total time
 - **State machine analysis** with temporal locality for accurate status detection
-- **5 notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit
+- **6 notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit, API Error
 - **PreToolUse integration** for instant alerts when Claude asks questions or creates plans
 - Analyzes conversation context to avoid false positives
 

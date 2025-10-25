@@ -136,6 +136,10 @@ func DefaultConfig() *Config {
 				Title: "⏱️ Session Limit Reached",
 				Sound: filepath.Join(pluginRoot, "sounds", "question.mp3"), // reuse question sound
 			},
+			"api_error": {
+				Title: "🔴 API Error: 401",
+				Sound: filepath.Join(pluginRoot, "sounds", "question.mp3"), // reuse question sound
+			},
 		},
 	}
 }

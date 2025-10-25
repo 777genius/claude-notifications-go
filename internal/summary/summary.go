@@ -80,6 +80,8 @@ func GenerateFromTranscript(transcriptPath string, status analyzer.Status, cfg *
 		return generateTaskSummary(messages, cfg)
 	case analyzer.StatusSessionLimitReached:
 		return generateSessionLimitSummary(messages, cfg)
+	case analyzer.StatusAPIError:
+		return generateAPIErrorSummary(messages, cfg)
 	default:
 		return generateTaskSummary(messages, cfg)
 	}
@@ -278,6 +280,12 @@ func generateTaskSummary(messages []jsonl.Message, cfg *config.Config) string {
 func generateSessionLimitSummary(messages []jsonl.Message, cfg *config.Config) string {
 	// Simple message for session limit
 	return "Session limit reached. Please start a new conversation."
+}
+
+// generateAPIErrorSummary generates summary for api_error status
+func generateAPIErrorSummary(messages []jsonl.Message, cfg *config.Config) string {
+	// Simple message for API authentication error
+	return "Please run /login"
 }
 
 // extractAskUserQuestion extracts the last AskUserQuestion with recency check
