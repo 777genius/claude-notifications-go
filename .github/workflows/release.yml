@@ -68,6 +68,7 @@ jobs:
         env:
           GOOS: ${{ matrix.platform }}
           GOARCH: ${{ matrix.arch }}
+        shell: bash
         run: |
           mkdir -p dist
           echo "Building claude-notifications..."
