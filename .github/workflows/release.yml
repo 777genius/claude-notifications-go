@@ -64,19 +64,24 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Build binary
+      - name: Build binaries
         env:
           GOOS: ${{ matrix.platform }}
           GOARCH: ${{ matrix.arch }}
         run: |
           mkdir -p dist
+          echo "Building claude-notifications..."
           go build -ldflags="-s -w" -trimpath -o dist/${{ matrix.binary }} ./cmd/claude-notifications
+          echo "Building sound-preview..."
+          SOUND_PREVIEW_BINARY="${{ matrix.binary }}"
+          SOUND_PREVIEW_BINARY="${SOUND_PREVIEW_BINARY//claude-notifications/sound-preview}"
+          go build -ldflags="-s -w" -trimpath -o dist/$SOUND_PREVIEW_BINARY ./cmd/sound-preview
 
-      - name: Upload binary artifact
+      - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.binary }}
-          path: dist/${{ matrix.binary }}
+          name: binaries-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*
           retention-days: 1
 
   create-release:

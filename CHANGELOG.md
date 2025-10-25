@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2025-10-25
+
+### Fixed
+- **Missing sound-preview binary** - fixes `/notifications-settings` sound preview
+  - Added `sound-preview` utility to build system
+  - Now built for all platforms (darwin, linux, windows)
+  - Included in GitHub Releases
+  - Supports interactive sound preview during settings configuration
+  - Handles MP3, WAV, FLAC, OGG, AIFF formats
+
+### Known Issues
+- Volume control in sound-preview may not work correctly on macOS (investigating)
+
 ## [1.1.0] - 2025-10-25
 
 ### Added
