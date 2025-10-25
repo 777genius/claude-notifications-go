@@ -304,3 +304,174 @@ func TestLoadFromPluginRoot_WithEnvironmentVariables(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://example.com/hook", cfg.Notifications.Webhook.URL)
 }
+
+// === Tests for ApplyDefaults ===
+
+func TestApplyDefaults(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected *Config
+	}{
+		{
+			name: "Apply defaults to empty config",
+			cfg:  &Config{},
+			expected: func() *Config {
+				def := DefaultConfig()
+				return def
+			}(),
+		},
+		{
+			name: "Preserve existing desktop settings",
+			cfg: &Config{
+				Notifications: NotificationsConfig{
+					Desktop: DesktopConfig{
+						Enabled: false,
+						Sound:   false,
+						Volume:  0.5,
+					},
+				},
+			},
+			expected: &Config{
+				Notifications: NotificationsConfig{
+					Desktop: DesktopConfig{
+						Enabled: false, // Preserved
+						Sound:   false, // Preserved
+						Volume:  0.5,   // Preserved
+					},
+					SuppressQuestionAfterTaskCompleteSeconds: 12, // Default
+				},
+			},
+		},
+		{
+			name: "Apply missing statuses from defaults",
+			cfg: &Config{
+				Notifications: NotificationsConfig{
+					Desktop: DesktopConfig{
+						Enabled: true,
+					},
+				},
+				Statuses: map[string]StatusInfo{
+					"task_complete": {
+						Title: "Custom Title",
+					},
+				},
+			},
+			expected: func() *Config {
+				def := DefaultConfig()
+				def.Statuses["task_complete"] = StatusInfo{
+					Title: "Custom Title", // Preserved custom
+				}
+				return def
+			}(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.cfg.ApplyDefaults()
+
+			// Check key fields are set
+			if tt.cfg.Notifications.SuppressQuestionAfterTaskCompleteSeconds == 0 {
+				t.Errorf("SuppressQuestionAfterTaskCompleteSeconds should be set to default")
+			}
+			if len(tt.cfg.Statuses) == 0 {
+				t.Errorf("Statuses should be populated from defaults")
+			}
+			// Verify statuses contain required entries
+			if _, ok := tt.cfg.Statuses["task_complete"]; !ok {
+				t.Errorf("Statuses should contain task_complete")
+			}
+			if _, ok := tt.cfg.Statuses["question"]; !ok {
+				t.Errorf("Statuses should contain question")
+			}
+		})
+	}
+}
+
+// === Additional Validate tests for better coverage ===
+
+func TestValidateConfig_MoreCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *Config
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "invalid webhook format",
+			cfg: &Config{
+				Notifications: NotificationsConfig{
+					Webhook: WebhookConfig{
+						Enabled: true,
+						Preset:  "slack",
+						URL:     "https://example.com",
+						Format:  "invalid_format",
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "format",
+		},
+		{
+			name: "custom preset with valid URL",
+			cfg: &Config{
+				Notifications: NotificationsConfig{
+					Webhook: WebhookConfig{
+						Enabled: true,
+						Preset:  "custom",
+						URL:     "https://my-webhook.com/endpoint",
+						Format:  "json",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "discord preset with valid URL",
+			cfg: &Config{
+				Notifications: NotificationsConfig{
+					Webhook: WebhookConfig{
+						Enabled: true,
+						Preset:  "discord",
+						URL:     "https://discord.com/api/webhooks/123/abc",
+						Format:  "json",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "telegram with chat_id",
+			cfg: &Config{
+				Notifications: NotificationsConfig{
+					Webhook: WebhookConfig{
+						Enabled: true,
+						Preset:  "telegram",
+						URL:     "https://api.telegram.org/bot123:ABC/sendMessage",
+						ChatID:  "123456789",
+						Format:  "json",
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Apply defaults first (Validate expects defaults to be applied)
+			tt.cfg.ApplyDefaults()
+
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

@@ -714,3 +714,360 @@ func writeTranscript(t *testing.T, path string, messages []jsonl.Message) {
 		}
 	}
 }
+
+// === Tests for uncovered functions ===
+
+func TestGenerateAPIErrorSummary(t *testing.T) {
+	cfg := config.DefaultConfig()
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: time.Now().Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "API Error: 401. Please run /login to continue."},
+				},
+			},
+		},
+	}
+
+	result := generateAPIErrorSummary(messages, cfg)
+	expected := "Please run /login"
+	if result != expected {
+		t.Errorf("generateAPIErrorSummary() = %q, want %q", result, expected)
+	}
+}
+
+func TestGetRecentAssistantMessages(t *testing.T) {
+	now := time.Now()
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: now.Add(-5 * time.Second).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "User message"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: now.Add(-4 * time.Second).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "First assistant"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: now.Add(-3 * time.Second).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "Second assistant"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "Third assistant"}},
+			},
+		},
+	}
+
+	result := getRecentAssistantMessages(messages, 2)
+	if len(result) != 2 {
+		t.Errorf("getRecentAssistantMessages() returned %d messages, want 2", len(result))
+	}
+	// Should return latest 2 assistant messages
+	if len(result) == 2 {
+		texts := jsonl.ExtractTextFromMessages(result)
+		if !strings.Contains(strings.Join(texts, " "), "Third assistant") {
+			t.Errorf("Should contain latest assistant message")
+		}
+	}
+}
+
+func TestGenerateQuestionSummary_WithRecentQuestion(t *testing.T) {
+	now := time.Now()
+	cfg := config.DefaultConfig()
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: now.Add(-10 * time.Second).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "Help me"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{
+						Type: "tool_use",
+						Name: "AskUserQuestion",
+						Input: map[string]interface{}{
+							"questions": []interface{}{
+								map[string]interface{}{
+									"question": "Which API should we use for authentication?",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := generateQuestionSummary(messages, cfg)
+	if !strings.Contains(result, "Which API should we use") {
+		t.Errorf("generateQuestionSummary() = %q, should contain question", result)
+	}
+}
+
+func TestGenerateQuestionSummary_WithoutQuestion(t *testing.T) {
+	now := time.Now()
+	cfg := config.DefaultConfig()
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "Just some regular text without question"},
+				},
+			},
+		},
+	}
+
+	result := generateQuestionSummary(messages, cfg)
+	// Should either extract text or fallback to default message
+	if result == "" {
+		t.Errorf("generateQuestionSummary() should not be empty")
+	}
+	// Verify it's at least some meaningful text (not just empty or error)
+	if len(result) < 5 {
+		t.Errorf("generateQuestionSummary() returned too short: %q", result)
+	}
+}
+
+func TestGenerateReviewSummary_WithToolsAndDuration(t *testing.T) {
+	now := time.Now()
+	cfg := config.DefaultConfig()
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: now.Add(-120 * time.Second).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "Review the auth module"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "tool_use", Name: "Read"},
+					{Type: "tool_use", Name: "Grep"},
+					{Type: "text", Text: "I've reviewed the authentication module. The code looks good."},
+				},
+			},
+		},
+	}
+
+	result := generateReviewSummary(messages, cfg)
+	if result == "" {
+		t.Errorf("generateReviewSummary() should not be empty")
+	}
+	// Should contain either tool actions or extracted text
+	if len(result) < 10 {
+		t.Errorf("generateReviewSummary() too short: %q", result)
+	}
+}
+
+func TestGenerateReviewSummary_NoTools(t *testing.T) {
+	now := time.Now()
+	cfg := config.DefaultConfig()
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "The review is complete. Everything looks good!"},
+				},
+			},
+		},
+	}
+
+	result := generateReviewSummary(messages, cfg)
+	if !strings.Contains(result, "review") && !strings.Contains(result, "complete") {
+		t.Errorf("generateReviewSummary() should extract meaningful text: %q", result)
+	}
+}
+
+func TestGenerateTaskSummary_WithMultipleTools(t *testing.T) {
+	now := time.Now()
+	cfg := config.DefaultConfig()
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: now.Add(-180 * time.Second).Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "Create user auth"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "tool_use", Name: "Write"},
+					{Type: "tool_use", Name: "Write"},
+					{Type: "tool_use", Name: "Edit"},
+					{Type: "tool_use", Name: "Bash"},
+					{Type: "text", Text: "Created user authentication module with tests."},
+				},
+			},
+		},
+	}
+
+	result := generateTaskSummary(messages, cfg)
+	// Should contain tool counts and duration
+	if !strings.Contains(result, "Created") && !strings.Contains(result, "files") {
+		t.Errorf("generateTaskSummary() should mention tools: %q", result)
+	}
+	if !strings.Contains(result, "Took") {
+		t.Errorf("generateTaskSummary() should include duration: %q", result)
+	}
+}
+
+func TestGenerateTaskSummary_NoTools(t *testing.T) {
+	now := time.Now()
+	cfg := config.DefaultConfig()
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "Task completed successfully!"},
+				},
+			},
+		},
+	}
+
+	result := generateTaskSummary(messages, cfg)
+	// Should extract text when no tools
+	if !strings.Contains(result, "Task completed") && !strings.Contains(result, "successfully") {
+		t.Errorf("generateTaskSummary() should extract text: %q", result)
+	}
+}
+
+func TestGenerateFromTranscript_APIError(t *testing.T) {
+	tmpDir := t.TempDir()
+	transcriptPath := tmpDir + "/api_error.jsonl"
+
+	messages := []jsonl.Message{
+		{
+			Type:      "assistant",
+			Timestamp: time.Now().Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{
+					{Type: "text", Text: "API Error: 401. Please run /login to authenticate."},
+				},
+			},
+		},
+	}
+
+	writeTranscript(t, transcriptPath, messages)
+
+	cfg := config.DefaultConfig()
+	result := GenerateFromTranscript(transcriptPath, analyzer.StatusAPIError, cfg)
+
+	if !strings.Contains(result, "Please run /login") {
+		t.Errorf("API Error summary should contain login prompt, got: %s", result)
+	}
+}
+
+func TestCalculateDuration(t *testing.T) {
+	now := time.Now()
+	userTime := now.Add(-120 * time.Second)
+
+	messages := []jsonl.Message{
+		{
+			Type:      "user",
+			Timestamp: userTime.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "Do something"}},
+			},
+		},
+		{
+			Type:      "assistant",
+			Timestamp: now.Format(time.RFC3339),
+			Message: jsonl.MessageContent{
+				Content: []jsonl.Content{{Type: "text", Text: "Done"}},
+			},
+		},
+	}
+
+	duration := calculateDuration(messages)
+	// Should be "Took 2m" for 120 seconds
+	if !strings.Contains(duration, "Took") || !strings.Contains(duration, "2m") {
+		t.Errorf("calculateDuration() = %q, want 'Took 2m'", duration)
+	}
+}
+
+func TestExtractExitPlanModePlan(t *testing.T) {
+	tests := []struct {
+		name     string
+		messages []jsonl.Message
+		expected string
+	}{
+		{
+			name: "With ExitPlanMode tool",
+			messages: []jsonl.Message{
+				{
+					Type:      "assistant",
+					Timestamp: time.Now().Format(time.RFC3339),
+					Message: jsonl.MessageContent{
+						Content: []jsonl.Content{
+							{
+								Type: "tool_use",
+								Name: "ExitPlanMode",
+								Input: map[string]interface{}{
+									"plan": "1. Create API\n2. Add tests\n3. Deploy",
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: "1. Create API",
+		},
+		{
+			name: "Without ExitPlanMode",
+			messages: []jsonl.Message{
+				{
+					Type:      "assistant",
+					Timestamp: time.Now().Format(time.RFC3339),
+					Message: jsonl.MessageContent{
+						Content: []jsonl.Content{
+							{Type: "text", Text: "Here's the plan"},
+						},
+					},
+				},
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractExitPlanModePlan(tt.messages)
+			if tt.expected != "" && !strings.Contains(result, tt.expected) {
+				t.Errorf("extractExitPlanModePlan() = %q, want to contain %q", result, tt.expected)
+			}
+			if tt.expected == "" && result != "" {
+				t.Errorf("extractExitPlanModePlan() = %q, want empty", result)
+			}
+		})
+	}
+}
