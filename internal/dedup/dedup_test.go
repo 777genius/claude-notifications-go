@@ -3,6 +3,7 @@ package dedup
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -206,6 +207,10 @@ func TestGetLockPath_WithHookEvent(t *testing.T) {
 }
 
 func TestCleanupForSession_RemoveError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows: Unix-style permissions not supported")
+	}
+
 	// Create a custom temp directory that we can control permissions on
 	testTempDir := filepath.Join(t.TempDir(), "locks")
 	err := os.MkdirAll(testTempDir, 0755)

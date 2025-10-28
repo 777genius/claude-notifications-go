@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -570,6 +571,10 @@ func TestLoad_InvalidJSON(t *testing.T) {
 }
 
 func TestDelete_PermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows: Unix-style permissions not supported")
+	}
+
 	// Create a custom temp directory that we can control permissions on
 	testTempDir := filepath.Join(t.TempDir(), "states")
 	err := os.MkdirAll(testTempDir, 0755)

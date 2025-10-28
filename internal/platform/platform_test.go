@@ -3,6 +3,7 @@ package platform
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -168,6 +169,10 @@ func TestCleanupOldFiles_InvalidPattern(t *testing.T) {
 }
 
 func TestAtomicCreateFile_PermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows: Unix-style permissions not supported")
+	}
+
 	tmpDir := t.TempDir()
 	readOnlyDir := filepath.Join(tmpDir, "readonly")
 	err := os.Mkdir(readOnlyDir, 0444) // Read-only directory
