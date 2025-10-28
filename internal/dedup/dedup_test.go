@@ -229,5 +229,5 @@ func TestCleanupForSession_RemoveError(t *testing.T) {
 	assert.Error(t, err, "CleanupForSession should fail on permission denied")
 
 	// Restore permissions for cleanup
-	os.Chmod(testTempDir, 0755)
+	_ = os.Chmod(testTempDir, 0755)
 }

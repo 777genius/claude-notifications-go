@@ -593,5 +593,5 @@ func TestDelete_PermissionDenied(t *testing.T) {
 	assert.Error(t, err, "Delete should fail on permission denied")
 
 	// Restore permissions for cleanup
-	os.Chmod(testTempDir, 0755)
+	_ = os.Chmod(testTempDir, 0755)
 }

@@ -172,7 +172,7 @@ func TestAtomicCreateFile_PermissionDenied(t *testing.T) {
 	readOnlyDir := filepath.Join(tmpDir, "readonly")
 	err := os.Mkdir(readOnlyDir, 0444) // Read-only directory
 	require.NoError(t, err)
-	defer os.Chmod(readOnlyDir, 0755) // Restore permissions for cleanup
+	defer func() { _ = os.Chmod(readOnlyDir, 0755) }() // Restore permissions for cleanup
 
 	filePath := filepath.Join(readOnlyDir, "test.lock")
 	created, err := AtomicCreateFile(filePath)
