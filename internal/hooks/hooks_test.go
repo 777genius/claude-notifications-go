@@ -200,6 +200,11 @@ func buildTranscriptWithTools(tools []string, textLength int) []jsonl.Message {
 func newTestHandler(t *testing.T, cfg *config.Config) (*Handler, *mockNotifier, *mockWebhook) {
 	t.Helper()
 
+	// Clear CLAUDE_HOOK_JUDGE_MODE by default for all tests
+	// This ensures tests don't accidentally get affected by judge mode
+	// Tests that need judge mode set should call t.Setenv AFTER calling newTestHandler
+	t.Setenv("CLAUDE_HOOK_JUDGE_MODE", "")
+
 	mockNotif := &mockNotifier{}
 	mockWH := &mockWebhook{}
 
@@ -1071,6 +1076,134 @@ func TestHandleStopEvent_NonexistentTranscriptFile(t *testing.T) {
 	// Should handle gracefully (no error, graceful degradation)
 	if err != nil {
 		t.Errorf("should handle nonexistent transcript gracefully, got error: %v", err)
+	}
+}
+
+// === Background Judge Mode Tests (double-shot-latte compatibility) ===
+
+// TestHandler_SkipsNotificationsInJudgeMode verifies that notifications are
+// suppressed when CLAUDE_HOOK_JUDGE_MODE=true (set by double-shot-latte plugin
+// when running background Claude instances for context evaluation)
+func TestHandler_SkipsNotificationsInJudgeMode(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+			Webhook: config.WebhookConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+			"plan_ready":    {Title: "Plan Ready"},
+			"question":      {Title: "Question"},
+		},
+	}
+
+	handler, mockNotif, mockWH := newTestHandler(t, cfg)
+
+	// Set the judge mode environment variable AFTER creating handler
+	// (newTestHandler clears it by default, so we override here)
+	t.Setenv("CLAUDE_HOOK_JUDGE_MODE", "true")
+
+	// Test PreToolUse hook
+	hookData1 := buildHookDataJSON(HookData{
+		SessionID: "test-judge-mode-1",
+		ToolName:  "ExitPlanMode",
+		CWD:       "/test",
+	})
+
+	err := handler.HandleHook("PreToolUse", hookData1)
+	if err != nil {
+		t.Fatalf("PreToolUse error: %v", err)
+	}
+
+	if mockNotif.wasCalled() {
+		t.Error("expected NO notification in judge mode (PreToolUse)")
+	}
+
+	// Test Stop hook
+	transcriptPath := createTempTranscript(t,
+		buildTranscriptWithTools([]string{"Write"}, 300))
+
+	hookData2 := buildHookDataJSON(HookData{
+		SessionID:      "test-judge-mode-2",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	})
+
+	err = handler.HandleHook("Stop", hookData2)
+	if err != nil {
+		t.Fatalf("Stop error: %v", err)
+	}
+
+	if mockNotif.wasCalled() {
+		t.Error("expected NO notification in judge mode (Stop)")
+	}
+
+	if mockWH.wasCalled() {
+		t.Error("expected NO webhook in judge mode")
+	}
+}
+
+// TestHandler_SendsNotificationsWhenJudgeModeNotSet verifies that notifications
+// work normally when CLAUDE_HOOK_JUDGE_MODE is not set
+func TestHandler_SendsNotificationsWhenJudgeModeNotSet(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"plan_ready": {Title: "Plan Ready"},
+		},
+	}
+
+	// newTestHandler already clears CLAUDE_HOOK_JUDGE_MODE by default
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+
+	hookData := buildHookDataJSON(HookData{
+		SessionID: "test-no-judge-mode",
+		ToolName:  "ExitPlanMode",
+		CWD:       "/test",
+	})
+
+	err := handler.HandleHook("PreToolUse", hookData)
+	if err != nil {
+		t.Fatalf("PreToolUse error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Error("expected notification when judge mode is NOT set")
+	}
+}
+
+// TestHandler_SendsNotificationsWhenJudgeModeFalse verifies that notifications
+// work normally when CLAUDE_HOOK_JUDGE_MODE is set to something other than "true"
+func TestHandler_SendsNotificationsWhenJudgeModeFalse(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"plan_ready": {Title: "Plan Ready"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+
+	// Set env var to "false" AFTER handler creation - should NOT suppress notifications
+	t.Setenv("CLAUDE_HOOK_JUDGE_MODE", "false")
+
+	hookData := buildHookDataJSON(HookData{
+		SessionID: "test-judge-mode-false",
+		ToolName:  "ExitPlanMode",
+		CWD:       "/test",
+	})
+
+	err := handler.HandleHook("PreToolUse", hookData)
+	if err != nil {
+		t.Fatalf("PreToolUse error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Error("expected notification when judge mode is 'false'")
 	}
 }
 

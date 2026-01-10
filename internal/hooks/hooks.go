@@ -80,6 +80,13 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	// Add panic recovery for robustness
 	defer errorhandler.HandlePanic()
 
+	// Skip notifications when running in background judge mode (e.g., double-shot-latte plugin)
+	// The CLAUDE_HOOK_JUDGE_MODE env var is set by plugins that spawn background Claude instances
+	// to evaluate context/decide on continuation - we don't want notifications from these
+	if os.Getenv("CLAUDE_HOOK_JUDGE_MODE") == "true" {
+		return nil
+	}
+
 	// Ensure notifier resources are cleaned up when function exits
 	defer func() {
 		if err := h.notifierSvc.Close(); err != nil {

@@ -27,6 +27,7 @@ Smart notifications for Claude Code with click-to-focus, git branch display, and
     - [🔊 Audio Customization](#-audio-customization)
     - [🌐 Enterprise-Grade Webhooks](#-enterprise-grade-webhooks)
     - [🛠️ Developer Experience](#️-developer-experience)
+    - [🤝 Plugin Compatibility](#-plugin-compatibility)
   - [Platform Support](#platform-support)
     - [macOS Click-to-Focus](#macos-click-to-focus)
   - [Quick Start](#quick-start)
@@ -148,6 +149,14 @@ Your `config.json` settings will be preserved during the update.
 - **Stop/SubagentStop hooks** analyze the conversation transcript using a state machine to determine the task status
 - **Notification hook** is triggered when Claude needs user input (permission dialogs, questions)
 - The state machine uses temporal locality (last 15 messages) and tool analysis to accurately detect task completion
+
+### 🤝 Plugin Compatibility
+
+Compatible with other Claude Code plugins that spawn background Claude instances:
+
+- **[double-shot-latte](https://github.com/obra/double-shot-latte)** - Auto-continue plugin that uses a background Claude instance for context evaluation. Notifications are automatically suppressed for the background judge process (via `CLAUDE_HOOK_JUDGE_MODE=true` environment variable).
+
+If you're developing a plugin that spawns background Claude instances and want to suppress notifications, set `CLAUDE_HOOK_JUDGE_MODE=true` in the environment before invoking Claude.
 
 ## Platform Support
 
