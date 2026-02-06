@@ -92,6 +92,7 @@ func (n *Notifier) SendDesktop(status analyzer.Status, message string) error {
 
 // sendWithTerminalNotifier sends notification via terminal-notifier on macOS
 // with click-to-focus support (clicking notification activates the terminal)
+// When running inside tmux, clicking the notification will navigate to the exact pane
 func (n *Notifier) sendWithTerminalNotifier(title, message string) error {
 	notifierPath, err := GetTerminalNotifierPath()
 	if err != nil {
@@ -99,7 +100,18 @@ func (n *Notifier) sendWithTerminalNotifier(title, message string) error {
 	}
 
 	bundleID := GetTerminalBundleID(n.cfg.Notifications.Desktop.TerminalBundleID)
-	args := buildTerminalNotifierArgs(title, message, bundleID)
+	
+	// Check if we're running inside tmux
+	tmuxPane := GetCurrentTmuxPane()
+	
+	var args []string
+	if tmuxPane != nil && n.cfg.Notifications.Desktop.TmuxPaneFocus {
+		// Use -execute to run tmux navigation command when clicked
+		args = buildTerminalNotifierArgsWithTmux(title, message, bundleID, tmuxPane)
+	} else {
+		// Standard behavior: just activate the terminal app
+		args = buildTerminalNotifierArgs(title, message, bundleID)
+	}
 
 	cmd := exec.Command(notifierPath, args...)
 
@@ -108,7 +120,11 @@ func (n *Notifier) sendWithTerminalNotifier(title, message string) error {
 		return fmt.Errorf("terminal-notifier error: %w, output: %s", err, string(output))
 	}
 
-	logging.Debug("terminal-notifier executed: bundleID=%s", bundleID)
+	if tmuxPane != nil {
+		logging.Debug("terminal-notifier executed: bundleID=%s, tmuxPane=%s", bundleID, tmuxPane.Target)
+	} else {
+		logging.Debug("terminal-notifier executed: bundleID=%s", bundleID)
+	}
 	return nil
 }
 
@@ -122,6 +138,25 @@ func buildTerminalNotifierArgs(title, message, bundleID string) []string {
 		// Note: -sender option removed because it conflicts with -activate on macOS Sequoia (15.x)
 		// Using -sender causes click-to-focus to stop working.
 		// Trade-off: no custom Claude icon, but click-to-focus works reliably.
+	}
+
+	// Add group ID to prevent notification stacking issues
+	args = append(args, "-group", fmt.Sprintf("claude-notif-%d", time.Now().UnixNano()))
+
+	return args
+}
+
+// buildTerminalNotifierArgsWithTmux constructs arguments that include tmux pane navigation.
+// When the notification is clicked, it will switch to the exact tmux pane that triggered it.
+func buildTerminalNotifierArgsWithTmux(title, message, bundleID string, pane *TmuxPaneInfo) []string {
+	focusCmd := BuildTmuxFocusCommand(pane, bundleID)
+
+	args := []string{
+		"-title", title,
+		"-message", message,
+		"-execute", focusCmd,
+		// Note: -execute is mutually exclusive with -activate
+		// The focus command handles both tmux navigation AND terminal activation
 	}
 
 	// Add group ID to prevent notification stacking issues

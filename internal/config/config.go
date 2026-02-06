@@ -33,6 +33,7 @@ type DesktopConfig struct {
 	AudioDevice      string  `json:"audioDevice"`      // Audio output device name (empty = system default)
 	AppIcon          string  `json:"appIcon"`          // Path to app icon
 	ClickToFocus     bool    `json:"clickToFocus"`     // macOS: activate terminal on notification click (default: true)
+	TmuxPaneFocus    bool    `json:"tmuxPaneFocus"`    // macOS+tmux: navigate to exact pane on notification click (default: true)
 	TerminalBundleID string  `json:"terminalBundleId"` // macOS: override auto-detected terminal bundle ID (empty = auto)
 }
 
@@ -89,11 +90,12 @@ func DefaultConfig() *Config {
 	return &Config{
 		Notifications: NotificationsConfig{
 			Desktop: DesktopConfig{
-				Enabled:      true,
-				Sound:        true,
-				Volume:       1.0, // Full volume by default
-				AppIcon:      filepath.Join(pluginRoot, "claude_icon.png"),
-				ClickToFocus: true, // macOS: activate terminal on click (default: enabled)
+				Enabled:       true,
+				Sound:         true,
+				Volume:        1.0, // Full volume by default
+				AppIcon:       filepath.Join(pluginRoot, "claude_icon.png"),
+				ClickToFocus:  true, // macOS: activate terminal on click (default: enabled)
+				TmuxPaneFocus: true, // macOS+tmux: navigate to exact pane on click (default: enabled)
 				// TerminalBundleID: "" - empty means auto-detect
 			},
 			Webhook: WebhookConfig{
