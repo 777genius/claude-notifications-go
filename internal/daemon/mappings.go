@@ -137,6 +137,11 @@ func GetTerminalName() string {
 		return "Code"
 	}
 
+	// Check GNOME Terminal indicators
+	if os.Getenv("GNOME_TERMINAL_SCREEN") != "" || os.Getenv("GNOME_TERMINAL_SERVICE") != "" {
+		return "gnome-terminal"
+	}
+
 	// Fallback to generic terminal
 	return "Terminal"
 }

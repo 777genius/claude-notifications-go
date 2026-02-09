@@ -9,7 +9,7 @@ import (
 // saveTerminalEnv saves all terminal-related env vars and returns a restore function.
 func saveTerminalEnv(t *testing.T) func() {
 	t.Helper()
-	vars := []string{"TERM_PROGRAM", "VSCODE_INJECTION", "VSCODE_GIT_IPC_HANDLE"}
+	vars := []string{"TERM_PROGRAM", "VSCODE_INJECTION", "VSCODE_GIT_IPC_HANDLE", "GNOME_TERMINAL_SCREEN", "GNOME_TERMINAL_SERVICE"}
 	type envState struct {
 		value string
 		isSet bool
@@ -424,6 +424,30 @@ func TestGetTerminalName_Fallback(t *testing.T) {
 	result := GetTerminalName()
 	if result != "Terminal" {
 		t.Errorf("GetTerminalName() fallback = %q, want %q", result, "Terminal")
+	}
+}
+
+func TestGetTerminalName_GnomeTerminalScreen(t *testing.T) {
+	restore := saveTerminalEnv(t)
+	defer restore()
+
+	t.Setenv("GNOME_TERMINAL_SCREEN", "/org/gnome/Terminal/screen/0")
+
+	result := GetTerminalName()
+	if result != "gnome-terminal" {
+		t.Errorf("GetTerminalName() with GNOME_TERMINAL_SCREEN = %q, want %q", result, "gnome-terminal")
+	}
+}
+
+func TestGetTerminalName_GnomeTerminalService(t *testing.T) {
+	restore := saveTerminalEnv(t)
+	defer restore()
+
+	t.Setenv("GNOME_TERMINAL_SERVICE", ":1.123")
+
+	result := GetTerminalName()
+	if result != "gnome-terminal" {
+		t.Errorf("GetTerminalName() with GNOME_TERMINAL_SERVICE = %q, want %q", result, "gnome-terminal")
 	}
 }
 
