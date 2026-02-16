@@ -270,7 +270,7 @@ _push notifications to Android/iOS/browsers/etc., FOSS_
 },
 ```
 
-In the example above templates are used to interpret this plugins's default json, see the docs for more.
+In the example above templates are used to interpret this plugin's default json, see the docs for more.
 You can also use ntfy <ins>as middleware transformer for other webhooks</ins> or relay to channels like email, etc.
 
 ### Zapier
