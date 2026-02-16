@@ -248,6 +248,31 @@ Balanced for reliability and performance:
 
 ## Common Integrations
 
+### ntfy.sh
+_push notifications to Android/iOS/browsers/etc., FOSS_
+
+1. Install [any app](https://ntfy.sh/)
+2. Subscribe to `your_topic_name`
+3. Configure Claude Notifications:
+
+```json
+"webhook": {
+    "enabled": true,
+    "preset": "",
+    "url": "https://ntfy.sh/your_topic_name",
+    "format": "json",
+    "headers": {
+        "X-Message": "{{.message}}",
+        "X-Title": "{{.title}}",
+        "X-Priority": "{{if or (eq .status \"task_complete\") (eq .status \"review_complete\")}}3{{else}}4{{end}}",
+        "X-Template": "yes"
+    }
+},
+```
+
+In the example above templates are used to interpret this plugins's default json, see the docs for more.
+You can also use ntfy <ins>as middleware transformer for other webhooks</ins> or relay to channels like email, etc.
+
 ### Zapier
 
 1. Create a **Webhook by Zapier** trigger
