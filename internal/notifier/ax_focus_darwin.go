@@ -124,6 +124,47 @@ static void requestScreenRecordingAccess(void) {
 	CGRequestScreenCaptureAccess();
 }
 
+// raiseWindowByAXDocument enumerates AXWindows for the given PID and raises
+// the first window whose AXDocument attribute contains fileURL. Ghostty sets
+// AXDocument to the shell CWD (via OSC 7) as a file:// URL. Returns 1 on match.
+// NOTE: AXWindows only populates after the app has been activated; callers
+// must call activateByPID and wait before calling this function.
+static int raiseWindowByAXDocument(int pid, const char *fileURL) {
+	AXUIElementRef appEl = AXUIElementCreateApplication((pid_t)pid);
+	if (!appEl) return 0;
+
+	CFTypeRef windowsRef = NULL;
+	if (AXUIElementCopyAttributeValue(appEl, CFSTR("AXWindows"), &windowsRef) != kAXErrorSuccess || !windowsRef) {
+		CFRelease(appEl);
+		return 0;
+	}
+
+	CFArrayRef windows = (CFArrayRef)windowsRef;
+	CFIndex count = CFArrayGetCount(windows);
+	int found = 0;
+
+	for (CFIndex i = 0; i < count; i++) {
+		AXUIElementRef w = (AXUIElementRef)CFArrayGetValueAtIndex(windows, i);
+		CFTypeRef docRef = NULL;
+		if (AXUIElementCopyAttributeValue(w, CFSTR("AXDocument"), &docRef) != kAXErrorSuccess) continue;
+
+		char buf[4096] = {0};
+		CFStringGetCString((CFStringRef)docRef, buf, sizeof(buf), kCFStringEncodingUTF8);
+		CFRelease(docRef);
+
+		if (strstr(buf, fileURL) != NULL) {
+			AXUIElementPerformAction(w, CFSTR("AXRaise"));
+			AXUIElementSetAttributeValue(appEl, CFSTR("AXFrontmost"), kCFBooleanTrue);
+			found = 1;
+			break;
+		}
+	}
+
+	CFRelease(windowsRef);
+	CFRelease(appEl);
+	return found;
+}
+
 // raiseWindowByTitle finds the window whose title contains folderName across all
 // Spaces, switches to its Space, activates the app, then raises the window via AX.
 // Returns 1 on success, 0 if window not found, -1 if Screen Recording permission is missing.
@@ -183,13 +224,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 	"unsafe"
 
 	"github.com/777genius/claude-notifications/internal/config"
 )
 
-// FocusAppWindow switches to the Space containing the bundleID app's window for
-// cwd, then raises that window. macOS only.
+// FocusAppWindow raises the window matching cwd for the given bundleID app.
+// For Ghostty: activates then matches via AXDocument (OSC 7 file:// URL).
+// For other apps: uses CGS to find the window across Spaces then raises via AXTitle. macOS only.
 func FocusAppWindow(bundleID, cwd string) error {
 	cBundleID := C.CString(bundleID)
 	defer C.free(unsafe.Pointer(cBundleID))
@@ -197,6 +240,16 @@ func FocusAppWindow(bundleID, cwd string) error {
 	pid := int(C.findPID(cBundleID))
 	if pid < 0 {
 		return fmt.Errorf("app not running: %s", bundleID)
+	}
+
+	if isGhosttyBundleID(bundleID) {
+		C.activateByPID(C.int(pid))
+		time.Sleep(800 * time.Millisecond)
+		fileURL := cwdToFileURL(cwd)
+		cFileURL := C.CString(fileURL)
+		defer C.free(unsafe.Pointer(cFileURL))
+		C.raiseWindowByAXDocument(C.int(pid), cFileURL)
+		return nil
 	}
 
 	folderName := filepath.Base(cwd)

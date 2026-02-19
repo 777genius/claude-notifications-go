@@ -1032,6 +1032,42 @@ func TestBuildFocusScript_VSCodeInsiders_UsesBinaryCallback(t *testing.T) {
 	}
 }
 
+func TestBuildFocusScript_Ghostty_UsesFocusWindow(t *testing.T) {
+	script := buildFocusScript("com.mitchellh.ghostty", "/home/user/my-project")
+	if !strings.Contains(script, "focus-window") {
+		t.Errorf("Ghostty focus script should use focus-window subcommand, got: %s", script)
+	}
+	if !strings.Contains(script, "com.mitchellh.ghostty") {
+		t.Errorf("Ghostty focus script should contain bundle ID, got: %s", script)
+	}
+	if !strings.Contains(script, "/home/user/my-project") {
+		t.Errorf("Ghostty focus script should contain cwd, got: %s", script)
+	}
+	if strings.Contains(script, "osascript") {
+		t.Errorf("Ghostty focus script should not use osascript, got: %s", script)
+	}
+	if strings.Contains(script, "code --reuse-window") {
+		t.Errorf("Ghostty focus script should not use code CLI, got: %s", script)
+	}
+}
+
+func TestCwdToFileURL(t *testing.T) {
+	tests := []struct {
+		cwd      string
+		expected string
+	}{
+		{"/home/user/project", "file:///home/user/project/"},
+		{"/home/user/my project", "file:///home/user/my%20project/"},
+		{"/path/with#hash", "file:///path/with%23hash/"},
+	}
+	for _, tt := range tests {
+		got := cwdToFileURL(tt.cwd)
+		if got != tt.expected {
+			t.Errorf("cwdToFileURL(%q) = %q, want %q", tt.cwd, got, tt.expected)
+		}
+	}
+}
+
 func TestBuildFocusScript_NonVSCode_UsesAppleScript(t *testing.T) {
 	script := buildFocusScript("com.googlecode.iterm2", "/home/user/my-project")
 	if !strings.Contains(script, "osascript") {

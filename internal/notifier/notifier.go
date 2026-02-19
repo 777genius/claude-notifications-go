@@ -205,12 +205,18 @@ func buildTerminalNotifierArgs(title, message, bundleID, cwd string) []string {
 }
 
 // buildFocusScript returns the shell command for -execute in terminal-notifier.
+// For Ghostty: uses AXDocument attribute (OSC 7 CWD) via Accessibility API,
+// falling back to plain app activation.
 // For VS Code: invokes the binary's focus-window subcommand (CGo AXUIElement).
 // For all other apps: uses AppleScript title search by folder name.
 // Returns "" when cwd is empty or unusable (caller should use -activate instead).
 func buildFocusScript(bundleID, cwd string) string {
 	if cwd == "" {
 		return ""
+	}
+
+	if isGhosttyBundleID(bundleID) {
+		return buildGhosttyFocusScript(bundleID, cwd)
 	}
 
 	folderName := filepath.Base(cwd)
@@ -234,6 +240,11 @@ func isVSCodeBundleID(bundleID string) bool {
 		bundleID == "com.microsoft.VSCodeInsiders"
 }
 
+// isGhosttyBundleID reports whether bundleID is Ghostty.
+func isGhosttyBundleID(bundleID string) bool {
+	return bundleID == "com.mitchellh.ghostty"
+}
+
 // shellQuote wraps s in single quotes, escaping internal single quotes
 // using the '\” technique (end quote, literal apostrophe, resume quote).
 func shellQuote(s string) string {
@@ -250,6 +261,36 @@ func buildVSCodeFocusScript(bundleID, cwd string) string {
 		return ""
 	}
 	return shellQuote(exe) + " focus-window " + shellQuote(bundleID) + " " + shellQuote(cwd)
+}
+
+// buildGhosttyFocusScript builds the -execute script for Ghostty.
+// Invokes the binary's focus-window subcommand which activates Ghostty,
+// waits for AXWindows to populate, then raises the window matching cwd via
+// AXDocument (OSC 7 file:// URL). AXDocument is window-level only; tabs and
+// split panes within a window are not individually addressable.
+// Returns "" (causing -activate fallback) if cwd is empty or os.Executable() fails.
+func buildGhosttyFocusScript(bundleID, cwd string) string {
+	if cwd == "" {
+		return ""
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return shellQuote(exe) + " focus-window " + shellQuote(bundleID) + " " + shellQuote(cwd)
+}
+
+// cwdToFileURL converts an absolute path to a file:// URL. Ghostty exposes the
+// window CWD (set via OSC 7) as a file:// URL in the AXDocument attribute.
+// Encodes spaces as %20 to match the format Ghostty uses.
+func cwdToFileURL(cwd string) string {
+	encoded := strings.NewReplacer(
+		" ", "%20",
+		"#", "%23",
+		"?", "%3F",
+		"%", "%25",
+	).Replace(cwd)
+	return "file://" + encoded + "/"
 }
 
 // buildAppleScriptFocusScript builds the -execute script that activates an app
