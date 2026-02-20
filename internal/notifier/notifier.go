@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -251,16 +252,22 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// buildVSCodeFocusScript builds the -execute script for VS Code.
-// Invokes the binary's focus-window subcommand which activates VS Code,
-// waits for AXWindows to populate, then raises the window matching cwd.
+// buildBinaryFocusScript builds the -execute script for apps that use the
+// binary's focus-window subcommand (VS Code, Ghostty).
 // Returns "" (causing -activate fallback) if os.Executable() fails.
-func buildVSCodeFocusScript(bundleID, cwd string) string {
+func buildBinaryFocusScript(bundleID, cwd string) string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
 	}
 	return shellQuote(exe) + " focus-window " + shellQuote(bundleID) + " " + shellQuote(cwd)
+}
+
+// buildVSCodeFocusScript builds the -execute script for VS Code.
+// Invokes the binary's focus-window subcommand which activates VS Code,
+// waits for AXWindows to populate, then raises the window matching cwd.
+func buildVSCodeFocusScript(bundleID, cwd string) string {
+	return buildBinaryFocusScript(bundleID, cwd)
 }
 
 // buildGhosttyFocusScript builds the -execute script for Ghostty.
@@ -268,29 +275,16 @@ func buildVSCodeFocusScript(bundleID, cwd string) string {
 // waits for AXWindows to populate, then raises the window matching cwd via
 // AXDocument (OSC 7 file:// URL). AXDocument is window-level only; tabs and
 // split panes within a window are not individually addressable.
-// Returns "" (causing -activate fallback) if cwd is empty or os.Executable() fails.
 func buildGhosttyFocusScript(bundleID, cwd string) string {
-	if cwd == "" {
-		return ""
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	return shellQuote(exe) + " focus-window " + shellQuote(bundleID) + " " + shellQuote(cwd)
+	return buildBinaryFocusScript(bundleID, cwd)
 }
 
 // cwdToFileURL converts an absolute path to a file:// URL. Ghostty exposes the
 // window CWD (set via OSC 7) as a file:// URL in the AXDocument attribute.
-// Encodes spaces as %20 to match the format Ghostty uses.
+// Uses net/url for RFC-3986-compliant percent-encoding.
 func cwdToFileURL(cwd string) string {
-	encoded := strings.NewReplacer(
-		" ", "%20",
-		"#", "%23",
-		"?", "%3F",
-		"%", "%25",
-	).Replace(cwd)
-	return "file://" + encoded + "/"
+	u := url.URL{Scheme: "file", Path: cwd + "/"}
+	return u.String()
 }
 
 // buildAppleScriptFocusScript builds the -execute script that activates an app

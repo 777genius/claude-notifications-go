@@ -125,11 +125,16 @@ static void requestScreenRecordingAccess(void) {
 }
 
 // raiseWindowByAXDocument enumerates AXWindows for the given PID and raises
-// the first window whose AXDocument attribute contains fileURL. Ghostty sets
-// AXDocument to the shell CWD (via OSC 7) as a file:// URL. Returns 1 on match.
+// the first window whose AXDocument attribute exactly matches fileURL. Ghostty
+// sets AXDocument to the shell CWD (via OSC 7) as a file:// URL.
+// Returns 1 on match, 0 if not found, -1 if Accessibility permission is missing.
 // NOTE: AXWindows only populates after the app has been activated; callers
 // must call activateByPID and wait before calling this function.
 static int raiseWindowByAXDocument(int pid, const char *fileURL) {
+	if (!AXIsProcessTrusted()) {
+		return -1;
+	}
+
 	AXUIElementRef appEl = AXUIElementCreateApplication((pid_t)pid);
 	if (!appEl) return 0;
 
@@ -148,16 +153,19 @@ static int raiseWindowByAXDocument(int pid, const char *fileURL) {
 		CFTypeRef docRef = NULL;
 		if (AXUIElementCopyAttributeValue(w, CFSTR("AXDocument"), &docRef) != kAXErrorSuccess) continue;
 
-		char buf[4096] = {0};
-		CFStringGetCString((CFStringRef)docRef, buf, sizeof(buf), kCFStringEncodingUTF8);
+		CFIndex len = CFStringGetMaximumSizeForEncoding(
+			CFStringGetLength((CFStringRef)docRef), kCFStringEncodingUTF8) + 1;
+		char *buf = (char *)malloc(len);
+		BOOL ok = buf && CFStringGetCString((CFStringRef)docRef, buf, len, kCFStringEncodingUTF8);
 		CFRelease(docRef);
 
-		if (strstr(buf, fileURL) != NULL) {
+		if (ok && strcmp(buf, fileURL) == 0) {
 			AXUIElementPerformAction(w, CFSTR("AXRaise"));
 			AXUIElementSetAttributeValue(appEl, CFSTR("AXFrontmost"), kCFBooleanTrue);
 			found = 1;
-			break;
 		}
+		free(buf);
+		if (found) break;
 	}
 
 	CFRelease(windowsRef);
@@ -243,12 +251,22 @@ func FocusAppWindow(bundleID, cwd string) error {
 	}
 
 	if isGhosttyBundleID(bundleID) {
+		if cwd == "" {
+			return fmt.Errorf("invalid cwd: %s", cwd)
+		}
 		C.activateByPID(C.int(pid))
 		time.Sleep(800 * time.Millisecond)
 		fileURL := cwdToFileURL(cwd)
 		cFileURL := C.CString(fileURL)
 		defer C.free(unsafe.Pointer(cFileURL))
-		C.raiseWindowByAXDocument(C.int(pid), cFileURL)
+		result := C.raiseWindowByAXDocument(C.int(pid), cFileURL)
+		switch {
+		case result < 0:
+			promptAccessibilityOnce()
+			return fmt.Errorf("Accessibility permission required: grant it in System Settings → Privacy & Security → Accessibility, then try again")
+		case result == 0:
+			return fmt.Errorf("window not found for %s (cwd: %s)", bundleID, cwd)
+		}
 		return nil
 	}
 
@@ -294,5 +312,29 @@ func promptScreenRecordingOnce() {
 		"Screen Recording Access Needed",
 		"Click-to-focus reads window titles to find the right window. No screen content is ever recorded. Click to open Settings.",
 		`open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"`,
+	)
+}
+
+// promptAccessibilityOnce sends a one-time notification explaining why
+// Accessibility access is needed for Ghostty click-to-focus.
+func promptAccessibilityOnce() {
+	stableDir, err := config.GetStableConfigDir()
+	if err != nil {
+		return
+	}
+	markerPath := filepath.Join(stableDir, ".accessibility-prompted")
+
+	if _, err := os.Stat(markerPath); err == nil {
+		return // already prompted
+	}
+
+	// Mark as prompted before sending (avoid duplicate prompts on error)
+	_ = os.MkdirAll(stableDir, 0755)
+	_ = os.WriteFile(markerPath, []byte("1"), 0644)
+
+	_ = SendQuickNotification(
+		"Accessibility Access Needed",
+		"Click-to-focus for Ghostty uses the Accessibility API to find the right window. Click to open Settings.",
+		`open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`,
 	)
 }
