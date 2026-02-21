@@ -195,8 +195,12 @@ static int findSwitchAndActivate(int pid, const char *folderName) {
 
 // raiseWindowByAXTitle enumerates AXWindows for the given PID and raises the
 // first window whose AXTitle contains folderName as a distinct component.
-// Returns 1 on match, 0 if not found.
+// Returns 1 on match, 0 if not found, -1 if Accessibility permission is missing.
 static int raiseWindowByAXTitle(int pid, const char *folderName) {
+	if (!AXIsProcessTrusted()) {
+		return -1;
+	}
+
 	AXUIElementRef appEl = AXUIElementCreateApplication((pid_t)pid);
 	if (!appEl) return 0;
 
@@ -316,7 +320,11 @@ func FocusAppWindow(bundleID, cwd string) error {
 	result := retryWindowFocus(func() C.int {
 		return C.raiseWindowByAXTitle(C.int(pid), cFolder)
 	})
-	if result == 0 {
+	switch {
+	case result < 0:
+		promptAccessibilityOnce()
+		return fmt.Errorf("Accessibility permission required: grant it in System Settings → Privacy & Security → Accessibility, then try again")
+	case result == 0:
 		return fmt.Errorf("window not found for %s (cwd: %s)", bundleID, cwd)
 	}
 	return nil
