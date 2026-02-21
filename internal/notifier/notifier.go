@@ -283,7 +283,7 @@ func buildGhosttyFocusScript(bundleID, cwd string) string {
 // window CWD (set via OSC 7) as a file:// URL in the AXDocument attribute.
 // Uses net/url for RFC-3986-compliant percent-encoding.
 func cwdToFileURL(cwd string) string {
-	u := url.URL{Scheme: "file", Path: cwd + "/"}
+	u := url.URL{Scheme: "file", Path: strings.TrimRight(cwd, "/") + "/"}
 	return u.String()
 }
 

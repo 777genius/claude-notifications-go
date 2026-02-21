@@ -1060,6 +1060,7 @@ func TestCwdToFileURL(t *testing.T) {
 		{"/home/user/my project", "file:///home/user/my%20project/"},
 		{"/path/with#hash", "file:///path/with%23hash/"},
 		{"/home/user/100%done", "file:///home/user/100%25done/"},
+		{"/home/user/project/", "file:///home/user/project/"},
 	}
 	for _, tt := range tests {
 		got := cwdToFileURL(tt.cwd)
