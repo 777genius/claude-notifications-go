@@ -173,10 +173,11 @@ static int raiseWindowByAXDocument(int pid, const char *fileURL) {
 	return found;
 }
 
-// raiseWindowByTitle finds the window whose title contains folderName across all
-// Spaces, switches to its Space, activates the app, then raises the window via AX.
-// Returns 1 on success, 0 if window not found, -1 if Screen Recording permission is missing.
-static int raiseWindowByTitle(int pid, const char *folderName) {
+// findSwitchAndActivate locates a window by title across Spaces, switches to
+// its Space and activates the app. The AX raise step is handled separately by
+// raiseWindowByAXTitle so that Go can retry it with backoff.
+// Returns 1 ok, 0 window not found, -1 no Screen Recording permission.
+static int findSwitchAndActivate(int pid, const char *folderName) {
 	if (!CGPreflightScreenCaptureAccess()) {
 		return -1;
 	}
@@ -189,8 +190,13 @@ static int raiseWindowByTitle(int pid, const char *folderName) {
 	usleep(300000); // wait for Space transition animation
 
 	activateByPID(pid);
-	usleep(300000); // wait for app activation
+	return 1;
+}
 
+// raiseWindowByAXTitle enumerates AXWindows for the given PID and raises the
+// first window whose AXTitle contains folderName as a distinct component.
+// Returns 1 on match, 0 if not found.
+static int raiseWindowByAXTitle(int pid, const char *folderName) {
 	AXUIElementRef appEl = AXUIElementCreateApplication((pid_t)pid);
 	if (!appEl) return 0;
 
@@ -238,6 +244,26 @@ import (
 	"github.com/777genius/claude-notifications/internal/config"
 )
 
+// retryWindowFocus calls fn with increasing delays until a non-zero result.
+// Returns 1 (found), -1 (no permission), or 0 (not found after all attempts).
+// Worst case: 150+250+400 = 800ms. Best case: 150ms.
+func retryWindowFocus(fn func() C.int) C.int {
+	delays := []time.Duration{
+		150 * time.Millisecond,
+		250 * time.Millisecond,
+		400 * time.Millisecond,
+	}
+	var result C.int
+	for _, d := range delays {
+		time.Sleep(d)
+		result = fn()
+		if result != 0 {
+			break
+		}
+	}
+	return result
+}
+
 // FocusAppWindow raises the window matching cwd for the given bundleID app.
 // For Ghostty: activates then matches via AXDocument (OSC 7 file:// URL).
 // For other apps: uses CGS to find the window across Spaces then raises via AXTitle. macOS only.
@@ -255,11 +281,12 @@ func FocusAppWindow(bundleID, cwd string) error {
 			return fmt.Errorf("invalid cwd: %s", cwd)
 		}
 		C.activateByPID(C.int(pid))
-		time.Sleep(800 * time.Millisecond)
 		fileURL := cwdToFileURL(cwd)
 		cFileURL := C.CString(fileURL)
 		defer C.free(unsafe.Pointer(cFileURL))
-		result := C.raiseWindowByAXDocument(C.int(pid), cFileURL)
+		result := retryWindowFocus(func() C.int {
+			return C.raiseWindowByAXDocument(C.int(pid), cFileURL)
+		})
 		switch {
 		case result < 0:
 			promptAccessibilityOnce()
@@ -277,14 +304,19 @@ func FocusAppWindow(bundleID, cwd string) error {
 	cFolder := C.CString(folderName)
 	defer C.free(unsafe.Pointer(cFolder))
 
-	result := C.raiseWindowByTitle(C.int(pid), cFolder)
-	switch {
-	case result < 0:
-		// No Screen Recording permission — show explanation once, then fall back.
+	prepResult := C.findSwitchAndActivate(C.int(pid), cFolder)
+	if prepResult < 0 {
 		promptScreenRecordingOnce()
 		C.activateByPID(C.int(pid))
 		return fmt.Errorf("Screen Recording permission required: grant it in System Settings → Privacy & Security → Screen Recording, then try again")
-	case result == 0:
+	}
+	if prepResult == 0 {
+		return fmt.Errorf("window not found for %s (cwd: %s)", bundleID, cwd)
+	}
+	result := retryWindowFocus(func() C.int {
+		return C.raiseWindowByAXTitle(C.int(pid), cFolder)
+	})
+	if result == 0 {
 		return fmt.Errorf("window not found for %s (cwd: %s)", bundleID, cwd)
 	}
 	return nil
