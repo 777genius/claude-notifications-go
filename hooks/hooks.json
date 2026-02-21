@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh ${CLAUDE_PLUGIN_ROOT}/bin/hook-wrapper.sh handle-hook PreToolUse",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/hook-wrapper.sh handle-hook PreToolUse",
             "timeout": 30
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh ${CLAUDE_PLUGIN_ROOT}/bin/hook-wrapper.sh handle-hook Notification",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/hook-wrapper.sh handle-hook Notification",
             "timeout": 30
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh ${CLAUDE_PLUGIN_ROOT}/bin/hook-wrapper.sh handle-hook Stop",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/hook-wrapper.sh handle-hook Stop",
             "timeout": 30
           }
         ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh ${CLAUDE_PLUGIN_ROOT}/bin/hook-wrapper.sh handle-hook SubagentStop",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/hook-wrapper.sh handle-hook SubagentStop",
             "timeout": 30
           }
         ]
