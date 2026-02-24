@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Foundation
 import UserNotifications
 
@@ -16,6 +17,7 @@ if arguments.contains("-help") || arguments.contains("--help") {
     print("  -threadID       Thread ID for grouping notifications in a stack")
     print("  -timeSensitive  Mark as time-sensitive (breaks through Focus Mode)")
     print("  -nosound        Suppress notification sound")
+    print("  -persistent     Show as alert (stays until dismissed) instead of banner")
     exit(ExitCode.success)
 } else if ArgumentParser.isSendMode(arguments) {
     runSendMode(arguments: arguments)
@@ -55,10 +57,10 @@ func runSendMode(arguments: [String]) {
     // Safety timeout on a background queue — fires even if main queue is blocked.
     // UNUserNotificationCenter may hang when the .app is launched from CLI
     // (not via LaunchServices), especially on macOS Sequoia.
-    // Falls back to osascript which always works (no permission needed).
+    // Falls back to NSUserNotificationCenter which works without permission.
     DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
-        fputs("Warning: UNUserNotificationCenter timed out, using osascript fallback\n", stderr)
-        OsascriptNotificationService().send(config: config) { _ in
+        fputs("Warning: UNUserNotificationCenter timed out, using NSNotificationService fallback\n", stderr)
+        NSNotificationService().send(config: config) { _ in
             exit(ExitCode.success)
         }
     }
@@ -85,6 +87,7 @@ func checkAuthAndSend(config: NotificationConfig) {
 
 func handleAuthStatus(_ status: UNAuthorizationStatus, config: NotificationConfig) {
     if status == .notDetermined {
+        // Request authorization — prompts user on first launch
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
             DispatchQueue.main.async {
                 let newStatus: UNAuthorizationStatus = granted ? .authorized : .denied
@@ -101,7 +104,10 @@ func sendNotification(config: NotificationConfig, authStatus: UNAuthorizationSta
     if authStatus == .authorized || authStatus == .provisional {
         service = UNNotificationService()
     } else {
-        service = OsascriptNotificationService()
+        // Fall back to NSUserNotificationCenter (deprecated but works without permission).
+        // Avoids osascript which attributes notifications to Script Editor, causing
+        // Script Editor to activate when the user clicks the notification.
+        service = NSNotificationService()
     }
 
     service.send(config: config) { result in
@@ -123,6 +129,21 @@ func sendNotification(config: NotificationConfig, authStatus: UNAuthorizationSta
 // MARK: - Callback Mode
 
 func runCallbackMode() {
+    // Request Accessibility access for this app (ClaudeNotifier.app) so child
+    // processes spawned by executeCommand are covered by this app's TCC trust.
+    // If not already granted, macOS shows the native "wants to control your
+    // computer" dialog, which takes the user directly to the right Settings pane.
+    let axOptions = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): kCFBooleanTrue] as CFDictionary
+    AXIsProcessTrustedWithOptions(axOptions)
+
+    // Request Screen Recording access for this app (ClaudeNotifier.app) so child
+    // processes spawned by executeCommand are covered by this app's TCC trust.
+    // Required for CGWindowListCopyWindowInfo to return window names across Spaces.
+    CGRequestScreenCaptureAccess()
+
+    // Request authorization when launched via LaunchServices (no args)
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
 
@@ -130,11 +151,15 @@ func runCallbackMode() {
     app.delegate = appDelegate
     UNUserNotificationCenter.current().delegate = appDelegate
 
+    // Wire up NSUserNotificationCenter delegate for NSNotificationService callbacks
+    let nsNotifDelegate = NSNotificationDelegate()
+    NSUserNotificationCenter.default.delegate = nsNotifDelegate
+
     DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
         NSApplication.shared.terminate(nil)
     }
 
-    withExtendedLifetime(appDelegate) {
+    withExtendedLifetime((appDelegate, nsNotifDelegate)) {
         app.run()
     }
 }

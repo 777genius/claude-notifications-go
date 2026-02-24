@@ -2,6 +2,22 @@
 
 Common installation and runtime issues.
 
+## macOS: ClaudeNotifier.app not in the Accessibility list
+
+### Symptom
+
+After clicking the "Accessibility Access Needed" notification you land in **System Settings → Privacy & Security → Accessibility** but `ClaudeNotifier.app` is not in the list.
+
+### Fix
+
+Clicking the notification also opens a Finder window with `ClaudeNotifier.app` highlighted. Drag it directly from Finder into the Accessibility list, then enable the toggle.
+
+If you dismissed the notification before seeing this, trigger it again by deleting the marker file and clicking any notification:
+
+```bash
+rm ~/.claude/claude-notifications-go/.accessibility-prompted
+```
+
 ## macOS: VS Code click-to-focus focuses the wrong window
 
 ### Symptom

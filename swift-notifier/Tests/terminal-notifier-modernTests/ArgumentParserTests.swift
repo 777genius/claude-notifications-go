@@ -19,6 +19,7 @@ final class ArgumentParserTests: XCTestCase {
         XCTAssertNil(config.threadID)
         XCTAssertFalse(config.timeSensitive)
         XCTAssertFalse(config.silent)
+        XCTAssertFalse(config.persistent)
     }
 
     func testParseMinimalArgs() throws {
@@ -193,6 +194,26 @@ final class ArgumentParserTests: XCTestCase {
         XCTAssertEqual(config.threadID, "session-xyz")
         XCTAssertTrue(config.timeSensitive)
         XCTAssertTrue(config.silent)
+        XCTAssertFalse(config.persistent)
+    }
+
+    func testParsePersistent() throws {
+        let config = try ArgumentParser.parse([
+            "-title", "Test",
+            "-message", "Body",
+            "-persistent"
+        ])
+
+        XCTAssertTrue(config.persistent)
+    }
+
+    func testParsePersistentNotSet() throws {
+        let config = try ArgumentParser.parse([
+            "-title", "Test",
+            "-message", "Body"
+        ])
+
+        XCTAssertFalse(config.persistent)
     }
 
     func testParseMissingSubtitleValue() {

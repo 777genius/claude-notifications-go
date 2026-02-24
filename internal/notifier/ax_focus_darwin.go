@@ -20,6 +20,10 @@ extern CGSConnectionID CGSMainConnectionID(void);
 extern CFArrayRef CGSCopySpacesForWindows(CGSConnectionID cid, int selector, CFArrayRef windowIDs);
 extern CGError CGSManagedDisplaySetCurrentSpace(CGSConnectionID cid, CFStringRef displayID, CGSSpaceID spaceID);
 extern CFStringRef CGSCopyBestManagedDisplayForRect(CGSConnectionID cid, CGRect rect);
+// Private AX SPI: resolves an AXUIElementRef to its CGWindowID.
+// Available since macOS 10.9; used by Moom, Magnet, Amethyst, and others.
+// Requires Accessibility permission (same as all AX calls).
+extern AXError _AXUIElementGetWindow(AXUIElementRef elem, CGWindowID *idOut);
 
 static int findPID(const char *bundleID) {
 	@autoreleasepool {
@@ -138,8 +142,9 @@ static int raiseWindowByAXDocument(int pid, const char *fileURL) {
 	AXUIElementRef appEl = AXUIElementCreateApplication((pid_t)pid);
 	if (!appEl) return 0;
 
+	// AXAllWindows returns windows across all Spaces; AXWindows is current-Space only.
 	CFTypeRef windowsRef = NULL;
-	if (AXUIElementCopyAttributeValue(appEl, CFSTR("AXWindows"), &windowsRef) != kAXErrorSuccess || !windowsRef) {
+	if (AXUIElementCopyAttributeValue(appEl, CFSTR("AXAllWindows"), &windowsRef) != kAXErrorSuccess || !windowsRef) {
 		CFRelease(appEl);
 		return 0;
 	}
@@ -193,8 +198,10 @@ static int findSwitchAndActivate(int pid, const char *folderName) {
 	return 1;
 }
 
-// raiseWindowByAXTitle enumerates AXWindows for the given PID and raises the
-// first window whose AXTitle contains folderName as a distinct component.
+// raiseWindowByAXTitle enumerates AXAllWindows for the given PID, switches to the
+// matching window's Space (via _AXUIElementGetWindow + CGS), then raises it.
+// Uses AXAllWindows (not AXWindows) to find windows across all Spaces.
+// Space-switching uses only Accessibility permission — no Screen Recording needed.
 // Returns 1 on match, 0 if not found, -1 if Accessibility permission is missing.
 static int raiseWindowByAXTitle(int pid, const char *folderName) {
 	if (!AXIsProcessTrusted()) {
@@ -204,10 +211,16 @@ static int raiseWindowByAXTitle(int pid, const char *folderName) {
 	AXUIElementRef appEl = AXUIElementCreateApplication((pid_t)pid);
 	if (!appEl) return 0;
 
+	// Try AXAllWindows first (returns windows across all Spaces).
+	// Fall back to AXWindows if the app doesn't implement it.
 	CFTypeRef windowsRef = NULL;
-	if (AXUIElementCopyAttributeValue(appEl, CFSTR("AXWindows"), &windowsRef) != kAXErrorSuccess || !windowsRef) {
-		CFRelease(appEl);
-		return 0;
+	AXError allErr = AXUIElementCopyAttributeValue(appEl, CFSTR("AXAllWindows"), &windowsRef);
+	if (allErr != kAXErrorSuccess || !windowsRef) {
+		allErr = AXUIElementCopyAttributeValue(appEl, CFSTR("AXWindows"), &windowsRef);
+		if (allErr != kAXErrorSuccess || !windowsRef) {
+			CFRelease(appEl);
+			return 0;
+		}
 	}
 
 	CFArrayRef windows = (CFArrayRef)windowsRef;
@@ -224,6 +237,29 @@ static int raiseWindowByAXTitle(int pid, const char *folderName) {
 		BOOL matched = titleMatchesFolder(title, folder);
 		CFRelease(titleRef);
 		if (matched) {
+			// Attempt Space-switching via _AXUIElementGetWindow (AX SPI) + CGS.
+			// This path requires only Accessibility permission; no Screen Recording needed.
+			// NOTE: AXPosition/AXSize may be stale for off-Space windows on multi-monitor
+			// setups; CGSCopyBestManagedDisplayForRect may pick the wrong display in that
+			// case, but the Space-switch still fires on the correct Space.
+			CGWindowID wid = 0;
+			if (_AXUIElementGetWindow(w, &wid) == kAXErrorSuccess && wid != 0) {
+				// Get window bounds from AX position + size attributes.
+				CGPoint pos = CGPointZero;
+				CGSize sz = CGSizeZero;
+				CFTypeRef posRef = NULL, sizeRef = NULL;
+				if (AXUIElementCopyAttributeValue(w, CFSTR("AXPosition"), &posRef) == kAXErrorSuccess && posRef) {
+					AXValueGetValue((AXValueRef)posRef, kAXValueCGPointType, &pos);
+					CFRelease(posRef);
+				}
+				if (AXUIElementCopyAttributeValue(w, CFSTR("AXSize"), &sizeRef) == kAXErrorSuccess && sizeRef) {
+					AXValueGetValue((AXValueRef)sizeRef, kAXValueCGSizeType, &sz);
+					CFRelease(sizeRef);
+				}
+				CGRect bounds = CGRectMake(pos.x, pos.y, sz.width, sz.height);
+				switchToWindowSpace(wid, bounds);
+				usleep(300000); // wait for Space transition animation
+			}
 			AXUIElementPerformAction(w, CFSTR("AXRaise"));
 			AXUIElementSetAttributeValue(appEl, CFSTR("AXFrontmost"), kCFBooleanTrue);
 			found = 1;
@@ -241,6 +277,7 @@ import "C"
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 	"unsafe"
@@ -266,6 +303,15 @@ func retryWindowFocus(fn func() C.int) C.int {
 		}
 	}
 	return result
+}
+
+// activateViaAppleScript sends a bare "activate" AppleScript to the app.
+// Used as a last-resort when NSRunningApplication.activate may not work
+// (e.g. no window-server context in certain subprocess scenarios).
+// Does not enumerate or focus any specific window — just brings the app to front.
+func activateViaAppleScript(bundleID string) {
+	script := fmt.Sprintf(`tell application id "%s" to activate`, bundleID)
+	_ = exec.Command("osascript", "-e", script).Run()
 }
 
 // FocusAppWindow raises the window matching cwd for the given bundleID app.
@@ -310,22 +356,34 @@ func FocusAppWindow(bundleID, cwd string) error {
 
 	prepResult := C.findSwitchAndActivate(C.int(pid), cFolder)
 	if prepResult < 0 {
+		// No Screen Recording permission: space-switching is unavailable.
+		// Prompt once, then fall through to the AX path — Accessibility is
+		// independent and can still raise the correct window without space-switching.
 		promptScreenRecordingOnce()
 		C.activateByPID(C.int(pid))
-		return fmt.Errorf("Screen Recording permission required: grant it in System Settings → Privacy & Security → Screen Recording, then try again")
-	}
-	if prepResult == 0 {
-		return fmt.Errorf("window not found for %s (cwd: %s)", bundleID, cwd)
+	} else if prepResult == 0 {
+		// CGWindowListCopyWindowInfo did not find the window by title.
+		// macOS 15+ no longer returns kCGWindowName for third-party app windows
+		// via this API even with Screen Recording permission granted.
+		// Fall back to activating by PID and letting AX-based title search handle it.
+		C.activateByPID(C.int(pid))
 	}
 	result := retryWindowFocus(func() C.int {
 		return C.raiseWindowByAXTitle(C.int(pid), cFolder)
 	})
 	switch {
 	case result < 0:
+		// No Accessibility permission: AX is unavailable, but activateByPID was
+		// already called above. Use AppleScript as a safety net (works without
+		// Accessibility) to ensure the app is visible, then surface the prompt.
+		activateViaAppleScript(bundleID)
 		promptAccessibilityOnce()
-		return fmt.Errorf("Accessibility permission required: grant it in System Settings → Privacy & Security → Accessibility, then try again")
+		return nil
 	case result == 0:
-		return fmt.Errorf("window not found for %s (cwd: %s)", bundleID, cwd)
+		// Window not found — likely on a different Space. AXAllWindows does not cross
+		// Space boundaries for Electron apps. The app is already activated above;
+		// the user can switch to it manually.
+		return nil
 	}
 	return nil
 }
@@ -356,7 +414,7 @@ func promptScreenRecordingOnce() {
 }
 
 // promptAccessibilityOnce sends a one-time notification explaining why
-// Accessibility access is needed for Ghostty click-to-focus.
+// Accessibility access is needed for click-to-focus.
 func promptAccessibilityOnce() {
 	stableDir, err := config.GetStableConfigDir()
 	if err != nil {
@@ -372,9 +430,23 @@ func promptAccessibilityOnce() {
 	_ = os.MkdirAll(stableDir, 0755)
 	_ = os.WriteFile(markerPath, []byte("1"), 0644)
 
+	// Derive ClaudeNotifier.app path (same bin/ dir as this binary).
+	// Clicking the notification reveals the app in Finder so the user can
+	// drag it into the Accessibility list if it is not already there.
+	executeCmd := `open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`
+	if exe, err := os.Executable(); err == nil {
+		appPath := filepath.Join(filepath.Dir(exe), "ClaudeNotifier.app")
+		if _, err := os.Stat(appPath); err == nil {
+			executeCmd = fmt.Sprintf(
+				`open -R %q; open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`,
+				appPath,
+			)
+		}
+	}
+
 	_ = SendQuickNotification(
 		"Accessibility Access Needed",
-		"Click-to-focus for Ghostty uses the Accessibility API to find the right window. Click to open Settings.",
-		`open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`,
+		"Click to open Settings. Drag the highlighted ClaudeNotifier.app into the Accessibility list, then enable the toggle.",
+		executeCmd,
 	)
 }
