@@ -389,8 +389,9 @@ func FocusAppWindow(bundleID, cwd string) error {
 }
 
 // promptScreenRecordingOnce sends a one-time notification explaining why Screen
-// Recording access is needed. Clicking the notification opens the settings pane.
-// Uses the plugin's own notification system (ClaudeNotifier.app → legacy → osascript).
+// Recording access is needed for VS Code cross-Space focus.
+// Clicking reveals ClaudeNotifier.app in Finder (for dragging into the list)
+// and opens System Settings → Privacy & Security → Screen Recording.
 func promptScreenRecordingOnce() {
 	stableDir, err := config.GetStableConfigDir()
 	if err != nil {
@@ -406,10 +407,23 @@ func promptScreenRecordingOnce() {
 	_ = os.MkdirAll(stableDir, 0755)
 	_ = os.WriteFile(markerPath, []byte("1"), 0644)
 
+	executeCmd := `open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"`
+	if exe, err := os.Executable(); err == nil {
+		appPath := filepath.Join(filepath.Dir(exe), "ClaudeNotifier.app")
+		if _, err := os.Stat(appPath); err == nil {
+			// Copy the app path to the clipboard so the user can paste it into
+			// Finder's Go To Folder dialog (⌘⇧G). Then open Settings.
+			executeCmd = fmt.Sprintf(
+				`printf %%s %q | pbcopy; open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"`,
+				appPath,
+			)
+		}
+	}
+
 	_ = SendQuickNotification(
 		"Screen Recording Access Needed",
-		"Click-to-focus reads window titles to find the right window. No screen content is ever recorded. Click to open Settings.",
-		`open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"`,
+		"Click to open Settings (path copied to clipboard). In Finder press ⌘⇧G, paste, then drag ClaudeNotifier.app into the Screen Recording list.",
+		executeCmd,
 	)
 }
 
@@ -438,7 +452,7 @@ func promptAccessibilityOnce() {
 		appPath := filepath.Join(filepath.Dir(exe), "ClaudeNotifier.app")
 		if _, err := os.Stat(appPath); err == nil {
 			executeCmd = fmt.Sprintf(
-				`open -R %q; open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`,
+				`printf %%s %q | pbcopy; open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`,
 				appPath,
 			)
 		}
@@ -446,7 +460,7 @@ func promptAccessibilityOnce() {
 
 	_ = SendQuickNotification(
 		"Accessibility Access Needed",
-		"Click to open Settings. Drag the highlighted ClaudeNotifier.app into the Accessibility list, then enable the toggle.",
+		"Click to open Settings (path copied to clipboard). In Finder press ⌘⇧G, paste, then drag ClaudeNotifier.app into the Accessibility list.",
 		executeCmd,
 	)
 }
