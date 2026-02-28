@@ -2,6 +2,22 @@
 
 Common installation and runtime issues.
 
+## macOS: ClaudeNotifier.app not in the Accessibility list
+
+### Symptom
+
+After clicking the "Accessibility Access Needed" notification you land in **System Settings → Privacy & Security → Accessibility** but `ClaudeNotifier.app` is not in the list.
+
+### Fix
+
+Clicking the notification opens Settings and copies the path to `ClaudeNotifier.app` to your clipboard. In Finder press **⌘⇧G**, paste, then drag `ClaudeNotifier.app` into the Accessibility list and enable the toggle.
+
+If you dismissed the notification before seeing this, trigger it again by deleting the marker file and clicking any notification:
+
+```bash
+rm ~/.claude/claude-notifications-go/.accessibility-prompted
+```
+
 ## macOS: VS Code click-to-focus focuses the wrong window
 
 ### Symptom
@@ -14,11 +30,13 @@ VS Code window focus requires **Screen Recording** permission (macOS 10.15+) to 
 
 ### Fix
 
-On first use the binary requests Screen Recording access automatically — a macOS dialog will appear. If you dismissed it:
+On first use you will receive a notification. Clicking it opens **System Settings → Privacy & Security → Screen Recording** and copies the path to `ClaudeNotifier.app` to your clipboard. In Finder press **⌘⇧G**, paste, then drag `ClaudeNotifier.app` into the list and enable the toggle.
 
-1. Open **System Settings → Privacy & Security → Screen Recording**
-2. Enable access for the `claude-notifications` binary (or the terminal running Claude Code)
-3. Click the notification again
+If you dismissed the notification before seeing this, trigger it again by deleting the marker file and clicking any notification:
+
+```bash
+rm ~/.claude/claude-notifications-go/.screen-recording-prompted
+```
 
 Once granted, the correct VS Code window will be raised even if it is on a different Space.
 

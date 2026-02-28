@@ -24,5 +24,7 @@
     <string>AppIcon</string>
     <key>NSUserNotificationAlertStyle</key>
     <string>banner</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Claude Notifier reads window titles to focus the correct editor window when you click a notification.</string>
 </dict>
 </plist>

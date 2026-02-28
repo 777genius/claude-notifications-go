@@ -98,9 +98,21 @@ func getBundleIDFromTmuxEnv() string {
 // 2. terminal-notifier (embedded in plugin): legacy NSUserNotificationCenter
 // 3. System-installed (via brew): $(which terminal-notifier)
 func GetTerminalNotifierPath() (string, error) {
-	pluginRoot := os.Getenv("CLAUDE_PLUGIN_ROOT")
+	// Collect candidate plugin roots: env var first, then executable-relative.
+	var roots []string
+	if pluginRoot := os.Getenv("CLAUDE_PLUGIN_ROOT"); pluginRoot != "" {
+		roots = append(roots, pluginRoot)
+	}
+	// Derive plugin root from the running binary path.
+	// Binary is at <pluginRoot>/bin/claude-notifications; plugin root is bin/'s parent.
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		if filepath.Base(exeDir) == "bin" {
+			roots = append(roots, filepath.Dir(exeDir))
+		}
+	}
 
-	if pluginRoot != "" {
+	for _, pluginRoot := range roots {
 		// 1. Check ClaudeNotifier (preferred — modern UNUserNotificationCenter with Claude icon)
 		modernPath := filepath.Join(pluginRoot, "bin",
 			"ClaudeNotifier.app", "Contents", "MacOS", "terminal-notifier-modern")

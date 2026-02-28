@@ -37,14 +37,11 @@ To find your terminal's bundle ID: `osascript -e 'id of app "YourTerminal"'`
 
 ### Permissions
 
-**Ghostty** requires **Accessibility** permission — to enumerate windows via AXDocument. Prompted automatically on first use.
+**Ghostty** and **VS Code** require **Accessibility** permission to enumerate and raise windows via the AX API.
 
-**VS Code** requires two permissions:
+On first use you will receive a notification. Clicking it opens **System Settings → Privacy & Security → Accessibility** and copies the path to `ClaudeNotifier.app` to your clipboard. In Finder, press **⌘⇧G**, paste the path, then drag `ClaudeNotifier.app` into the list and enable the toggle.
 
-- **Accessibility** — to enumerate and raise windows via the AX API
-- **Screen Recording** — to read window titles across Spaces (macOS 10.15+)
-
-Both are requested automatically on first use. Without Screen Recording, clicking a notification still activates VS Code but raises whichever window was last active rather than the project-specific one.
+**VS Code** also requires **Screen Recording** permission to read window titles across Spaces. Without it, click-to-focus will activate VS Code but may raise the wrong window if you have multiple VS Code windows open on different Spaces.
 
 Other terminals use AppleScript and require no additional permissions.
 

@@ -294,10 +294,12 @@ func cwdToFileURL(cwd string) string {
 func buildAppleScriptFocusScript(bundleID, folderName string) string {
 	safeBundleID := sanitizeForAppleScript(bundleID)
 	safeFolder := sanitizeForAppleScript(folderName)
-	// AppleScript: check if name contains " — folder" or "folder — " or equals folder.
-	// This matches titles like "file — folder — App" without substring false positives.
+	// AppleScript: activate the app, then try to raise the window matching folderName.
+	// The window enumeration is wrapped in try/on error/end try so that apps without
+	// AppleScript window support (e.g. Electron apps returning -1708) activate cleanly
+	// instead of propagating an unhandled error that can open Script Editor.
 	return fmt.Sprintf(
-		`osascript -e 'tell application id "%s"' -e 'activate' -e 'set _n to "%s"' -e 'set _d1 to " \u2014 " & _n' -e 'set _d2 to _n & " \u2014 "' -e 'set _d3 to " - " & _n' -e 'set _d4 to _n & " - "' -e 'repeat with w in windows' -e 'set _t to name of w' -e 'if _t = _n or _t contains _d1 or _t contains _d2 or _t contains _d3 or _t contains _d4 then' -e 'set index of w to 1' -e 'exit repeat' -e 'end if' -e 'end repeat' -e 'end tell'`,
+		`osascript -e 'tell application id "%s"' -e 'activate' -e 'try' -e 'set _n to "%s"' -e 'set _d1 to " \u2014 " & _n' -e 'set _d2 to _n & " \u2014 "' -e 'set _d3 to " - " & _n' -e 'set _d4 to _n & " - "' -e 'repeat with w in windows' -e 'set _t to name of w' -e 'if _t = _n or _t contains _d1 or _t contains _d2 or _t contains _d3 or _t contains _d4 then' -e 'set index of w to 1' -e 'exit repeat' -e 'end if' -e 'end repeat' -e 'on error' -e 'end try' -e 'end tell'`,
 		safeBundleID, safeFolder,
 	)
 }
@@ -338,6 +340,8 @@ func SendQuickNotification(title, message, executeCmd string) error {
 		args = append(args,
 			"-group", fmt.Sprintf("claude-quick-%d", time.Now().UnixNano()),
 			"-nosound",
+			"-timeSensitive",
+			"-persistent",
 		)
 		if output, err := exec.Command(notifierPath, args...).CombinedOutput(); err == nil {
 			return nil

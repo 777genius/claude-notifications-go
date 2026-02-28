@@ -25,8 +25,12 @@ final class NSNotificationService: NotificationSending {
             notification.identifier = group
         }
 
-        // Set hasActionButton so macOS delivers didActivate on click
-        notification.hasActionButton = false
+        // Persistent notifications use alert style (stays until dismissed).
+        // Non-persistent use banner style (auto-dismisses).
+        notification.hasActionButton = config.persistent
+        if config.persistent {
+            notification.actionButtonTitle = "Open"
+        }
 
         NSUserNotificationCenter.default.deliver(notification)
         completion(.success(()))

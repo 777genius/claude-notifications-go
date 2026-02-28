@@ -9,6 +9,7 @@ struct NotificationConfig {
     let threadID: String?
     let timeSensitive: Bool
     let silent: Bool
+    let persistent: Bool
 }
 
 enum ArgumentParserError: Error, CustomStringConvertible {
@@ -40,6 +41,7 @@ enum ArgumentParser {
         var threadID: String?
         var timeSensitive = false
         var silent = false
+        var persistent = false
 
         var i = 0
         while i < arguments.count {
@@ -101,6 +103,9 @@ enum ArgumentParser {
             case "-nosound":
                 silent = true
 
+            case "-persistent":
+                persistent = true
+
             default:
                 break
             }
@@ -135,7 +140,8 @@ enum ArgumentParser {
             group: group,
             threadID: threadID,
             timeSensitive: timeSensitive,
-            silent: silent
+            silent: silent,
+            persistent: persistent
         )
     }
 

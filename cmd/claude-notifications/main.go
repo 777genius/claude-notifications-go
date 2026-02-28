@@ -43,10 +43,21 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: focus-window requires bundleID and cwd arguments\n")
 			os.Exit(1)
 		}
-		if err := notifier.FocusAppWindow(os.Args[2], os.Args[3]); err != nil {
+		// Initialize logger so focus-window results appear in notification-debug.log.
+		// focus-window runs as a background subprocess (notification click callback),
+		// so stderr is discarded; the log file is the only observable output.
+		pluginRoot := getPluginRoot()
+		if _, err := logging.InitLogger(pluginRoot); err == nil {
+			defer logging.Close()
+		}
+		bundleID, cwd := os.Args[2], os.Args[3]
+		logging.Debug("focus-window: bundleID=%s cwd=%s", bundleID, cwd)
+		if err := notifier.FocusAppWindow(bundleID, cwd); err != nil {
+			logging.Error("focus-window failed: %v", err)
 			fmt.Fprintf(os.Stderr, "focus-window: %v\n", err)
 			os.Exit(1)
 		}
+		logging.Debug("focus-window: success")
 	case "daemon", "--daemon":
 		runDaemon()
 	case "version", "--version", "-v":
@@ -131,7 +142,7 @@ func printUsage() {
 	fmt.Println("  daemon                  Run the notification daemon (Linux only)")
 	fmt.Println("                          For click-to-focus support on desktop notifications")
 	fmt.Println("  focus-window <bundleID> <cwd>")
-	fmt.Println("                          Focus specific VS Code window (internal, used by click-to-focus)")
+	fmt.Println("                          Focus app window by bundleID and cwd (internal, used by click-to-focus)")
 	fmt.Println("  version                 Show version information")
 	fmt.Println("  help                    Show this help message")
 	fmt.Println()
