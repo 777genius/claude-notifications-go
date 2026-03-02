@@ -158,8 +158,17 @@ func HasRecentApiError(messages []Message) bool {
 			if lastUserTS == "" {
 				return true
 			}
-			// Check if error is after last user message
-			if msg.Timestamp >= lastUserTS {
+			// Check if error is at or after last user message.
+			// Use time.Parse for correct comparison across timezone representations
+			// (e.g. "Z" vs "+00:00") rather than lexicographic string comparison.
+			msgTime, msgErr := time.Parse(time.RFC3339, msg.Timestamp)
+			afterTime, afterErr := time.Parse(time.RFC3339, lastUserTS)
+			if msgErr != nil || afterErr != nil {
+				// Fall back to string comparison if either timestamp is unparseable
+				if msg.Timestamp >= lastUserTS {
+					return true
+				}
+			} else if !msgTime.Before(afterTime) {
 				return true
 			}
 		}

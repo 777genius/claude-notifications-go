@@ -206,6 +206,124 @@ func TestGetLockPath_WithHookEvent(t *testing.T) {
 	assert.NotEqual(t, pathWithout, pathWith)
 }
 
+// === Content lock tests ===
+
+func TestAcquireContentLock_Basic(t *testing.T) {
+	mgr := NewManager()
+	sessionID := "content-lock-basic"
+
+	// First acquisition should succeed
+	acquired, err := mgr.AcquireContentLock(sessionID)
+	require.NoError(t, err)
+	assert.True(t, acquired)
+
+	// Cleanup
+	lockPath := filepath.Join(mgr.tempDir, "claude-notification-"+sessionID+"-content.lock")
+	defer os.Remove(lockPath)
+
+	// Second acquisition immediately should fail (fresh lock, 5s TTL)
+	acquired2, err := mgr.AcquireContentLock(sessionID)
+	require.NoError(t, err)
+	assert.False(t, acquired2, "second acquisition should fail while lock is fresh")
+}
+
+func TestReleaseContentLock_Basic(t *testing.T) {
+	mgr := NewManager()
+	sessionID := "content-lock-release"
+
+	// Acquire lock
+	acquired, err := mgr.AcquireContentLock(sessionID)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	lockPath := filepath.Join(mgr.tempDir, "claude-notification-"+sessionID+"-content.lock")
+	assert.FileExists(t, lockPath)
+
+	// Release should succeed
+	err = mgr.ReleaseContentLock(sessionID)
+	require.NoError(t, err)
+
+	// Lock file should be gone
+	_, err = os.Stat(lockPath)
+	assert.True(t, os.IsNotExist(err))
+
+	// Releasing again (non-existent) should not error
+	err = mgr.ReleaseContentLock(sessionID)
+	require.NoError(t, err)
+}
+
+func TestAcquireContentLock_StaleLockReplaceable(t *testing.T) {
+	mgr := NewManager()
+	sessionID := "content-lock-stale"
+
+	lockPath := filepath.Join(mgr.tempDir, "claude-notification-"+sessionID+"-content.lock")
+
+	// Create a stale lock file (>5s old)
+	err := os.WriteFile(lockPath, []byte(""), 0644)
+	require.NoError(t, err)
+	defer os.Remove(lockPath)
+
+	oldTime := time.Now().Add(-10 * time.Second)
+	err = os.Chtimes(lockPath, oldTime, oldTime)
+	require.NoError(t, err)
+
+	// Should succeed on a stale lock
+	acquired, err := mgr.AcquireContentLock(sessionID)
+	require.NoError(t, err)
+	assert.True(t, acquired, "stale lock should be replaceable")
+}
+
+func TestAcquireContentLock_Concurrent(t *testing.T) {
+	mgr := NewManager()
+	sessionID := "content-lock-concurrent"
+
+	lockPath := filepath.Join(mgr.tempDir, "claude-notification-"+sessionID+"-content.lock")
+	defer os.Remove(lockPath)
+
+	var wg sync.WaitGroup
+	successCount := 0
+	var mu sync.Mutex
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			acquired, err := mgr.AcquireContentLock(sessionID)
+			require.NoError(t, err)
+			if acquired {
+				mu.Lock()
+				successCount++
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Only one should succeed
+	assert.Equal(t, 1, successCount, "exactly one goroutine should acquire the content lock")
+}
+
+func TestAcquireRelease_ContentLockRoundTrip(t *testing.T) {
+	mgr := NewManager()
+	sessionID := "content-lock-roundtrip"
+
+	lockPath := filepath.Join(mgr.tempDir, "claude-notification-"+sessionID+"-content.lock")
+
+	// Acquire → Release → Acquire should succeed
+	for i := 0; i < 3; i++ {
+		acquired, err := mgr.AcquireContentLock(sessionID)
+		require.NoError(t, err)
+		assert.True(t, acquired, "iteration %d: should acquire after release", i)
+
+		err = mgr.ReleaseContentLock(sessionID)
+		require.NoError(t, err)
+
+		_, err = os.Stat(lockPath)
+		assert.True(t, os.IsNotExist(err), "iteration %d: lock file should be gone after release", i)
+	}
+}
+
 func TestCleanupForSession_RemoveError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping on Windows: Unix-style permissions not supported")

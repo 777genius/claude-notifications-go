@@ -841,6 +841,25 @@ func TestHasRecentApiError(t *testing.T) {
 		}
 		assert.True(t, HasRecentApiError(messages))
 	})
+
+	t.Run("error_after_user_mixed_timezone_formats", func(t *testing.T) {
+		// User message uses "Z", error message uses "+00:00" — same instant, different representation.
+		// A lexicographic string comparison would return false here because "+" < "Z" in ASCII;
+		// proper time.Parse comparison must be used.
+		messages := []Message{
+			{Type: "user", Timestamp: "2025-01-01T10:00:00Z", Message: MessageContent{ContentString: "hello"}},
+			{Type: "assistant", Timestamp: "2025-01-01T10:00:05+00:00", IsApiErrorMessage: true, Error: "unknown"},
+		}
+		assert.True(t, HasRecentApiError(messages), "should detect error after user message even with mixed timezone formats")
+	})
+
+	t.Run("error_before_user_mixed_timezone_formats", func(t *testing.T) {
+		messages := []Message{
+			{Type: "assistant", Timestamp: "2025-01-01T09:59:55+00:00", IsApiErrorMessage: true, Error: "unknown"},
+			{Type: "user", Timestamp: "2025-01-01T10:00:00Z", Message: MessageContent{ContentString: "hello"}},
+		}
+		assert.False(t, HasRecentApiError(messages), "error before user message should not be detected as recent")
+	})
 }
 
 // === Tests for isApiErrorMessage JSON parsing ===

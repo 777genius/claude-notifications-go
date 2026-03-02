@@ -4,13 +4,17 @@ package notifier
 
 /*
 #cgo CFLAGS: -x objective-c
-#cgo LDFLAGS: -framework ApplicationServices -framework AppKit -framework CoreGraphics
+#cgo LDFLAGS: -framework ApplicationServices -framework AppKit -framework CoreGraphics -framework ScreenCaptureKit
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <CoreGraphics/CoreGraphics.h>
+#if defined(__MAC_12_3) || __MAC_OS_X_VERSION_MAX_ALLOWED >= 120300
+#import <ScreenCaptureKit/ScreenCaptureKit.h>
+#endif
 
 // Private CGS API declarations (stable, used by Moom/Magnet/Raycast et al.)
 typedef int CGSConnectionID;
@@ -19,6 +23,7 @@ typedef uint64_t CGSSpaceID;
 extern CGSConnectionID CGSMainConnectionID(void);
 extern CFArrayRef CGSCopySpacesForWindows(CGSConnectionID cid, int selector, CFArrayRef windowIDs);
 extern CGError CGSManagedDisplaySetCurrentSpace(CGSConnectionID cid, CFStringRef displayID, CGSSpaceID spaceID);
+extern CGSSpaceID CGSManagedDisplayGetCurrentSpace(CGSConnectionID cid, CFStringRef displayID);
 extern CFStringRef CGSCopyBestManagedDisplayForRect(CGSConnectionID cid, CGRect rect);
 // Private AX SPI: resolves an AXUIElementRef to its CGWindowID.
 // Available since macOS 10.9; used by Moom, Magnet, Amethyst, and others.
@@ -100,6 +105,126 @@ static CGWindowID findWindowID(int pid, const char *folderName, CGRect *outBound
 	}
 }
 
+#if defined(__MAC_12_3) || __MAC_OS_X_VERSION_MAX_ALLOWED >= 120300
+
+// findWindowIDSCK finds the window matching folderName using ScreenCaptureKit.
+// Falls back when CGWindowListCopyWindowInfo returns no title (macOS 15+).
+// Requires Screen Recording permission. Returns CGWindowID and sets outBounds.
+static CGWindowID findWindowIDSCK(int pid, const char *folderName, CGRect *outBounds) {
+	*outBounds = CGRectZero;
+	if (@available(macOS 12.3, *)) {
+		__block CGWindowID result = 0;
+		__block CGRect resultBounds = CGRectZero;
+		dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+		[SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent *content, NSError *error) {
+			if (!error && content) {
+				// Get current Space for diagnostic comparison.
+				CGSConnectionID dconn = CGSMainConnectionID();
+				CFStringRef mainDisplay = CGSCopyBestManagedDisplayForRect(dconn, CGRectMake(0, 0, 1, 1));
+				CGSSpaceID curSpace = mainDisplay ? CGSManagedDisplayGetCurrentSpace(dconn, mainDisplay) : 0;
+				if (mainDisplay) CFRelease(mainDisplay);
+
+				NSString *folder = [NSString stringWithUTF8String:folderName];
+				for (SCWindow *window in content.windows) {
+					if (window.owningApplication.processID != (pid_t)pid) continue;
+
+					CFArrayRef wSpaces = CGSCopySpacesForWindows(dconn, CGSAllSpacesMask,
+						(__bridge CFArrayRef)@[@(window.windowID)]);
+					CGSSpaceID wSpace = 0;
+					if (wSpaces) {
+						if (CFArrayGetCount(wSpaces) > 0)
+							wSpace = [(NSNumber *)CFArrayGetValueAtIndex(wSpaces, 0) unsignedLongLongValue];
+						CFRelease(wSpaces);
+					}
+					fprintf(stderr, "[SCK] wid=%u space=%llu(cur=%llu) title=%s frame=(%.0f,%.0f,%.0f,%.0f)\n",
+						window.windowID, (unsigned long long)wSpace, (unsigned long long)curSpace,
+						window.title ? window.title.UTF8String : "(nil)",
+						window.frame.origin.x, window.frame.origin.y,
+						window.frame.size.width, window.frame.size.height);
+
+					if (!window.title) continue;
+					if (!titleMatchesFolder(window.title, folder)) continue;
+					result = window.windowID;
+					resultBounds = window.frame;
+					break;
+				}
+			}
+			dispatch_semaphore_signal(sema);
+		}];
+		dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
+		*outBounds = resultBounds;
+		return result;
+	}
+	return 0;
+}
+
+// findGhosttySpaceViaSCK finds the CGWindowID of the Ghostty container window
+// whose associated sub-window title contains folderName.
+// Sub-windows sit at x=0; containers share identical {y, w, h} but sit at
+// negative x (Space offset). Returns 0 if not found.
+static CGWindowID findGhosttySpaceViaSCK(int pid, const char *folderName, CGRect *outBounds) {
+	*outBounds = CGRectZero;
+	if (@available(macOS 12.3, *)) {
+		__block CGWindowID result = 0;
+		__block CGRect resultBounds = CGRectZero;
+		dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+		[SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent *content, NSError *error) {
+			if (!error && content) {
+				NSString *folder = [NSString stringWithUTF8String:folderName];
+				// Collect all windows for this PID.
+				NSMutableArray<SCWindow *> *appWindows = [NSMutableArray array];
+				for (SCWindow *w in content.windows) {
+					if (w.owningApplication.processID == (pid_t)pid) {
+						[appWindows addObject:w];
+					}
+				}
+				// Find sub-window: title matches folderName and x == 0.
+				SCWindow *subWindow = nil;
+				for (SCWindow *w in appWindows) {
+					if (w.title && titleMatchesFolder(w.title, folder) && w.frame.origin.x == 0) {
+						subWindow = w;
+						break;
+					}
+				}
+				if (subWindow) {
+					CGFloat targetY = subWindow.frame.origin.y;
+					CGFloat targetW = subWindow.frame.size.width;
+					CGFloat targetH = subWindow.frame.size.height;
+					// Find container: same {y, w, h}, x < 0 (Space offset).
+					for (SCWindow *w in appWindows) {
+						if (w.windowID == subWindow.windowID) continue;
+						if (w.frame.origin.x >= 0) continue;
+						if (fabs(w.frame.origin.y - targetY) < 1.0 &&
+							fabs(w.frame.size.width - targetW) < 1.0 &&
+							fabs(w.frame.size.height - targetH) < 1.0) {
+							result = w.windowID;
+							resultBounds = w.frame;
+							break;
+						}
+					}
+				}
+			}
+			dispatch_semaphore_signal(sema);
+		}];
+		dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
+		*outBounds = resultBounds;
+		return result;
+	}
+	return 0;
+}
+
+#else
+
+// Stubs for builds against SDKs older than macOS 12.3.
+static CGWindowID findWindowIDSCK(int pid, const char *folderName, CGRect *outBounds) {
+	(void)pid; (void)folderName; *outBounds = CGRectZero; return 0;
+}
+static CGWindowID findGhosttySpaceViaSCK(int pid, const char *folderName, CGRect *outBounds) {
+	(void)pid; (void)folderName; *outBounds = CGRectZero; return 0;
+}
+
+#endif
+
 // switchToWindowSpace switches the current visible Space to the one containing
 // windowID, using bounds to select the correct display.
 static void switchToWindowSpace(CGWindowID windowID, CGRect bounds) {
@@ -143,10 +268,15 @@ static int raiseWindowByAXDocument(int pid, const char *fileURL) {
 	if (!appEl) return 0;
 
 	// AXAllWindows returns windows across all Spaces; AXWindows is current-Space only.
+	// Ghostty does not implement AXAllWindows (kAXErrorAttributeUnsupported).
+	// Fall back to AXWindows: after activateViaAppleScript switches to the app's
+	// Space, AXWindows includes the target window.
 	CFTypeRef windowsRef = NULL;
 	if (AXUIElementCopyAttributeValue(appEl, CFSTR("AXAllWindows"), &windowsRef) != kAXErrorSuccess || !windowsRef) {
-		CFRelease(appEl);
-		return 0;
+		if (AXUIElementCopyAttributeValue(appEl, CFSTR("AXWindows"), &windowsRef) != kAXErrorSuccess || !windowsRef) {
+			CFRelease(appEl);
+			return 0;
+		}
 	}
 
 	CFArrayRef windows = (CFArrayRef)windowsRef;
@@ -165,6 +295,25 @@ static int raiseWindowByAXDocument(int pid, const char *fileURL) {
 		CFRelease(docRef);
 
 		if (ok && strcmp(buf, fileURL) == 0) {
+			// Switch to this window's Space before raising, so it works
+			// cross-Space with Accessibility permission alone (no Screen Recording).
+			CGWindowID wid = 0;
+			if (_AXUIElementGetWindow(w, &wid) == kAXErrorSuccess && wid != 0) {
+				CFTypeRef posRef = NULL, sizeRef = NULL;
+				CGPoint pos = CGPointZero;
+				CGSize sz = CGSizeZero;
+				if (AXUIElementCopyAttributeValue(w, CFSTR("AXPosition"), &posRef) == kAXErrorSuccess && posRef) {
+					AXValueGetValue((AXValueRef)posRef, kAXValueCGPointType, &pos);
+					CFRelease(posRef);
+				}
+				if (AXUIElementCopyAttributeValue(w, CFSTR("AXSize"), &sizeRef) == kAXErrorSuccess && sizeRef) {
+					AXValueGetValue((AXValueRef)sizeRef, kAXValueCGSizeType, &sz);
+					CFRelease(sizeRef);
+				}
+				CGRect bounds = CGRectMake(pos.x, pos.y, sz.width, sz.height);
+				switchToWindowSpace(wid, bounds);
+				usleep(300000);
+			}
 			AXUIElementPerformAction(w, CFSTR("AXRaise"));
 			AXUIElementSetAttributeValue(appEl, CFSTR("AXFrontmost"), kCFBooleanTrue);
 			found = 1;
@@ -189,6 +338,12 @@ static int findSwitchAndActivate(int pid, const char *folderName) {
 
 	CGRect bounds;
 	CGWindowID targetWID = findWindowID(pid, folderName, &bounds);
+
+	// CGWindowListCopyWindowInfo no longer returns titles on macOS 15+.
+	// Try ScreenCaptureKit as fallback.
+	if (!targetWID) {
+		targetWID = findWindowIDSCK(pid, folderName, &bounds);
+	}
 	if (!targetWID) return 0;
 
 	switchToWindowSpace(targetWID, bounds);
@@ -215,8 +370,12 @@ static int raiseWindowByAXTitle(int pid, const char *folderName) {
 	// Fall back to AXWindows if the app doesn't implement it.
 	CFTypeRef windowsRef = NULL;
 	AXError allErr = AXUIElementCopyAttributeValue(appEl, CFSTR("AXAllWindows"), &windowsRef);
+	fprintf(stderr, "[AX] AXAllWindows err=%d count=%ld\n", (int)allErr,
+		(allErr == kAXErrorSuccess && windowsRef) ? CFArrayGetCount((CFArrayRef)windowsRef) : -1L);
 	if (allErr != kAXErrorSuccess || !windowsRef) {
 		allErr = AXUIElementCopyAttributeValue(appEl, CFSTR("AXWindows"), &windowsRef);
+		fprintf(stderr, "[AX] AXWindows err=%d count=%ld\n", (int)allErr,
+			(allErr == kAXErrorSuccess && windowsRef) ? CFArrayGetCount((CFArrayRef)windowsRef) : -1L);
 		if (allErr != kAXErrorSuccess || !windowsRef) {
 			CFRelease(appEl);
 			return 0;
@@ -271,6 +430,73 @@ static int raiseWindowByAXTitle(int pid, const char *folderName) {
 	CFRelease(appEl);
 	return found;
 }
+
+// diagAXWindows returns a malloc'd newline-separated string describing what
+// AX sees for the given pid: whether AXAllWindows is supported, how many
+// windows each attribute returns, and all AXDocument values found.
+// Caller must free the returned string. Returns NULL if not trusted.
+static char *diagAXWindows(int pid) {
+	if (!AXIsProcessTrusted()) return strdup("not trusted");
+
+	AXUIElementRef appEl = AXUIElementCreateApplication((pid_t)pid);
+	if (!appEl) return strdup("AXUIElementCreateApplication failed");
+
+	NSMutableString *out = [NSMutableString string];
+
+	CFTypeRef allRef = NULL;
+	AXError allErr = AXUIElementCopyAttributeValue(appEl, CFSTR("AXAllWindows"), &allRef);
+	CFIndex allCount = (allErr == kAXErrorSuccess && allRef) ? CFArrayGetCount((CFArrayRef)allRef) : -1;
+	[out appendFormat:@"AXAllWindows err=%d count=%ld\n", (int)allErr, (long)allCount];
+
+	if (allRef) {
+		for (CFIndex i = 0; i < CFArrayGetCount((CFArrayRef)allRef); i++) {
+			AXUIElementRef w = (AXUIElementRef)CFArrayGetValueAtIndex((CFArrayRef)allRef, i);
+			CFTypeRef docRef = NULL;
+			AXError docErr = AXUIElementCopyAttributeValue(w, CFSTR("AXDocument"), &docRef);
+			if (docErr == kAXErrorSuccess && docRef) {
+				CFIndex len = CFStringGetMaximumSizeForEncoding(CFStringGetLength((CFStringRef)docRef), kCFStringEncodingUTF8) + 1;
+				char *buf = malloc(len);
+				if (buf && CFStringGetCString((CFStringRef)docRef, buf, len, kCFStringEncodingUTF8))
+					[out appendFormat:@"  AXDocument[%ld]=%s\n", (long)i, buf];
+				else
+					[out appendFormat:@"  AXDocument[%ld]=(unreadable)\n", (long)i];
+				free(buf);
+				CFRelease(docRef);
+			} else {
+				[out appendFormat:@"  AXDocument[%ld] err=%d\n", (long)i, (int)docErr];
+			}
+		}
+		CFRelease(allRef);
+	}
+
+	CFTypeRef winRef = NULL;
+	AXError winErr = AXUIElementCopyAttributeValue(appEl, CFSTR("AXWindows"), &winRef);
+	CFIndex winCount = (winErr == kAXErrorSuccess && winRef) ? CFArrayGetCount((CFArrayRef)winRef) : -1;
+	[out appendFormat:@"AXWindows err=%d count=%ld\n", (int)winErr, (long)winCount];
+	if (winRef) {
+		for (CFIndex i = 0; i < CFArrayGetCount((CFArrayRef)winRef); i++) {
+			AXUIElementRef w = (AXUIElementRef)CFArrayGetValueAtIndex((CFArrayRef)winRef, i);
+			CFTypeRef docRef = NULL;
+			AXError docErr = AXUIElementCopyAttributeValue(w, CFSTR("AXDocument"), &docRef);
+			if (docErr == kAXErrorSuccess && docRef) {
+				CFIndex len = CFStringGetMaximumSizeForEncoding(CFStringGetLength((CFStringRef)docRef), kCFStringEncodingUTF8) + 1;
+				char *buf = malloc(len);
+				if (buf && CFStringGetCString((CFStringRef)docRef, buf, len, kCFStringEncodingUTF8))
+					[out appendFormat:@"  AXDocument[%ld]=%s\n", (long)i, buf];
+				else
+					[out appendFormat:@"  AXDocument[%ld]=(unreadable)\n", (long)i];
+				free(buf);
+				CFRelease(docRef);
+			} else {
+				[out appendFormat:@"  AXDocument[%ld] err=%d\n", (long)i, (int)docErr];
+			}
+		}
+		CFRelease(winRef);
+	}
+
+	CFRelease(appEl);
+	return strdup(out.UTF8String);
+}
 */
 import "C"
 
@@ -283,18 +509,19 @@ import (
 	"unsafe"
 
 	"github.com/777genius/claude-notifications/internal/config"
+	"github.com/777genius/claude-notifications/internal/logging"
 )
 
-// retryWindowFocus calls fn with increasing delays until a non-zero result.
+// retryWindowFocusInner is the pure-Go retry logic (testable without CGo).
 // Returns 1 (found), -1 (no permission), or 0 (not found after all attempts).
 // Worst case: 150+250+400 = 800ms. Best case: 150ms.
-func retryWindowFocus(fn func() C.int) C.int {
+func retryWindowFocusInner(fn func() int) int {
 	delays := []time.Duration{
 		150 * time.Millisecond,
 		250 * time.Millisecond,
 		400 * time.Millisecond,
 	}
-	var result C.int
+	var result int
 	for _, d := range delays {
 		time.Sleep(d)
 		result = fn()
@@ -303,6 +530,11 @@ func retryWindowFocus(fn func() C.int) C.int {
 		}
 	}
 	return result
+}
+
+// retryWindowFocus wraps retryWindowFocusInner for CGo callers.
+func retryWindowFocus(fn func() C.int) C.int {
+	return C.int(retryWindowFocusInner(func() int { return int(fn()) }))
 }
 
 // activateViaAppleScript sends a bare "activate" AppleScript to the app.
@@ -330,7 +562,27 @@ func FocusAppWindow(bundleID, cwd string) error {
 		if cwd == "" {
 			return fmt.Errorf("invalid cwd: %s", cwd)
 		}
-		C.activateByPID(C.int(pid))
+
+		// SCK-based cross-Space switch (requires Screen Recording).
+		// activateByPID is unreliable in subprocess context (terminal-notifier
+		// -execute); AppleScript activate is used instead below.
+		if C.hasScreenRecordingAccess() == 1 {
+			cFolder := C.CString(filepath.Base(cwd))
+			defer C.free(unsafe.Pointer(cFolder))
+			var bounds C.CGRect
+			wid := C.findGhosttySpaceViaSCK(C.int(pid), cFolder, &bounds)
+			logging.Debug("focus-window: findGhosttySpaceViaSCK=%d folder=%s", uint32(wid), filepath.Base(cwd))
+			if wid != 0 {
+				C.switchToWindowSpace(wid, bounds)
+				C.usleep(300000)
+			}
+		} else {
+			logging.Debug("focus-window: no Screen Recording, skipping SCK space switch")
+			promptScreenRecordingOnce()
+		}
+
+		activateViaAppleScript(bundleID) // reliable in subprocess context
+
 		fileURL := cwdToFileURL(cwd)
 		cFileURL := C.CString(fileURL)
 		defer C.free(unsafe.Pointer(cFileURL))
@@ -355,34 +607,30 @@ func FocusAppWindow(bundleID, cwd string) error {
 	defer C.free(unsafe.Pointer(cFolder))
 
 	prepResult := C.findSwitchAndActivate(C.int(pid), cFolder)
+	logging.Debug("focus-window: findSwitchAndActivate=%d folder=%s", int(prepResult), folderName)
 	if prepResult < 0 {
 		// No Screen Recording permission: space-switching is unavailable.
-		// Prompt once, then fall through to the AX path — Accessibility is
-		// independent and can still raise the correct window without space-switching.
+		// Prompt once, then fall through to the AX path.
 		promptScreenRecordingOnce()
-		C.activateByPID(C.int(pid))
-	} else if prepResult == 0 {
-		// CGWindowListCopyWindowInfo did not find the window by title.
-		// macOS 15+ no longer returns kCGWindowName for third-party app windows
-		// via this API even with Screen Recording permission granted.
-		// Fall back to activating by PID and letting AX-based title search handle it.
+	}
+
+	// activateByPID + AX title matching (works for all non-Ghostty apps).
+	if prepResult <= 0 {
 		C.activateByPID(C.int(pid))
 	}
 	result := retryWindowFocus(func() C.int {
 		return C.raiseWindowByAXTitle(C.int(pid), cFolder)
 	})
+	logging.Debug("focus-window: raiseWindowByAXTitle=%d", int(result))
 	switch {
 	case result < 0:
-		// No Accessibility permission: AX is unavailable, but activateByPID was
-		// already called above. Use AppleScript as a safety net (works without
-		// Accessibility) to ensure the app is visible, then surface the prompt.
+		// No Accessibility permission: use AppleScript as safety net, then prompt.
 		activateViaAppleScript(bundleID)
 		promptAccessibilityOnce()
 		return nil
 	case result == 0:
-		// Window not found — likely on a different Space. AXAllWindows does not cross
-		// Space boundaries for Electron apps. The app is already activated above;
-		// the user can switch to it manually.
+		// Window not found — AXAllWindows is not supported by Electron apps, and
+		// AXWindows only covers the current Space. App is already activated above.
 		return nil
 	}
 	return nil
@@ -463,4 +711,56 @@ func promptAccessibilityOnce() {
 		"Click to open Settings (path copied to clipboard). In Finder press ⌘⇧G, paste, then drag ClaudeNotifier.app into the Accessibility list.",
 		executeCmd,
 	)
+}
+
+// sckFindWindowForTest wraps findPID + findWindowIDSCK for integration testing.
+// Returns the CGWindowID (0 if app not running or window not found).
+// Requires Screen Recording permission.
+func sckFindWindowForTest(bundleID, folderName string) uint32 {
+	cBID := C.CString(bundleID)
+	defer C.free(unsafe.Pointer(cBID))
+	pid := C.findPID(cBID)
+	if pid < 0 {
+		return 0
+	}
+	cFolder := C.CString(folderName)
+	defer C.free(unsafe.Pointer(cFolder))
+	var bounds C.CGRect
+	return uint32(C.findWindowIDSCK(pid, cFolder, &bounds))
+}
+
+// diagAXWindowsForTest returns a diagnostic string describing what AX sees for
+// a given bundleID: AXAllWindows/AXWindows support, counts, and AXDocument values.
+// Used to diagnose cross-Space focus failures without Screen Recording.
+func diagAXWindowsForTest(bundleID string) string {
+	cBID := C.CString(bundleID)
+	defer C.free(unsafe.Pointer(cBID))
+	pid := C.findPID(cBID)
+	if pid < 0 {
+		return "app not running"
+	}
+	activateViaAppleScript(bundleID)
+	time.Sleep(400 * time.Millisecond)
+	cStr := C.diagAXWindows(pid)
+	if cStr == nil {
+		return "(nil)"
+	}
+	defer C.free(unsafe.Pointer(cStr))
+	return C.GoString(cStr)
+}
+
+// sckFindGhosttySpaceForTest wraps findPID + findGhosttySpaceViaSCK for integration testing.
+// Returns the container CGWindowID (0 if app not running or no match).
+// Requires Screen Recording permission.
+func sckFindGhosttySpaceForTest(bundleID, folderName string) uint32 {
+	cBID := C.CString(bundleID)
+	defer C.free(unsafe.Pointer(cBID))
+	pid := C.findPID(cBID)
+	if pid < 0 {
+		return 0
+	}
+	cFolder := C.CString(folderName)
+	defer C.free(unsafe.Pointer(cFolder))
+	var bounds C.CGRect
+	return uint32(C.findGhosttySpaceViaSCK(pid, cFolder, &bounds))
 }

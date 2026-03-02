@@ -1131,6 +1131,75 @@ func TestSendQuickNotification_EmptyFields(t *testing.T) {
 	_ = err
 }
 
+func TestShellQuote(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"normal", "'normal'"},
+		{"/path/to/file", "'/path/to/file'"},
+		{"path with spaces", "'path with spaces'"},
+		{"it's", `'it'\''s'`},
+		{"say 'hello'", `'say '\''hello'\'''`},
+		{`back\slash`, `'back\slash'`},
+		{`"double"`, `'"double"'`},
+		{"", "''"},
+	}
+	for _, tt := range tests {
+		got := shellQuote(tt.input)
+		if got != tt.expected {
+			t.Errorf("shellQuote(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestBuildBinaryFocusScript_ContainsExpectedParts(t *testing.T) {
+	// buildBinaryFocusScript returns "" when os.Executable() is unavailable,
+	// but in test context Executable() succeeds.
+	script := buildBinaryFocusScript("com.microsoft.VSCode", "/home/user/my-project")
+	if script == "" {
+		t.Skip("os.Executable() unavailable in this context")
+	}
+	if !strings.Contains(script, "focus-window") {
+		t.Errorf("script should contain 'focus-window', got: %s", script)
+	}
+	if !strings.Contains(script, "com.microsoft.VSCode") {
+		t.Errorf("script should contain bundleID, got: %s", script)
+	}
+	if !strings.Contains(script, "/home/user/my-project") {
+		t.Errorf("script should contain cwd, got: %s", script)
+	}
+	// Each component should be single-quoted (shellQuote applied)
+	if !strings.Contains(script, "'com.microsoft.VSCode'") {
+		t.Errorf("bundleID should be single-quoted, got: %s", script)
+	}
+	if !strings.Contains(script, "'/home/user/my-project'") {
+		t.Errorf("cwd should be single-quoted, got: %s", script)
+	}
+}
+
+func TestBuildBinaryFocusScript_PathWithSpaces(t *testing.T) {
+	script := buildBinaryFocusScript("com.mitchellh.ghostty", "/Users/alice/My Projects/my app")
+	if script == "" {
+		t.Skip("os.Executable() unavailable in this context")
+	}
+	// Spaces in cwd must be quoted
+	if !strings.Contains(script, "'/Users/alice/My Projects/my app'") {
+		t.Errorf("cwd with spaces should be single-quoted, got: %s", script)
+	}
+}
+
+func TestBuildBinaryFocusScript_PathWithSingleQuote(t *testing.T) {
+	script := buildBinaryFocusScript("com.microsoft.VSCode", "/Users/alice/O'Brien's project")
+	if script == "" {
+		t.Skip("os.Executable() unavailable in this context")
+	}
+	// Single quote in cwd must be escaped
+	if !strings.Contains(script, `'\''`) {
+		t.Errorf("single quote in cwd should be escaped via shellQuote, got: %s", script)
+	}
+}
+
 func TestSanitizeForAppleScript(t *testing.T) {
 	tests := []struct {
 		input    string
