@@ -108,25 +108,27 @@ The bundled plugin hook configuration uses `bin/hook-wrapper.sh`. On some Window
 
 Claude Code supports PowerShell command hooks on Windows via `"shell": "powershell"`, so the safer Windows workaround is to call the native `.exe` directly with an absolute path.
 
-### Fix (recommended)
+### Fix
 
-Generate a PowerShell hook configuration from the installed executable:
+Run the bootstrap installer or `/claude-notifications-go:init` again, then restart Claude Code. On Windows, the installer rewrites the plugin hook file to use PowerShell hooks with an absolute path to the native `.exe`, avoiding the Git Bash/shebang path.
+
+If you need to inspect or apply the configuration manually, generate a PowerShell hook configuration from the installed executable. Replace `<arch>` with `amd64` or `arm64`:
 
 ```powershell
-.\bin\claude-notifications-windows-amd64.exe windows-hooks
+.\bin\claude-notifications-windows-<arch>.exe windows-hooks
 ```
 
 If you downloaded the executable to a different location, pass it explicitly:
 
 ```powershell
-.\bin\claude-notifications-windows-amd64.exe windows-hooks --exe "C:\absolute\path\to\claude-notifications-windows-amd64.exe"
+.\bin\claude-notifications-windows-<arch>.exe windows-hooks --exe "C:\absolute\path\to\claude-notifications-windows-<arch>.exe"
 ```
 
-Copy the generated `"hooks"` object into `%USERPROFILE%\.claude\settings.json`. This command only prints JSON - it does not modify your settings file.
+To apply it manually, replace the installed plugin's `hooks/hooks.json` with the generated JSON and restart Claude Code. This command only prints JSON - it does not modify files.
 
 ### Manual fallback
 
-If you cannot run `windows-hooks`, add this block manually and replace `<absolute-path-to-plugin>` with the actual plugin install directory:
+If you cannot run `windows-hooks`, replace the installed plugin's `hooks/hooks.json` with this block and replace `<absolute-path-to-plugin>` with the actual plugin install directory:
 
 ```json
 {
@@ -137,7 +139,7 @@ If you cannot run `windows-hooks`, add this block manually and replace `<absolut
         "hooks": [
           {
             "type": "command",
-            "command": "$input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-amd64.exe\" handle-hook PreToolUse",
+            "command": "$OutputEncoding = [System.Text.UTF8Encoding]::new($false); $input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-<arch>.exe\" handle-hook PreToolUse",
             "timeout": 30,
             "shell": "powershell"
           }
@@ -150,7 +152,7 @@ If you cannot run `windows-hooks`, add this block manually and replace `<absolut
         "hooks": [
           {
             "type": "command",
-            "command": "$input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-amd64.exe\" handle-hook Notification",
+            "command": "$OutputEncoding = [System.Text.UTF8Encoding]::new($false); $input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-<arch>.exe\" handle-hook Notification",
             "timeout": 30,
             "shell": "powershell"
           }
@@ -162,7 +164,7 @@ If you cannot run `windows-hooks`, add this block manually and replace `<absolut
         "hooks": [
           {
             "type": "command",
-            "command": "$input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-amd64.exe\" handle-hook Stop",
+            "command": "$OutputEncoding = [System.Text.UTF8Encoding]::new($false); $input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-<arch>.exe\" handle-hook Stop",
             "timeout": 30,
             "shell": "powershell"
           }
@@ -174,7 +176,7 @@ If you cannot run `windows-hooks`, add this block manually and replace `<absolut
         "hooks": [
           {
             "type": "command",
-            "command": "$input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-amd64.exe\" handle-hook SubagentStop",
+            "command": "$OutputEncoding = [System.Text.UTF8Encoding]::new($false); $input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-<arch>.exe\" handle-hook SubagentStop",
             "timeout": 30,
             "shell": "powershell"
           }
@@ -186,7 +188,7 @@ If you cannot run `windows-hooks`, add this block manually and replace `<absolut
         "hooks": [
           {
             "type": "command",
-            "command": "$input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-amd64.exe\" handle-hook TeammateIdle",
+            "command": "$OutputEncoding = [System.Text.UTF8Encoding]::new($false); $input | & \"<absolute-path-to-plugin>\\bin\\claude-notifications-windows-<arch>.exe\" handle-hook TeammateIdle",
             "timeout": 30,
             "shell": "powershell"
           }
@@ -207,7 +209,7 @@ If the log contains `beeep.Notify failed on windows: doc.LoadXml(tmpl)` but the 
 
 ### Symptom
 
-Bootstrap or `/claude-notifications-go:init` installs the plugin itself, but downloading `claude-notifications-windows-amd64.exe` fails with an empty or generic network error.
+Bootstrap or `/claude-notifications-go:init` installs the plugin itself, but downloading `claude-notifications-windows-<arch>.exe` fails with an empty or generic network error.
 
 ### Why it happens
 
@@ -222,4 +224,4 @@ Bootstrap or `/claude-notifications-go:init` installs the plugin itself, but dow
 1. If your company requires a proxy, make sure the terminal running Claude Code or bootstrap has `HTTPS_PROXY`, `HTTP_PROXY`, or `ALL_PROXY` configured.
 2. If your network inspects TLS traffic, ensure Git Bash `curl` trusts the corporate CA certificate.
 3. Retry from another network or from WSL to confirm whether the issue is network-specific.
-4. As a fallback, open the latest release page, download `claude-notifications-windows-amd64.exe`, place it into the plugin `bin` directory, and then re-run `/claude-notifications-go:init`.
+4. As a fallback, open the latest release page, download the matching `claude-notifications-windows-amd64.exe` or `claude-notifications-windows-arm64.exe`, place it into the plugin `bin` directory, and then re-run `/claude-notifications-go:init`.

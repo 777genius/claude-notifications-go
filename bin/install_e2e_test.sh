@@ -10,6 +10,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 INSTALL_SCRIPT="$SCRIPT_DIR/install.sh"
 MOCK_SERVER="$SCRIPT_DIR/mock_server.py"
 FIXTURES_DIR="$SCRIPT_DIR/test_fixtures"
@@ -652,6 +653,299 @@ test_force_removes_symlinks() {
         TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
     TESTS_RUN=$((TESTS_RUN + 1))
+
+    cleanup_test_dir
+}
+
+test_windows_native_hooks_configured_existing_binary() {
+    echo -e "\n${CYAN}▶ test_windows_native_hooks_configured_existing_binary${NC}"
+    setup_test_dir
+
+    local plugin_root="$TEST_DIR/plugin"
+    local bin_dir="$plugin_root/bin"
+    local hooks_dir="$plugin_root/hooks"
+    local fake_path="$TEST_DIR/fakebin"
+
+    mkdir -p "$bin_dir" "$hooks_dir" "$fake_path"
+    printf '{"hooks":{}}\n' > "$hooks_dir/hooks.json"
+
+    cat > "$fake_path/uname" <<'UNAME_EOF'
+#!/bin/sh
+case "$1" in
+  -s) echo "MINGW64_NT-10.0" ;;
+  -m) echo "x86_64" ;;
+  *) echo "MINGW64_NT-10.0" ;;
+esac
+UNAME_EOF
+    chmod +x "$fake_path/uname"
+
+    cat > "$bin_dir/claude-notifications-windows-amd64.exe" <<'FAKE_EXE_EOF'
+#!/bin/sh
+if [ "$1" = "--version" ] || [ "$1" = "version" ]; then
+    echo "claude-notifications v1.38.0"
+    exit 0
+fi
+if [ "$1" = "windows-hooks" ]; then
+    exe=""
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "--exe" ]; then
+            shift
+            exe="$1"
+        fi
+        shift
+    done
+    printf '{\n  "hooks": {\n    "Stop": [\n      {\n        "hooks": [\n          {\n            "type": "command",\n            "command": "$input | & \"%s\" handle-hook Stop",\n            "timeout": 30,\n            "shell": "powershell"\n          }\n        ]\n      }\n    ]\n  }\n}\n' "$exe"
+    exit 0
+fi
+exit 0
+FAKE_EXE_EOF
+    chmod +x "$bin_dir/claude-notifications-windows-amd64.exe"
+
+    touch "$bin_dir/sound-preview-windows-amd64.exe"
+    touch "$bin_dir/list-devices-windows-amd64.exe"
+    touch "$bin_dir/list-sounds-windows-amd64.exe"
+
+    local output exit_code
+    output=$(INSTALL_TARGET_DIR="$bin_dir" PATH="$fake_path:$PATH" bash "$INSTALL_SCRIPT" 2>&1)
+    exit_code=$?
+
+    assert_exit_code 0 $exit_code "Installer succeeds with existing Windows binary"
+    assert_contains "$output" "Windows PowerShell hooks configured" "Windows hooks configuration message shown"
+
+    local hooks_json
+    hooks_json=$(cat "$hooks_dir/hooks.json")
+    assert_contains "$hooks_json" '"shell"[[:space:]]*:[[:space:]]*"powershell"' "hooks.json uses PowerShell shell"
+    assert_contains "$hooks_json" 'handle-hook Stop' "hooks.json calls Stop handler"
+    assert_contains "$hooks_json" 'claude-notifications-windows-amd64\.exe' "hooks.json points at Windows exe"
+
+    cleanup_test_dir
+}
+
+test_windows_old_binary_forces_update_before_hooks() {
+    echo -e "\n${CYAN}▶ test_windows_old_binary_forces_update_before_hooks${NC}"
+    setup_test_dir
+
+    local plugin_root="$TEST_DIR/plugin"
+    local bin_dir="$plugin_root/bin"
+    local hooks_dir="$plugin_root/hooks"
+    local fake_path="$TEST_DIR/fakebin"
+
+    mkdir -p "$bin_dir" "$hooks_dir" "$fake_path"
+    printf '{"hooks":{}}\n' > "$hooks_dir/hooks.json"
+
+    cat > "$fake_path/uname" <<'UNAME_EOF'
+#!/bin/sh
+case "$1" in
+  -s) echo "MINGW64_NT-10.0" ;;
+  -m) echo "x86_64" ;;
+  *) echo "MINGW64_NT-10.0" ;;
+esac
+UNAME_EOF
+    chmod +x "$fake_path/uname"
+
+    cat > "$bin_dir/claude-notifications-windows-amd64.exe" <<'OLD_EXE_EOF'
+#!/bin/sh
+if [ "$1" = "--version" ] || [ "$1" = "version" ]; then
+    echo "claude-notifications v1.37.0"
+    exit 0
+fi
+echo "unknown command: $1" >&2
+exit 1
+OLD_EXE_EOF
+    chmod +x "$bin_dir/claude-notifications-windows-amd64.exe"
+
+    local output exit_code
+    set +e
+    output=$(INSTALL_TARGET_DIR="$bin_dir" PATH="$fake_path:$PATH" SKIP_CONNECTIVITY_CHECK=true \
+        RELEASE_URL="file:///no-such-claude-notifications-release" CHECKSUMS_URL="file:///no-such-claude-notifications-release/checksums.txt" \
+        run_with_timeout 15 bash "$INSTALL_SCRIPT" 2>&1)
+    exit_code=$?
+    set +e
+
+    assert_exit_code 1 $exit_code "Old Windows binary does not complete setup silently"
+    assert_contains "$output" "cannot generate PowerShell hooks" "Installer detects old binary without windows-hooks"
+    assert_contains "$output" "Updating claude-notifications-windows-amd64.exe before rewriting hooks" "Installer chooses update path"
+    assert_not_contains "$output" "Setup complete" "Installer does not report success with stale hooks"
+
+    cleanup_test_dir
+}
+
+test_windows_native_hooks_real_powershell_launch() {
+    echo -e "\n${CYAN}▶ test_windows_native_hooks_real_powershell_launch${NC}"
+
+    if ! is_windows; then
+        skip_test "Windows native PowerShell hook launch" "not on Windows"
+        return
+    fi
+
+    if ! command -v go >/dev/null 2>&1; then
+        skip_test "Windows native PowerShell hook launch" "go not available"
+        return
+    fi
+
+    local ps_bin=""
+    if command -v powershell.exe >/dev/null 2>&1; then
+        ps_bin="powershell.exe"
+    elif command -v pwsh >/dev/null 2>&1; then
+        ps_bin="pwsh"
+    else
+        skip_test "Windows native PowerShell hook launch" "PowerShell not available"
+        return
+    fi
+
+    setup_test_dir
+
+    local plugin_root="$TEST_DIR/plugin"
+    local bin_dir="$plugin_root/bin"
+    local hooks_dir="$plugin_root/hooks"
+    mkdir -p "$bin_dir" "$hooks_dir"
+    printf '{"hooks":{}}\n' > "$hooks_dir/hooks.json"
+
+    local exe_path="$bin_dir/claude-notifications-windows-amd64.exe"
+    if ! (cd "$REPO_ROOT" && go build -o "$exe_path" ./cmd/claude-notifications); then
+        fail_test "Build real Windows notification binary" "go build failed"
+        cleanup_test_dir
+        return
+    fi
+
+    touch "$bin_dir/sound-preview-windows-amd64.exe"
+    touch "$bin_dir/list-devices-windows-amd64.exe"
+    touch "$bin_dir/list-sounds-windows-amd64.exe"
+
+    local output exit_code
+    output=$(INSTALL_TARGET_DIR="$bin_dir" bash "$INSTALL_SCRIPT" 2>&1)
+    exit_code=$?
+
+    assert_exit_code 0 $exit_code "Installer succeeds with real Windows binary"
+    assert_contains "$output" "Windows PowerShell hooks configured" "Installer rewrites hooks for PowerShell"
+
+    local hooks_json
+    hooks_json=$(cat "$hooks_dir/hooks.json")
+    assert_contains "$hooks_json" '"shell"[[:space:]]*:[[:space:]]*"powershell"' "real hooks.json uses PowerShell shell"
+    assert_contains "$hooks_json" '\$OutputEncoding = \[System\.Text\.UTF8Encoding\]::new\(\$false\)' "real hooks.json sets PowerShell UTF-8 output encoding"
+    assert_contains "$hooks_json" 'handle-hook Stop' "real hooks.json contains Stop hook"
+
+    local exe_for_powershell="$exe_path"
+    if command -v cygpath >/dev/null 2>&1; then
+        exe_for_powershell="$(cygpath -w "$exe_path" 2>/dev/null || printf '%s' "$exe_path")"
+    fi
+
+    set +e
+    output=$(printf '{"session_id":"ci-win","transcript_path":"","cwd":""}\n' | \
+        "$ps_bin" -NoProfile -ExecutionPolicy Bypass -Command "\$OutputEncoding = [System.Text.UTF8Encoding]::new(\$false); \$input | & '$exe_for_powershell' handle-hook Stop" 2>&1)
+    exit_code=$?
+    set +e
+
+    if [ "$exit_code" -ne 0 ]; then
+        echo "$output"
+    fi
+
+    assert_exit_code 0 $exit_code "Generated PowerShell hook command launches real exe"
+
+    cleanup_test_dir
+}
+
+test_windows_real_hook_schedules_lazy_update() {
+    echo -e "\n${CYAN}▶ test_windows_real_hook_schedules_lazy_update${NC}"
+
+    if ! is_windows; then
+        skip_test "Windows real hook schedules lazy update" "not on Windows"
+        return
+    fi
+
+    if ! command -v go >/dev/null 2>&1; then
+        skip_test "Windows real hook schedules lazy update" "go not available"
+        return
+    fi
+
+    local ps_bin=""
+    if command -v powershell.exe >/dev/null 2>&1; then
+        ps_bin="powershell.exe"
+    elif command -v pwsh >/dev/null 2>&1; then
+        ps_bin="pwsh"
+    else
+        skip_test "Windows real hook schedules lazy update" "PowerShell not available"
+        return
+    fi
+
+    setup_test_dir
+
+    local plugin_root="$TEST_DIR/plugin"
+    local bin_dir="$plugin_root/bin"
+    local manifest_dir="$plugin_root/.claude-plugin"
+    mkdir -p "$bin_dir" "$manifest_dir"
+    printf '{"version":"9.99.0"}\n' > "$manifest_dir/plugin.json"
+    cp "$INSTALL_SCRIPT" "$bin_dir/install.sh"
+
+    local exe_path="$bin_dir/claude-notifications-windows-amd64.exe"
+    if ! (cd "$REPO_ROOT" && go build -o "$exe_path" ./cmd/claude-notifications); then
+        fail_test "Build real Windows notification binary for lazy update" "go build failed"
+        cleanup_test_dir
+        return
+    fi
+
+    local fake_bash_go="$TEST_DIR/fake-bash.go"
+    local fake_bash="$TEST_DIR/fake-bash.exe"
+    local fake_bash_log="$TEST_DIR/fake-bash.log"
+    cat > "$fake_bash_go" <<'FAKE_BASH_GO_EOF'
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+func main() {
+	logPath := os.Getenv("FAKE_BASH_LOG")
+	if logPath == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(logPath), 0755)
+	_ = os.WriteFile(logPath, []byte(strings.Join(os.Args[1:], "\n")), 0644)
+}
+FAKE_BASH_GO_EOF
+    if ! go build -o "$fake_bash" "$fake_bash_go"; then
+        fail_test "Build fake bash for lazy update" "go build failed"
+        cleanup_test_dir
+        return
+    fi
+
+    local exe_for_powershell="$exe_path"
+    local fake_bash_for_powershell="$fake_bash"
+    local fake_bash_log_for_powershell="$fake_bash_log"
+    if command -v cygpath >/dev/null 2>&1; then
+        exe_for_powershell="$(cygpath -w "$exe_path" 2>/dev/null || printf '%s' "$exe_path")"
+        fake_bash_for_powershell="$(cygpath -w "$fake_bash" 2>/dev/null || printf '%s' "$fake_bash")"
+        fake_bash_log_for_powershell="$(cygpath -w "$fake_bash_log" 2>/dev/null || printf '%s' "$fake_bash_log")"
+    fi
+
+    local output exit_code
+    set +e
+    output=$(printf '{"session_id":"ci-win","transcript_path":"","cwd":""}\n' | \
+        "$ps_bin" -NoProfile -ExecutionPolicy Bypass -Command "\$env:CLAUDE_NOTIFICATIONS_BASH = '$fake_bash_for_powershell'; \$env:FAKE_BASH_LOG = '$fake_bash_log_for_powershell'; \$env:CLAUDE_HOOK_JUDGE_MODE = 'true'; \$OutputEncoding = [System.Text.UTF8Encoding]::new(\$false); \$input | & '$exe_for_powershell' handle-hook Stop" 2>&1)
+    exit_code=$?
+    set +e
+
+    if [ "$exit_code" -ne 0 ]; then
+        echo "$output"
+    fi
+    assert_exit_code 0 $exit_code "Real Windows hook exits successfully with plugin version mismatch"
+
+    local i=0
+    while [ $i -lt 80 ] && [ ! -f "$fake_bash_log" ]; do
+        sleep 0.1
+        i=$((i + 1))
+    done
+
+    assert_file_exists "$fake_bash_log" "Windows hook schedules lazy update through bash"
+    if [ -f "$fake_bash_log" ]; then
+        local fake_log
+        fake_log=$(cat "$fake_bash_log")
+        assert_contains "$fake_log" '^-lc$|^-l$' "Lazy update invokes bash login mode"
+        assert_contains "$fake_log" '^-lc$|^-c$' "Lazy update invokes bash command mode"
+        assert_contains "$fake_log" 'install\.sh.*--force' "Lazy update uses install.sh --force"
+    fi
 
     cleanup_test_dir
 }
@@ -1786,6 +2080,10 @@ main() {
         test_required_tools_curl_wget
         test_force_removes_binaries
         test_force_removes_symlinks
+        test_windows_native_hooks_configured_existing_binary
+        test_windows_old_binary_forces_update_before_hooks
+        test_windows_native_hooks_real_powershell_launch
+        test_windows_real_hook_schedules_lazy_update
         test_force_removes_apps_macos
     fi
 

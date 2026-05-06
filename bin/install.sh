@@ -52,6 +52,7 @@ PINNED_RELEASE_TAG=""
 
 # Parse command line arguments
 FORCE_UPDATE=false
+WINDOWS_NATIVE_HOOKS_NEED_UPDATE=false
 for arg in "$@"; do
   case $arg in
     --force|-f)
@@ -559,6 +560,13 @@ check_existing() {
         return 1
     fi
     if [ -f "$BINARY_PATH" ]; then
+        if windows_native_hooks_update_required; then
+            WINDOWS_NATIVE_HOOKS_NEED_UPDATE=true
+            echo -e "${YELLOW}⚠ Existing Windows binary cannot generate PowerShell hooks${NC}"
+            echo -e "${YELLOW}  Updating ${BINARY_NAME} before rewriting hooks...${NC}"
+            return 1
+        fi
+
         echo -e "${GREEN}✓${NC} Binary already installed: ${BOLD}${BINARY_NAME}${NC}"
         echo ""
         return 0
@@ -950,6 +958,40 @@ make_executable() {
     chmod +x "$BINARY_PATH" 2>/dev/null || true
 }
 
+windows_hooks_path() {
+    local plugin_root
+    plugin_root="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd)" || return 1
+    printf '%s\n' "${plugin_root}/hooks/hooks.json"
+}
+
+windows_native_hooks_json() {
+    [ "$PLATFORM" = "windows" ] || return 1
+    [ -f "$BINARY_PATH" ] || return 1
+
+    local exe_path="$BINARY_PATH"
+    if command -v cygpath >/dev/null 2>&1; then
+        exe_path="$(cygpath -w "$BINARY_PATH" 2>/dev/null || printf '%s' "$BINARY_PATH")"
+    fi
+
+    "$BINARY_PATH" windows-hooks --exe "$exe_path"
+}
+
+windows_native_hooks_supported() {
+    local hooks_json
+    hooks_json="$(windows_native_hooks_json 2>/dev/null)" || return 1
+    printf '%s\n' "$hooks_json" | grep -qE '"shell"[[:space:]]*:[[:space:]]*"powershell"'
+}
+
+windows_native_hooks_update_required() {
+    [ "$PLATFORM" = "windows" ] || return 1
+
+    local hooks_path
+    hooks_path="$(windows_hooks_path)" || return 1
+    [ -f "$hooks_path" ] || return 1
+
+    ! windows_native_hooks_supported
+}
+
 # Create symlink for hooks
 create_symlink() {
     # On Windows, create a .bat wrapper instead of symlink
@@ -1000,6 +1042,37 @@ EOF
         echo -e "${YELLOW}⚠ Could not create symlink/copy (hooks may not work)${NC}"
         return 1
     fi
+}
+
+configure_windows_native_hooks() {
+    [ "$PLATFORM" = "windows" ] || return 0
+    [ -f "$BINARY_PATH" ] || return 0
+
+    local hooks_path
+    hooks_path="$(windows_hooks_path)" || return 0
+    [ -f "$hooks_path" ] || return 0
+
+    local hooks_json
+    if ! hooks_json="$(windows_native_hooks_json 2>/dev/null)"; then
+        echo -e "${YELLOW}⚠ Could not generate Windows PowerShell hooks${NC}"
+        return 0
+    fi
+
+    if ! printf '%s\n' "$hooks_json" | grep -qE '"shell"[[:space:]]*:[[:space:]]*"powershell"'; then
+        echo -e "${YELLOW}⚠ Generated Windows hooks did not include PowerShell shell setting${NC}"
+        return 0
+    fi
+
+    local tmp_hooks="${hooks_path}.tmp.$$"
+    if printf '%s\n' "$hooks_json" > "$tmp_hooks" 2>/dev/null && mv "$tmp_hooks" "$hooks_path" 2>/dev/null; then
+        echo -e "${GREEN}✓${NC} Windows PowerShell hooks configured"
+        echo -e "${YELLOW}  Restart Claude Code to apply the Windows hook update.${NC}"
+    else
+        rm -f "$tmp_hooks" 2>/dev/null || true
+        echo -e "${YELLOW}⚠ Could not write Windows PowerShell hooks${NC}"
+    fi
+
+    return 0
 }
 
 # Cleanup temporary files
@@ -1514,6 +1587,7 @@ main() {
     if check_existing; then
         # Even if binary exists, ensure symlink is created
         create_symlink
+        configure_windows_native_hooks
 
         # Download utility binaries (sound-preview, list-devices)
         download_utilities
@@ -1551,6 +1625,12 @@ main() {
         echo ""
         echo -e "${YELLOW}Running in offline mode...${NC}"
 
+        if [ "$WINDOWS_NATIVE_HOOKS_NEED_UPDATE" = true ]; then
+            echo -e "${RED}✗ Existing Windows binary is too old for PowerShell hooks${NC}" >&2
+            echo -e "${YELLOW}Restore network access and rerun the installer to download a compatible binary.${NC}" >&2
+            exit 1
+        fi
+
         # Verify existing binary still works
         if ! verify_executable; then
             echo -e "${RED}✗ Existing binary is corrupted or incompatible${NC}" >&2
@@ -1560,6 +1640,7 @@ main() {
 
         # Ensure symlink exists
         create_symlink
+        configure_windows_native_hooks
 
         echo ""
         echo -e "${GREEN}========================================${NC}"
@@ -1614,6 +1695,7 @@ main() {
 
     # Create symlink for hooks to use
     create_symlink
+    configure_windows_native_hooks
 
     # Download utility binaries (sound-preview, list-devices)
     download_utilities

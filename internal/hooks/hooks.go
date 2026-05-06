@@ -1,6 +1,8 @@
 package hooks
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -130,7 +132,7 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	// Parse hook data
 	bench.Start("stdin.parse")
 	var hookData HookData
-	if err := json.NewDecoder(input).Decode(&hookData); err != nil {
+	if err := json.NewDecoder(skipUTF8BOM(input)).Decode(&hookData); err != nil {
 		return fmt.Errorf("failed to parse hook data: %w", err)
 	}
 	bench.Elapsed("stdin.parse")
@@ -484,6 +486,15 @@ func (h *Handler) handleTeammateIdle(hookData *HookData) error {
 
 	logging.Debug("=== Hook completed: TeammateIdle (team notification sent) ===")
 	return nil
+}
+
+func skipUTF8BOM(input io.Reader) io.Reader {
+	reader := bufio.NewReader(input)
+	prefix, err := reader.Peek(3)
+	if err == nil && bytes.Equal(prefix, []byte{0xEF, 0xBB, 0xBF}) {
+		_, _ = reader.Discard(3)
+	}
+	return reader
 }
 
 // handleStopEvent handles Stop/SubagentStop hooks.

@@ -606,6 +606,16 @@ func TestHandler_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestHandler_ParsesJSONWithUTF8BOM(t *testing.T) {
+	cfg := &config.Config{}
+	handler, _, _ := newTestHandler(t, cfg)
+
+	input := "\xef\xbb\xbf" + `{"session_id":"bom-session","transcript_path":"","cwd":""}`
+	if err := handler.HandleHook("Stop", strings.NewReader(input)); err != nil {
+		t.Fatalf("expected UTF-8 BOM-prefixed JSON to parse, got %v", err)
+	}
+}
+
 func TestHandler_MissingTranscriptFile(t *testing.T) {
 	cfg := &config.Config{
 		Notifications: config.NotificationsConfig{

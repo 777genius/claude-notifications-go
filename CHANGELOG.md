@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-channel status overrides for desktop and webhook notifications** - each `statuses.<name>` entry can now define `desktop.enabled` and `webhook.enabled` independently, so you can disable webhook delivery for specific statuses while keeping desktop notifications on, or do the reverse ([#74](https://github.com/777genius/claude-notifications-go/issues/74))
 
 ### Fixed
+- **Windows: native hooks no longer depend on Git Bash script execution** - installer now rewrites PreToolUse, Notification, Stop, SubagentStop, and TeammateIdle hooks to call the native Windows `.exe` through PowerShell with an absolute path, avoiding silent `hook-wrapper.sh` launch failures on Windows 10/11 ([#79](https://github.com/777genius/claude-notifications-go/issues/79))
 - **CI stability for async webhook tests** - relaxed an overly strict `SendAsync` timing assertion under race-enabled CI, removing a macOS false negative without weakening the async behavior guarantee
 
 ## [1.37.0] - 2026-04-15
