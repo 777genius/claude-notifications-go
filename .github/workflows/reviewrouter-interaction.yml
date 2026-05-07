@@ -2,7 +2,7 @@ name: ReviewRouter Interaction
 
 on:
   pull_request_review_comment:
-    types: [created]
+    types: [created, edited]
   workflow_dispatch:
 
 permissions:
@@ -15,9 +15,9 @@ permissions:
 jobs:
   interaction:
     name: interaction
-    uses: 777genius/review-router/.github/workflows/reviewrouter-interaction-reusable.yml@main
+    uses: 777genius/review-router/.github/workflows/reviewrouter-interaction-reusable.yml@v1
     with:
-      runtime_ref: main
+      runtime_ref: v1
       api_url: "https://api.reviewrouter.site"
       runtime_config_mode: oidc
       review_workflow_file: reviewrouter.yml
