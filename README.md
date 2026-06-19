@@ -223,6 +223,7 @@ Edit the config file directly:
     "suppressQuestionAfterTaskCompleteSeconds": 12,
     "suppressQuestionAfterAnyNotificationSeconds": 7,
     "notifyOnSubagentStop": false,
+    "suppressForSubagents": true,
     "notifyOnTextResponse": true,
     "respectJudgeMode": true,
     "suppressFilters": [
@@ -269,7 +270,8 @@ Edit the config file directly:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `notifyOnSubagentStop` | `false` | Send notifications when subagents (Task tool) complete |
+| `notifyOnSubagentStop` | `false` | Send notifications when subagents (Task tool) complete. Has no effect unless `suppressForSubagents` is also set to `false`. |
+| `suppressForSubagents` | `true` | Suppress subagent (`SubagentStop`) notifications, plus any `Stop` notification whose transcript is a subagent/teammate transcript. Detection uses the hook event for `SubagentStop` (Claude Code passes the parent session `transcript_path` to that hook, so a path check alone can't identify it). Set to `false` together with `notifyOnSubagentStop: true` to get a notification each time a subagent finishes. |
 | `notifyOnTextResponse` | `true` | Send notifications for text-only responses (no tool usage) |
 | `respectJudgeMode` | `true` | Honor `CLAUDE_HOOK_JUDGE_MODE=true` env var to suppress notifications |
 | `suppressQuestionAfterTaskCompleteSeconds` | `12` | Suppress question notifications for N seconds after task complete |

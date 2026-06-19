@@ -742,10 +742,15 @@ func TestHandler_SubagentStop_DisabledByDefault(t *testing.T) {
 }
 
 func TestHandler_SubagentStop_EnabledInConfig(t *testing.T) {
+	// To actually receive subagent notifications a user must both opt in
+	// (notifyOnSubagentStop) AND disable the suppress-by-default safety net
+	// (suppressForSubagents), since the latter overrides the opt-in.
+	suppressForSubagents := false
 	cfg := &config.Config{
 		Notifications: config.NotificationsConfig{
 			Desktop:              config.DesktopConfig{Enabled: true},
-			NotifyOnSubagentStop: true, // Explicitly enabled
+			NotifyOnSubagentStop: true,                  // Explicitly enabled
+			SuppressForSubagents: &suppressForSubagents, // Safety net off
 		},
 		Statuses: map[string]config.StatusInfo{
 			"task_complete": {Title: "Task Complete"},
@@ -754,6 +759,8 @@ func TestHandler_SubagentStop_EnabledInConfig(t *testing.T) {
 
 	handler, mockNotif, _ := newTestHandler(t, cfg)
 
+	// Real-world payload: Claude Code passes the PARENT session transcript path
+	// to the SubagentStop hook, not a .../subagents/... path.
 	transcriptPath := createTempTranscript(t,
 		buildTranscriptWithTools([]string{"Write"}, 300))
 
@@ -769,9 +776,48 @@ func TestHandler_SubagentStop_EnabledInConfig(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should send notification when explicitly enabled
+	// Should send notification when opted in and suppression is disabled
 	if !mockNotif.wasCalled() {
-		t.Error("expected notification for SubagentStop (explicitly enabled)")
+		t.Error("expected notification for SubagentStop (opted in, suppression disabled)")
+	}
+}
+
+// TestHandler_SubagentStop_SuppressForSubagentsOverridesOptIn verifies that the
+// suppress-by-default safety net wins even when notifyOnSubagentStop is enabled,
+// using the real-world payload (parent transcript path, NOT a /subagents/ path).
+// This is the behavior the path-based check could not deliver, because Claude
+// Code never passes the subagent's own transcript path to the SubagentStop hook.
+func TestHandler_SubagentStop_SuppressForSubagentsOverridesOptIn(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop:              config.DesktopConfig{Enabled: true},
+			NotifyOnSubagentStop: true, // Opted in...
+			// SuppressForSubagents: nil = default true (overrides the opt-in)
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+
+	transcriptPath := createTempTranscript(t,
+		buildTranscriptWithTools([]string{"Write"}, 300))
+
+	hookData := buildHookDataJSON(HookData{
+		SessionID:      "test-session-suppress-overrides",
+		TranscriptPath: transcriptPath, // parent path, no /subagents/ segment
+		CWD:            "/test",
+	})
+
+	err := handler.HandleHook("SubagentStop", hookData)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should NOT notify: suppressForSubagents (default true) overrides the opt-in.
+	if mockNotif.wasCalled() {
+		t.Error("expected NO notification: suppressForSubagents (default) overrides notifyOnSubagentStop")
 	}
 }
 
@@ -942,10 +988,11 @@ func TestHandler_SubagentStop_SuppressedForSubagentTranscript(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should NOT send notification even with notifyOnSubagentStop=true
-	// because suppressForSubagents takes priority for subagent paths
+	// Should NOT send notification even with notifyOnSubagentStop=true:
+	// suppressForSubagents (default true) suppresses every SubagentStop event,
+	// independent of the transcript path.
 	if mockNotif.wasCalled() {
-		t.Error("expected NO notification for subagent transcript in SubagentStop (suppressForSubagents default true)")
+		t.Error("expected NO notification for SubagentStop (suppressForSubagents default true)")
 	}
 }
 

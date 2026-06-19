@@ -184,7 +184,11 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 			return err
 		}
 	case "Stop":
-		// Check if this is a subagent transcript and should be suppressed
+		// A Stop event is the MAIN agent finishing, so suppress only when its
+		// transcript_path actually points at a subagent/teammate transcript
+		// (.../subagents/...). Note: on current Claude Code the Stop hook receives
+		// the parent session transcript, so this rarely matches — kept as a
+		// forward-compatible guard for transcripts that are routed differently.
 		if h.cfg.ShouldSuppressForSubagents() && isSubagentTranscript(hookData.TranscriptPath) {
 			logging.Debug("Stop: subagent transcript detected (%s), suppressing (config: suppressForSubagents)", hookData.TranscriptPath)
 			return nil
@@ -238,18 +242,23 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 		// State files have TTL and will be cleaned up automatically
 		defer h.cleanupOldLocks()
 	case "SubagentStop":
-		// Check config: should we suppress subagent notifications?
-		// First check path-based suppression (covers subagents and teammates)
-		if h.cfg.ShouldSuppressForSubagents() && isSubagentTranscript(hookData.TranscriptPath) {
-			logging.Debug("SubagentStop: subagent transcript detected (%s), suppressing (config: suppressForSubagents)", hookData.TranscriptPath)
+		// A SubagentStop event always denotes a subagent (Task tool) finishing,
+		// so the event type itself — not the transcript path — is the reliable
+		// subagent signal. Claude Code passes the PARENT session transcript_path
+		// to this hook (e.g. .../<session>.jsonl), NOT the subagent's
+		// .../<session>/subagents/agent-*.jsonl file, so isSubagentTranscript()
+		// never matches here. Suppress by the event so suppressForSubagents works
+		// as a safety net regardless of notifyOnSubagentStop.
+		if h.cfg.ShouldSuppressForSubagents() {
+			logging.Debug("SubagentStop: suppressing subagent notification (config: suppressForSubagents)")
 			return nil
 		}
-		// Then check the legacy notifyOnSubagentStop flag
+		// Not globally suppressed — honor the explicit opt-in flag.
 		if !h.cfg.Notifications.NotifyOnSubagentStop {
 			logging.Debug("SubagentStop: notifications disabled (config: notifyOnSubagentStop), skipping")
 			return nil
 		}
-		// If enabled, handle like Stop
+		// Opted in and not suppressed: handle like Stop.
 		logging.Debug("SubagentStop: notifications enabled (config), processing")
 		bench.Start("stop.analyze")
 		status, parsedMessages, err = h.handleStopEvent(&hookData)
