@@ -34,6 +34,8 @@ type NotificationsConfig struct {
 	RespectJudgeMode                            *bool            `json:"respectJudgeMode"`          // Honor CLAUDE_HOOK_JUDGE_MODE=true env var to suppress notifications, default: true
 	SuppressFilters                             []SuppressFilter `json:"suppressFilters,omitempty"` // Rules for suppressing notifications by status/branch/folder
 	TeamMode                                    string           `json:"teamMode,omitempty"`        // Team mode: "always" (no suppression, default), "wait-all" (suppress lead, notify when all idle), "never" (silent in team mode)
+	NotifyOnlyWhenUnfocused                     *bool            `json:"notifyOnlyWhenUnfocused"`   // Suppress desktop notifications while the terminal window running Claude Code has OS focus, default: false
+	NotifyDelaySeconds                          *int             `json:"notifyDelaySeconds"`        // Wait N seconds before delivering a desktop notification (paired with notifyOnlyWhenUnfocused, it re-checks focus after the wait), default: 0
 }
 
 // DesktopConfig represents desktop notification settings
@@ -462,6 +464,9 @@ func (c *Config) Validate() error {
 	if c.Notifications.SuppressQuestionAfterAnyNotificationSeconds != nil && *c.Notifications.SuppressQuestionAfterAnyNotificationSeconds < 0 {
 		return fmt.Errorf("suppressQuestionAfterAnyNotificationSeconds must be >= 0")
 	}
+	if c.Notifications.NotifyDelaySeconds != nil && *c.Notifications.NotifyDelaySeconds < 0 {
+		return fmt.Errorf("notifyDelaySeconds must be >= 0")
+	}
 
 	// Validate teamMode
 	validTeamModes := map[string]bool{"": true, "wait-all": true, "always": true, "never": true}
@@ -558,6 +563,28 @@ func (c *Config) ShouldRespectJudgeMode() bool {
 		return true // Default: respect judge mode
 	}
 	return *c.Notifications.RespectJudgeMode
+}
+
+// ShouldNotifyOnlyWhenUnfocused returns true if desktop notifications should be
+// suppressed while the terminal window running Claude Code currently has OS focus
+// (default: false).
+func (c *Config) ShouldNotifyOnlyWhenUnfocused() bool {
+	if c.Notifications.NotifyOnlyWhenUnfocused == nil {
+		return false // Default: notify regardless of focus
+	}
+	return *c.Notifications.NotifyOnlyWhenUnfocused
+}
+
+// GetNotifyDelaySeconds returns how many seconds to wait before delivering a
+// desktop notification (default: 0). Negative values are treated as 0.
+func (c *Config) GetNotifyDelaySeconds() int {
+	if c.Notifications.NotifyDelaySeconds == nil {
+		return 0 // Default: no delay
+	}
+	if *c.Notifications.NotifyDelaySeconds < 0 {
+		return 0
+	}
+	return *c.Notifications.NotifyDelaySeconds
 }
 
 // GetTeamMode returns the team notification mode: "always" (default), "wait-all", or "never"

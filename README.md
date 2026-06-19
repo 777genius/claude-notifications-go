@@ -225,6 +225,8 @@ Edit the config file directly:
     "notifyOnSubagentStop": false,
     "notifyOnTextResponse": true,
     "respectJudgeMode": true,
+    "notifyOnlyWhenUnfocused": false,
+    "notifyDelaySeconds": 0,
     "suppressFilters": [
       {
         "name": "Suppress ClaudeProbe completions (remote-control)",
@@ -272,6 +274,8 @@ Edit the config file directly:
 | `notifyOnSubagentStop` | `false` | Send notifications when subagents (Task tool) complete |
 | `notifyOnTextResponse` | `true` | Send notifications for text-only responses (no tool usage) |
 | `respectJudgeMode` | `true` | Honor `CLAUDE_HOOK_JUDGE_MODE=true` env var to suppress notifications |
+| `notifyOnlyWhenUnfocused` | `false` | Skip the desktop notification when the terminal window running Claude Code already has OS focus. Best-effort per platform; if focus can't be determined the notification is still shown. |
+| `notifyDelaySeconds` | `0` | Wait N seconds before delivering a desktop notification (capped at 25s by the hook timeout). With `notifyOnlyWhenUnfocused`, focus is re-checked after the wait. Webhooks are unaffected. |
 | `suppressQuestionAfterTaskCompleteSeconds` | `12` | Suppress question notifications for N seconds after task complete |
 | `suppressQuestionAfterAnyNotificationSeconds` | `7` | Suppress question notifications for N seconds after any notification |
 | `suppressFilters` | `[]` | Array of rules to suppress notifications by status, git branch, and/or folder. Each rule is an AND of its fields; omitted fields match any value. Set `gitBranch` to `""` to match sessions outside git repos. |
@@ -296,6 +300,26 @@ You can also override individual channels per status:
 `statuses.<name>.enabled` is still the master switch for both channels. Use
 `desktop.enabled` and `webhook.enabled` when you want one channel on and the
 other off for the same status.
+
+### Focus-Aware & Delayed Notifications
+
+Two independent options cut notification noise when you're already watching the terminal:
+
+- **`notifyOnlyWhenUnfocused`** — skip the desktop notification if the terminal window running Claude Code currently has OS focus.
+- **`notifyDelaySeconds`** — wait N seconds before delivering, so a quick task can finish before any banner appears (capped at 25s to stay within the hook timeout).
+
+They compose: with both set, the plugin waits, then notifies only if the terminal still isn't focused — "tell me once I've looked away."
+
+```json
+{
+  "notifications": {
+    "notifyOnlyWhenUnfocused": true,
+    "notifyDelaySeconds": 10
+  }
+}
+```
+
+Both apply to **desktop notifications only** — webhook delivery is never delayed or suppressed. Focus detection is best-effort and degrades safely (always notifying when unsure): on macOS it compares the frontmost application, on X11 Linux the active window, and on Windows the foreground window's owning process. When focus can't be determined — for example under Wayland, or a terminal host that runs multiple windows in one process — the notification is delivered as usual.
 
 ### Sound Options
 

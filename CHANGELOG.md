@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Focus-aware and delayed desktop notifications** - two independent, composable options let notifications model where your attention is. `notifyOnlyWhenUnfocused` (default `false`) skips the desktop notification when the terminal window running Claude Code already has OS focus; `notifyDelaySeconds` (default `0`, capped at 25s by the hook timeout) waits before delivering and, when paired with `notifyOnlyWhenUnfocused`, re-checks focus after the wait. Focus detection is best-effort per platform (macOS frontmost app, X11 active window, Windows foreground process) and degrades safely to delivering the notification when focus can't be determined. Both apply to desktop notifications only; webhook delivery is unaffected ([#93](https://github.com/777genius/claude-notifications-go/issues/93))
+
 ## [1.39.4] - 2026-06-13
 
 ### Fixed

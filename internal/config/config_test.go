@@ -1563,3 +1563,45 @@ func TestLoadConfig_WithSuppressFilters(t *testing.T) {
 	assert.True(t, cfg.ShouldFilter("question", "main", "scratch"))
 	assert.False(t, cfg.ShouldFilter("task_complete", "main", "my-project"))
 }
+
+// === Tests for focus-aware / delayed notifications (issue #93) ===
+
+func TestShouldNotifyOnlyWhenUnfocused_DefaultsFalse(t *testing.T) {
+	// nil (not set) means notify regardless of focus
+	cfg := &Config{}
+	assert.False(t, cfg.ShouldNotifyOnlyWhenUnfocused())
+}
+
+func TestShouldNotifyOnlyWhenUnfocused_Explicit(t *testing.T) {
+	enabled := true
+	disabled := false
+
+	cfgOn := &Config{Notifications: NotificationsConfig{NotifyOnlyWhenUnfocused: &enabled}}
+	assert.True(t, cfgOn.ShouldNotifyOnlyWhenUnfocused())
+
+	cfgOff := &Config{Notifications: NotificationsConfig{NotifyOnlyWhenUnfocused: &disabled}}
+	assert.False(t, cfgOff.ShouldNotifyOnlyWhenUnfocused())
+}
+
+func TestGetNotifyDelaySeconds_DefaultsZero(t *testing.T) {
+	cfg := &Config{}
+	assert.Equal(t, 0, cfg.GetNotifyDelaySeconds())
+}
+
+func TestGetNotifyDelaySeconds_CustomAndNegative(t *testing.T) {
+	cfg := &Config{Notifications: NotificationsConfig{NotifyDelaySeconds: intPtr(10)}}
+	assert.Equal(t, 10, cfg.GetNotifyDelaySeconds())
+
+	// Negative is clamped to 0 (Validate rejects it, but the getter is defensive)
+	cfgNeg := &Config{Notifications: NotificationsConfig{NotifyDelaySeconds: intPtr(-5)}}
+	assert.Equal(t, 0, cfgNeg.GetNotifyDelaySeconds())
+}
+
+func TestValidate_NegativeNotifyDelay(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Notifications.NotifyDelaySeconds = intPtr(-1)
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "notifyDelaySeconds must be >= 0")
+}

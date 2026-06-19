@@ -28,6 +28,16 @@ import (
 	"github.com/777genius/claude-notifications/pkg/jsonl"
 )
 
+// maxNotifyDelaySeconds bounds notifyDelaySeconds so the desktop grace-period
+// delay can never push the hook past the timeout configured in hooks.json.
+const maxNotifyDelaySeconds = 25
+
+// Test seams for the focus-aware / delayed desktop notification path.
+var (
+	isTerminalFocused = notifier.IsTerminalFocused
+	sleepFunc         = time.Sleep
+)
+
 // HookData represents the data received from Claude Code hooks
 type HookData struct {
 	TranscriptPath string `json:"transcript_path"`
@@ -575,17 +585,9 @@ func (h *Handler) sendNotifications(status analyzer.Status, body, actions, sessi
 
 	statusStr := string(status)
 
-	// Send desktop notification (check per-status enabled)
-	if h.cfg.IsStatusDesktopEnabled(statusStr) {
-		if err := h.notifierSvc.SendDesktop(status, enhancedMessage, sessionID, cwd); err != nil {
-			h.maybeEmitDesktopPermissionGuidance(err)
-			errorhandler.HandleError(err, "Failed to send desktop notification")
-		}
-	} else {
-		logging.Debug("Desktop notification disabled for status: %s", statusStr)
-	}
-
-	// Send webhook notification (async, check per-status enabled)
+	// Send webhook notification first (async, check per-status enabled). Webhook
+	// delivery is independent of the desktop focus/delay handling below, so the
+	// notifyDelaySeconds grace period never holds it up.
 	if h.cfg.IsStatusWebhookEnabled(statusStr) {
 		h.webhookSvc.SendAsyncWithContext(webhook.SendContext{
 			Status:        status,
@@ -600,6 +602,45 @@ func (h *Handler) sendNotifications(status analyzer.Status, body, actions, sessi
 		})
 	} else {
 		logging.Debug("Webhook notification disabled for status: %s", statusStr)
+	}
+
+	// Send desktop notification (check per-status enabled)
+	if h.cfg.IsStatusDesktopEnabled(statusStr) {
+		h.sendDesktopNotification(status, enhancedMessage, sessionID, cwd)
+	} else {
+		logging.Debug("Desktop notification disabled for status: %s", statusStr)
+	}
+}
+
+// sendDesktopNotification delivers the desktop notification, honoring the
+// notifyDelaySeconds grace period and the notifyOnlyWhenUnfocused suppression
+// from issue #93.
+//
+// When notifyDelaySeconds > 0 the hook waits that many seconds (bounded by
+// maxNotifyDelaySeconds to stay within the hook timeout) before delivering, so a
+// quick task you are already watching can finish before any banner appears. When
+// notifyOnlyWhenUnfocused is set, the notification is dropped if the terminal
+// window has OS focus at delivery time — checked after the delay, so the two
+// options compose into "only notify once I have looked away". Both options are
+// independent and default off; webhook delivery is unaffected.
+func (h *Handler) sendDesktopNotification(status analyzer.Status, message, sessionID, cwd string) {
+	if delay := h.cfg.GetNotifyDelaySeconds(); delay > 0 {
+		if delay > maxNotifyDelaySeconds {
+			logging.Warn("notifyDelaySeconds=%d exceeds the hook timeout budget; clamping to %ds", delay, maxNotifyDelaySeconds)
+			delay = maxNotifyDelaySeconds
+		}
+		logging.Debug("Delaying desktop notification by %ds", delay)
+		sleepFunc(time.Duration(delay) * time.Second)
+	}
+
+	if h.cfg.ShouldNotifyOnlyWhenUnfocused() && isTerminalFocused() {
+		logging.Debug("Desktop notification suppressed: terminal window has focus")
+		return
+	}
+
+	if err := h.notifierSvc.SendDesktop(status, message, sessionID, cwd); err != nil {
+		h.maybeEmitDesktopPermissionGuidance(err)
+		errorhandler.HandleError(err, "Failed to send desktop notification")
 	}
 }
 
