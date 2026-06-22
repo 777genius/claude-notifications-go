@@ -37,7 +37,7 @@ func TestTerminalHasFocus_Linux(t *testing.T) {
 	t.Run("focused when active window matches WINDOWID", func(t *testing.T) {
 		t.Setenv("WINDOWID", "0x1e00009")
 		activeWindowID = func() (string, error) { return "31457289", nil } // == 0x1e00009
-		if !terminalHasFocus() {
+		if !terminalHasFocus("", "/repo") {
 			t.Error("expected focus when the active window equals WINDOWID")
 		}
 	})
@@ -45,7 +45,7 @@ func TestTerminalHasFocus_Linux(t *testing.T) {
 	t.Run("not focused when active window differs", func(t *testing.T) {
 		t.Setenv("WINDOWID", "100")
 		activeWindowID = func() (string, error) { return "200", nil }
-		if terminalHasFocus() {
+		if terminalHasFocus("", "/repo") {
 			t.Error("expected no focus when the active window differs")
 		}
 	})
@@ -53,7 +53,7 @@ func TestTerminalHasFocus_Linux(t *testing.T) {
 	t.Run("unknown (notify) when WINDOWID is unset (e.g. Wayland)", func(t *testing.T) {
 		t.Setenv("WINDOWID", "")
 		activeWindowID = func() (string, error) { return "200", nil }
-		if terminalHasFocus() {
+		if terminalHasFocus("", "/repo") {
 			t.Error("expected no focus (deliver) when WINDOWID is unset")
 		}
 	})
@@ -61,7 +61,7 @@ func TestTerminalHasFocus_Linux(t *testing.T) {
 	t.Run("unknown (notify) when the active-window query fails", func(t *testing.T) {
 		t.Setenv("WINDOWID", "100")
 		activeWindowID = func() (string, error) { return "", errors.New("xdotool missing") }
-		if terminalHasFocus() {
+		if terminalHasFocus("", "/repo") {
 			t.Error("expected no focus (deliver) when the query fails")
 		}
 	})

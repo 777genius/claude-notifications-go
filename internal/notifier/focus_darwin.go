@@ -15,26 +15,30 @@ import (
 // which terminalHasFocus treats as "unfocused" and delivers the notification.
 const focusQueryTimeout = 2 * time.Second
 
-// frontmostBundleID is a seam so tests can stub the LaunchServices query.
-var frontmostBundleID = defaultFrontmostBundleID
+// frontmostBundleID and frontmostTerminalWindowMatches are seams so tests can
+// stub the LaunchServices and exact-window queries.
+var (
+	frontmostBundleID              = defaultFrontmostBundleID
+	frontmostTerminalWindowMatches = frontmostTerminalWindowMatchesCWD
+)
 
 // terminalHasFocus reports whether our terminal application is frontmost on macOS.
 //
 // It compares the bundle ID of the frontmost application (resolved through
-// LaunchServices via lsappinfo, which — unlike System Events scripting — needs
+// LaunchServices via lsappinfo, which - unlike System Events scripting - needs
 // no Accessibility permission) against the bundle ID of the terminal running
 // Claude Code. This is app-level rather than window-level focus, matching the
 // NSWorkspace.frontmostApplication approach: if the terminal app is frontmost
 // the user is looking at it.
-func terminalHasFocus() bool {
+func terminalHasFocus(sessionID, cwd string) bool {
 	front, ok := frontmostBundleID()
 	if !ok || front == "" {
 		return false
 	}
 	// GetTerminalBundleID never returns empty: it falls back to com.apple.Terminal
 	// when it cannot positively identify the terminal. Trusting that fallback would
-	// break the fail-safe contract — an unidentifiable terminal could falsely
-	// "match" a frontmost Terminal.app and swallow the notification — so we only
+	// break the fail-safe contract - an unidentifiable terminal could falsely
+	// "match" a frontmost Terminal.app and swallow the notification - so we only
 	// compare when the identity is positively known.
 	if !terminalIdentityKnown() {
 		return false
@@ -43,7 +47,22 @@ func terminalHasFocus() bool {
 	if ours == "" {
 		return false
 	}
-	return strings.EqualFold(front, ours)
+	if !strings.EqualFold(front, ours) {
+		return false
+	}
+
+	if isGhosttyBundleID(ours) {
+		info, err := ghosttyFrontmostTerminalInfoRunner()
+		if err != nil {
+			return false
+		}
+		if storedID := loadStoredGhosttyTerminalID(sessionID); storedID != "" && info.ID != storedID {
+			return false
+		}
+		return ghosttyFrontmostTerminalMatchesSession(info, cwd)
+	}
+
+	return frontmostTerminalWindowMatches(ours, cwd)
 }
 
 // terminalIdentityKnown reports whether GetTerminalBundleID can positively

@@ -23,12 +23,12 @@ var activeWindowID = defaultActiveWindowID
 //
 // It compares the window manager's active window (_NET_ACTIVE_WINDOW, read via
 // xdotool) against $WINDOWID, which X11 terminals export for their own window.
-// When $WINDOWID is unset — typically under Wayland, where there is no portable
-// active-window query — focus is treated as unknown and the notification is
+// When $WINDOWID is unset - typically under Wayland, where there is no portable
+// active-window query - focus is treated as unknown and the notification is
 // delivered. Class-based matching is intentionally avoided: two terminal windows
 // share a class, so it cannot tell "the window Claude runs in" from "another
 // terminal", and a false match would swallow the notification.
-func terminalHasFocus() bool {
+func terminalHasFocus(_, _ string) bool {
 	ours, ok := parseWindowID(os.Getenv("WINDOWID"))
 	if !ok {
 		return false // Wayland, or a terminal that does not export WINDOWID

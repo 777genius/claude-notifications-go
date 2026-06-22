@@ -4,6 +4,8 @@ package notifier
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -17,23 +19,30 @@ var (
 	user32                       = windows.NewLazySystemDLL("user32.dll")
 	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
 	procGetWindowThreadProcessID = user32.NewProc("GetWindowThreadProcessId")
+	procGetWindowTextW           = user32.NewProc("GetWindowTextW")
+	procGetWindowTextLengthW     = user32.NewProc("GetWindowTextLengthW")
 
 	// Seams so tests can drive pidFocused without real Win32 calls.
-	foregroundProcessPID = defaultForegroundProcessPID
+	foregroundWindowInfo = defaultForegroundWindowInfo
 	processSnapshot      = defaultProcessSnapshot
 )
+
+type focusedWindowInfo struct {
+	PID   uint32
+	Title string
+}
 
 // terminalHasFocus reports whether the foreground window belongs to the terminal
 // running Claude Code.
 //
 // GetForegroundWindow yields the focused window's owning process. The terminal
 // emulator is an ancestor of this short-lived hook process, so we walk our own
-// parent chain (via a Toolhelp process snapshot) and treat a match as "the
-// terminal is focused". Detection is best-effort: multi-window terminal hosts
-// that run several windows in one process cannot be disambiguated, and any API
-// failure reports unknown (false) so the notification is still delivered.
-func terminalHasFocus() bool {
-	fgPID, ok := foregroundProcessPID()
+// parent chain (via a Toolhelp process snapshot). We also require the foreground
+// window title to contain the project folder, because one terminal host process
+// can own multiple windows/tabs. Any ambiguity reports unknown (false) so the
+// notification is still delivered.
+func terminalHasFocus(_, cwd string) bool {
+	fg, ok := foregroundWindowInfo()
 	if !ok {
 		return false
 	}
@@ -41,7 +50,10 @@ func terminalHasFocus() bool {
 	if err != nil {
 		return false
 	}
-	return pidFocused(fgPID, uint32(os.Getpid()), pidToPPID)
+	if !pidFocused(fg.PID, uint32(os.Getpid()), pidToPPID) {
+		return false
+	}
+	return windowTitleMatchesFolder(fg.Title, cwd)
 }
 
 // pidFocused reports whether fgPID is the current process or one of its
@@ -69,18 +81,40 @@ func pidFocused(fgPID, selfPID uint32, pidToPPID map[uint32]uint32) bool {
 	return false
 }
 
-// defaultForegroundProcessPID returns the PID owning the foreground window.
-func defaultForegroundProcessPID() (uint32, bool) {
+// defaultForegroundWindowInfo returns the PID and title for the foreground window.
+func defaultForegroundWindowInfo() (focusedWindowInfo, bool) {
 	hwnd, _, _ := procGetForegroundWindow.Call()
 	if hwnd == 0 {
-		return 0, false
+		return focusedWindowInfo{}, false
 	}
 	var pid uint32
 	ret, _, _ := procGetWindowThreadProcessID.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
 	if ret == 0 || pid == 0 {
-		return 0, false
+		return focusedWindowInfo{}, false
 	}
-	return pid, true
+	return focusedWindowInfo{PID: pid, Title: windowText(hwnd)}, true
+}
+
+func windowText(hwnd uintptr) string {
+	n, _, _ := procGetWindowTextLengthW.Call(hwnd)
+	if n == 0 {
+		return ""
+	}
+	buf := make([]uint16, int(n)+1)
+	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return windows.UTF16ToString(buf)
+}
+
+func windowTitleMatchesFolder(title, cwd string) bool {
+	folder := filepath.Base(cwd)
+	if folder == "" || folder == "." || folder == string(filepath.Separator) {
+		return false
+	}
+	title = strings.ToLower(strings.TrimSpace(title))
+	if title == "" {
+		return false
+	}
+	return strings.Contains(title, strings.ToLower(folder))
 }
 
 // defaultProcessSnapshot builds a pid->parent-pid map from a Toolhelp snapshot.

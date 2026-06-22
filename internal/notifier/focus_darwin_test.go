@@ -30,8 +30,12 @@ func TestParseLsappinfoBundleID(t *testing.T) {
 }
 
 func TestTerminalHasFocus_Darwin(t *testing.T) {
-	restore := frontmostBundleID
-	defer func() { frontmostBundleID = restore }()
+	restoreFrontmost := frontmostBundleID
+	restoreWindowMatch := frontmostTerminalWindowMatches
+	defer func() {
+		frontmostBundleID = restoreFrontmost
+		frontmostTerminalWindowMatches = restoreWindowMatch
+	}()
 
 	// Pin our terminal identity positively so the comparison is deterministic
 	// regardless of the host. Apple_Terminal maps to com.apple.Terminal, which is
@@ -41,29 +45,43 @@ func TestTerminalHasFocus_Darwin(t *testing.T) {
 
 	t.Run("focused when frontmost app is our terminal", func(t *testing.T) {
 		frontmostBundleID = func() (string, bool) { return "com.apple.Terminal", true }
-		if !terminalHasFocus() {
+		frontmostTerminalWindowMatches = func(bundleID, cwd string) bool {
+			return bundleID == "com.apple.Terminal" && cwd == "/repo/my-project"
+		}
+		if !terminalHasFocus("session", "/repo/my-project") {
 			t.Error("expected focus when the frontmost app matches our terminal bundle ID")
 		}
 	})
 
 	t.Run("case-insensitive match", func(t *testing.T) {
 		frontmostBundleID = func() (string, bool) { return "COM.APPLE.TERMINAL", true }
-		if !terminalHasFocus() {
+		frontmostTerminalWindowMatches = func(bundleID, cwd string) bool { return true }
+		if !terminalHasFocus("session", "/repo/my-project") {
 			t.Error("expected a case-insensitive bundle ID match")
 		}
 	})
 
 	t.Run("not focused when a different app is frontmost", func(t *testing.T) {
 		frontmostBundleID = func() (string, bool) { return "com.google.Chrome", true }
-		if terminalHasFocus() {
+		frontmostTerminalWindowMatches = func(bundleID, cwd string) bool { return true }
+		if terminalHasFocus("session", "/repo/my-project") {
 			t.Error("expected no focus when a different app is frontmost")
 		}
 	})
 
 	t.Run("unknown (notify) when the query fails", func(t *testing.T) {
 		frontmostBundleID = func() (string, bool) { return "", false }
-		if terminalHasFocus() {
+		frontmostTerminalWindowMatches = func(bundleID, cwd string) bool { return true }
+		if terminalHasFocus("session", "/repo/my-project") {
 			t.Error("expected no focus (deliver) when the frontmost query fails")
+		}
+	})
+
+	t.Run("unknown when terminal app matches but exact window does not", func(t *testing.T) {
+		frontmostBundleID = func() (string, bool) { return "com.apple.Terminal", true }
+		frontmostTerminalWindowMatches = func(bundleID, cwd string) bool { return false }
+		if terminalHasFocus("session", "/repo/my-project") {
+			t.Error("expected no focus (deliver) when the exact terminal window cannot be proven")
 		}
 	})
 }
@@ -73,15 +91,20 @@ func TestTerminalHasFocus_Darwin(t *testing.T) {
 // falls back to com.apple.Terminal, but focus must still report unknown (false) so
 // a frontmost Terminal.app does not falsely suppress the notification.
 func TestTerminalHasFocus_Darwin_UnidentifiableTerminal(t *testing.T) {
-	restore := frontmostBundleID
-	defer func() { frontmostBundleID = restore }()
+	restoreFrontmost := frontmostBundleID
+	restoreWindowMatch := frontmostTerminalWindowMatches
+	defer func() {
+		frontmostBundleID = restoreFrontmost
+		frontmostTerminalWindowMatches = restoreWindowMatch
+	}()
 
 	// No positive identity: no __CFBundleIdentifier, unmapped TERM_PROGRAM.
 	t.Setenv("__CFBundleIdentifier", "")
 	t.Setenv("TERM_PROGRAM", "")
 
 	frontmostBundleID = func() (string, bool) { return "com.apple.Terminal", true }
-	if terminalHasFocus() {
+	frontmostTerminalWindowMatches = func(bundleID, cwd string) bool { return true }
+	if terminalHasFocus("session", "/repo/my-project") {
 		t.Error("expected no focus (deliver) when the terminal identity is unknown, even if Terminal.app is frontmost")
 	}
 }

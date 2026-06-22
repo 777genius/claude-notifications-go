@@ -92,6 +92,42 @@ static CGWindowID findWindowID(int pid, const char *folderName, CGRect *outBound
 	}
 }
 
+// frontmostWindowMatchesFolder returns 1 only when the frontmost normal on-screen
+// window belongs to pid and its title contains folderName as a distinct component.
+// It is a fail-safe focus detector: if Screen Recording access is missing or
+// window titles are unavailable, it returns 0 so notifications are still shown.
+static int frontmostWindowMatchesFolder(int pid, const char *folderName) {
+	@autoreleasepool {
+		if (!CGPreflightScreenCaptureAccess()) {
+			return 0;
+		}
+
+		CFArrayRef allInfo = CGWindowListCopyWindowInfo(
+			kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+			kCGNullWindowID
+		);
+		if (!allInfo) return 0;
+
+		NSString *folder = [NSString stringWithUTF8String:folderName];
+		int matched = 0;
+
+		for (NSDictionary *info in (__bridge NSArray *)allInfo) {
+			NSNumber *layer = info[(__bridge NSString *)kCGWindowLayer];
+			if (layer && layer.intValue != 0) continue;
+
+			NSNumber *pidNum = info[(__bridge NSString *)kCGWindowOwnerPID];
+			NSString *name = info[(__bridge NSString *)kCGWindowName];
+			if (pidNum && pidNum.intValue == pid && name && titleMatchesFolder(name, folder)) {
+				matched = 1;
+			}
+			break;
+		}
+
+		CFRelease(allInfo);
+		return matched;
+	}
+}
+
 // switchToWindowSpace switches the current visible Space to the one containing
 // windowID, using bounds to select the correct display.
 static void switchToWindowSpace(CGWindowID windowID, CGRect bounds) {
@@ -278,6 +314,26 @@ var ghosttyAppleScriptIDRunner = runGhosttyAppleScriptFocusByID
 
 type FocusWindowOptions struct {
 	GhosttyTerminalID string
+}
+
+func frontmostTerminalWindowMatchesCWD(bundleID, cwd string) bool {
+	folderName := filepath.Base(cwd)
+	if folderName == "" || folderName == "." || folderName == string(filepath.Separator) {
+		return false
+	}
+
+	cBundleID := C.CString(bundleID)
+	defer C.free(unsafe.Pointer(cBundleID))
+
+	pid := int(C.findPID(cBundleID))
+	if pid < 0 {
+		return false
+	}
+
+	cFolder := C.CString(folderName)
+	defer C.free(unsafe.Pointer(cFolder))
+
+	return C.frontmostWindowMatchesFolder(C.int(pid), cFolder) == 1
 }
 
 // retryWindowFocus calls fn with increasing delays until a non-zero result.

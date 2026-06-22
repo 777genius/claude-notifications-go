@@ -66,34 +66,62 @@ func TestPidFocused(t *testing.T) {
 func TestTerminalHasFocus_Windows(t *testing.T) {
 	self := uint32(os.Getpid())
 
-	restoreFG, restoreSnap := foregroundProcessPID, processSnapshot
-	defer func() { foregroundProcessPID, processSnapshot = restoreFG, restoreSnap }()
+	restoreFG, restoreSnap := foregroundWindowInfo, processSnapshot
+	defer func() { foregroundWindowInfo, processSnapshot = restoreFG, restoreSnap }()
 
-	t.Run("focused when foreground owns an ancestor", func(t *testing.T) {
-		foregroundProcessPID = func() (uint32, bool) { return 77, true }
+	t.Run("focused when foreground owns an ancestor and title matches cwd folder", func(t *testing.T) {
+		foregroundWindowInfo = func() (focusedWindowInfo, bool) {
+			return focusedWindowInfo{PID: 77, Title: "notification_plugin_go - PowerShell"}, true
+		}
 		processSnapshot = func() (map[uint32]uint32, error) {
 			return map[uint32]uint32{self: 55, 55: 77, 77: 1}, nil
 		}
-		if !terminalHasFocus() {
+		if !terminalHasFocus("", `C:\dev\notification_plugin_go`) {
 			t.Error("expected focus when foreground PID is an ancestor")
 		}
 	})
 
+	t.Run("not focused when ancestor process matches but title does not prove the project", func(t *testing.T) {
+		foregroundWindowInfo = func() (focusedWindowInfo, bool) {
+			return focusedWindowInfo{PID: 77, Title: "other-project - PowerShell"}, true
+		}
+		processSnapshot = func() (map[uint32]uint32, error) {
+			return map[uint32]uint32{self: 55, 55: 77, 77: 1}, nil
+		}
+		if terminalHasFocus("", `C:\dev\notification_plugin_go`) {
+			t.Error("expected no focus when the foreground terminal window title does not match this project")
+		}
+	})
+
 	t.Run("not focused when foreground window unavailable", func(t *testing.T) {
-		foregroundProcessPID = func() (uint32, bool) { return 0, false }
+		foregroundWindowInfo = func() (focusedWindowInfo, bool) { return focusedWindowInfo{}, false }
 		processSnapshot = func() (map[uint32]uint32, error) {
 			return map[uint32]uint32{self: 55}, nil
 		}
-		if terminalHasFocus() {
+		if terminalHasFocus("", `C:\dev\notification_plugin_go`) {
 			t.Error("expected no focus when foreground PID is unavailable")
 		}
 	})
 
 	t.Run("not focused when snapshot fails", func(t *testing.T) {
-		foregroundProcessPID = func() (uint32, bool) { return 77, true }
+		foregroundWindowInfo = func() (focusedWindowInfo, bool) {
+			return focusedWindowInfo{PID: 77, Title: "notification_plugin_go"}, true
+		}
 		processSnapshot = func() (map[uint32]uint32, error) { return nil, errors.New("snapshot failed") }
-		if terminalHasFocus() {
+		if terminalHasFocus("", `C:\dev\notification_plugin_go`) {
 			t.Error("expected no focus when the process snapshot fails")
 		}
 	})
+}
+
+func TestWindowTitleMatchesFolder_Windows(t *testing.T) {
+	if !windowTitleMatchesFolder("notification_plugin_go - Windows Terminal", `C:\dev\notification_plugin_go`) {
+		t.Fatal("expected title to match cwd folder")
+	}
+	if windowTitleMatchesFolder("other-project - Windows Terminal", `C:\dev\notification_plugin_go`) {
+		t.Fatal("expected unrelated title not to match cwd folder")
+	}
+	if windowTitleMatchesFolder("notification_plugin_go - Windows Terminal", "") {
+		t.Fatal("empty cwd must not be treated as focused")
+	}
 }
