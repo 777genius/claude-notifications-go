@@ -76,7 +76,6 @@ body:
       label: Terminal multiplexer (if any)
       description: Are you running inside tmux, zellij, or similar?
       options:
-        - None
         - tmux
         - tmux (iTerm2 -CC mode)
         - zellij
