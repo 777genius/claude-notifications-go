@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Ghostty: cwd fallback no longer switches to an arbitrary same-directory tab** - click-to-focus selects a terminal by working directory only when exactly one tab matches, leaving ambiguous sessions to the existing window-level fallback instead ([#115](https://github.com/777genius/claude-notifications-go/issues/115)).
+
 ## [1.40.1] - 2026-07-17
 
 ### Changed

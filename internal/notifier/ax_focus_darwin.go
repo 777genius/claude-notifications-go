@@ -615,15 +615,24 @@ on focusMatchingTerminal(searchPaths)
 		set allTerminals to terminals
 		repeat with candidate in searchPaths
 			set normalizedCandidate to my normalizePath(contents of candidate)
+			set matchCount to 0
+			set matchedTerminal to missing value
 			repeat with t in allTerminals
 				try
 					set termDir to my normalizePath(working directory of t)
 					if termDir is normalizedCandidate then
-						focus t
-						return true
+						set matchCount to matchCount + 1
+						set matchedTerminal to t
 					end if
 				end try
 			end repeat
+			if matchCount is 1 then
+				focus matchedTerminal
+				return true
+			end if
+			if matchCount is greater than 1 then
+				return false
+			end if
 		end repeat
 	end tell
 	return false
