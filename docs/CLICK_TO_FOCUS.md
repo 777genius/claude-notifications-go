@@ -122,13 +122,13 @@ Clicking a notification raises the terminal **window** that started the task. En
 
 How it works (no admin rights, no COM server):
 
-1. When the notification fires, the plugin walks up the process tree to the terminal window hosting Claude (Windows Terminal, VS Code, conhost, ConEmu, …) and records its window handle, PID, title and project folder.
-2. The toast is shown via [go-toast](https://git.sr.ht/~jackmordaunt/go-toast) with **protocol activation**, carrying that context in a `claude-notify-focus:` URI. A per-user handler for that scheme is registered under `HKCU\Software\Classes` (idempotent; refreshed if the binary moves).
-3. Clicking the toast launches the URI, which re-runs the binary's `focus-windows` subcommand. It re-finds the window (by handle, then PID, then title/folder) and raises it with `ShowWindow` + `SetForegroundWindow`.
+1. When the notification fires, the plugin walks up the process tree to the terminal window hosting Claude (Windows Terminal, VS Code, conhost, ConEmu, …) and records its window handle, PID, title and project folder. When one process owns several windows (e.g. Windows Terminal's shared "monarch"), it prefers the window whose title contains the project folder name to tell them apart.
+2. The toast is shown via [go-toast](https://git.sr.ht/~jackmordaunt/go-toast) with **protocol activation**, carrying that context in a `claude-notify-focus:` URI. A per-user handler for that scheme is registered under `HKCU\Software\Classes` (idempotent; refreshed if the binary moves), pointing at a second, GUI-subsystem build of the same binary (`claude-notifications-windows-amd64-focus.exe`) instead of the normal console-subsystem one — so the click never flashes a console window. If that sibling isn't present (older install), the handler falls back to the main binary.
+3. Clicking the toast launches the URI, which re-runs the focus-handler binary's `focus-windows` subcommand. It re-finds the window (by handle, then PID, then title/folder) and raises it with `ShowWindow` + `SetForegroundWindow`.
 
 ### Scope: window-level only
 
-Focus is **window-level**. Windows Terminal runs every tab and split pane inside one top-level window, and Win32 can only raise *windows*, not tabs — there is no public API to focus a specific WT tab by session (it's an open feature request on Windows Terminal). Additionally, when several WT windows run under a single `WindowsTerminal.exe` process, the plugin can resolve the terminal process but not which of its windows hosts a given tab. So:
+Focus is **window-level**. Windows Terminal runs every tab and split pane inside one top-level window, and Win32 can only raise *windows*, not tabs — there is no public API to focus a specific WT tab by session (it's an open feature request on Windows Terminal). So:
 
 - A single terminal window → raised reliably.
 - Multiple **separate** windows → best effort (the foreground / most-recent window is chosen); it may not be the exact one when the session is in a background window.
