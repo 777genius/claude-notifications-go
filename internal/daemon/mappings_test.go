@@ -26,6 +26,9 @@ func saveTerminalEnv(t *testing.T) func() {
 		"WEZTERM_PANE",
 		"WEZTERM_UNIX_SOCKET",
 		"ALACRITTY_WINDOW_ID",
+		"ZELLIJ",
+		"ZELLIJ_SESSION_NAME",
+		"ZELLIJ_PANE_ID",
 	}
 	type envState struct {
 		value string

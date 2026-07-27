@@ -46,6 +46,8 @@ type FocusHints struct {
 	WindowTitle   string
 	WezTermPaneID string
 	WezTermSocket string
+	ZellijSession string
+	ZellijPaneID  string
 }
 
 // TryFocus attempts to focus a window using available tools.
@@ -108,6 +110,14 @@ func TryFocusWithHints(hints FocusHints) error {
 		}
 	}
 
+	// Zellij multiplexes panes inside whichever window was just raised, so the pane
+	// switch is independent of how — or whether — window-level focus succeeded, and
+	// is attempted either way.
+	var zellijErr error
+	if hints.ZellijSession != "" && hints.ZellijPaneID != "" {
+		zellijErr = TryZellijPane(hints.ZellijSession, hints.ZellijPaneID)
+	}
+
 	if wezTermPaneID != "" {
 		// When multiple WezTerm windows are open, activateByWmClass may have raised
 		// the wrong one (both share the same WM class). Query the mux for the window
@@ -141,10 +151,12 @@ func TryFocusWithHints(hints FocusHints) error {
 			return fmt.Errorf("wezterm pane focus failed: %v", err)
 		}
 		// Pane switch succeeded, or window was already raised (pane switch is best-effort).
-		return nil
+		return zellijErr
 	}
 
 	if !windowFocused {
+		// A raised window is the headline outcome: without it the pane switch is
+		// invisible, so report that failure even when the pane switch worked.
 		if exactErr != nil && lastErr != nil {
 			return fmt.Errorf("%v; fallback focus failed, last error: %v", exactErr, lastErr)
 		}
@@ -153,7 +165,7 @@ func TryFocusWithHints(hints FocusHints) error {
 		}
 		return fmt.Errorf("all focus methods failed, last error: %v", lastErr)
 	}
-	return nil
+	return zellijErr
 }
 
 // wezTermWindowTitle queries the WezTerm mux for the window title of the window

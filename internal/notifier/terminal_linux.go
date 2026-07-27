@@ -102,6 +102,11 @@ func sendViaDaemon(title, body, cwd string) error {
 	// Capture WezTerm pane info only when the focus target is actually WezTerm.
 	wezTermPaneID, wezTermSocket := daemon.GetWezTermFocusHints(focusTarget)
 
+	// Zellij is not tied to a focus target the way WezTerm is: it runs inside
+	// whichever terminal the user launched it from, so these are captured for
+	// every terminal.
+	zellijSession, zellijPaneID := daemon.GetZellijFocusHints()
+
 	_, err = client.SendNotification(title, body, daemon.FocusHints{
 		TerminalName:  focusTarget,
 		FolderName:    folderName,
@@ -109,6 +114,8 @@ func sendViaDaemon(title, body, cwd string) error {
 		WindowTitle:   focusWindowTitle,
 		WezTermPaneID: wezTermPaneID,
 		WezTermSocket: wezTermSocket,
+		ZellijSession: zellijSession,
+		ZellijPaneID:  zellijPaneID,
 	}, 30)
 	return err
 }

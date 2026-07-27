@@ -87,7 +87,25 @@ Review the file before sharing it publicly, because it may include local paths a
 
 ## Multiplexers
 
-On both macOS and Linux, click-to-focus supports **tmux**, **zellij**, **WezTerm**, and **kitty** — clicking a notification switches to the correct session/pane/tab.
+Clicking a notification switches to the correct session/pane/tab, on top of raising the window.
+
+| Multiplexer | macOS | Linux |
+|-------------|-------|-------|
+| tmux | ✅ | — |
+| zellij | ✅ (active tab) | ✅ (exact pane) |
+| WezTerm | ✅ | ✅ |
+| kitty | ✅ | — |
+
+Where a multiplexer is unsupported the window is still raised; only the pane/tab switch is skipped.
+
+On Linux, zellij is targeted by pane rather than by tab name: the hook records `$ZELLIJ_SESSION_NAME`
+and `$ZELLIJ_PANE_ID`, and the click runs `zellij -s <session> action focus-pane-id <pane>`. That is
+exact where a tab name is not — tab names need not be unique, and the tab that is *focused* when the
+notification fires is whichever one you switched to, not the one Claude is running in.
+
+**Requires zellij 0.44.1+**, which added `focus-pane-id`. On older versions the pane switch is
+skipped with a logged error and the terminal window is still raised. This is why macOS keeps using
+`go-to-tab-name`: switching it would raise that platform's zellij floor to 0.44.1 for everyone.
 
 ### iTerm2 + tmux Control Mode (-CC)
 

@@ -54,6 +54,8 @@ type NotifyRequest struct {
 	FocusWindowTitle   string `json:"focus_window_title,omitempty"`    // Exact window title captured in the hook process when available
 	FocusWezTermPaneID string `json:"focus_wezterm_pane_id,omitempty"` // WezTerm pane ID ($WEZTERM_PANE)
 	FocusWezTermSocket string `json:"focus_wezterm_socket,omitempty"`  // WezTerm unix socket ($WEZTERM_UNIX_SOCKET)
+	FocusZellijSession string `json:"focus_zellij_session,omitempty"`  // Zellij session name ($ZELLIJ_SESSION_NAME)
+	FocusZellijPaneID  string `json:"focus_zellij_pane_id,omitempty"`  // Zellij pane ID ($ZELLIJ_PANE_ID)
 	Timeout            int    `json:"timeout"`                         // Notification timeout in seconds
 }
 
