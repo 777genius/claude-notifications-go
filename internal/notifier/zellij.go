@@ -90,11 +90,17 @@ func extractKDLStringAttr(line, key string) string {
 // when running inside zellij. Uses -activate (to focus the terminal app)
 // and -execute (to switch to the correct zellij tab) on click.
 func buildZellijNotifierArgs(title, message, tabName, sessionName, bundleID string) []string {
+	return buildZellijActionNotifierArgs(title, message, sessionName, bundleID, "go-to-tab-name", tabName)
+}
+
+// buildZellijActionNotifierArgs assembles the terminal-notifier invocation whose
+// -execute runs a single `zellij action` against an explicitly named session.
+func buildZellijActionNotifierArgs(title, message, sessionName, bundleID, action, target string) []string {
 	zellijPath := getZellijPath()
 
 	executeCmd := fmt.Sprintf(
-		"'%s' -s '%s' action go-to-tab-name '%s'",
-		zellijPath, sessionName, tabName,
+		"'%s' -s '%s' action %s '%s'",
+		zellijPath, sessionName, action, target,
 	)
 
 	args := []string{
