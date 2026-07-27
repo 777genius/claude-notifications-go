@@ -7,7 +7,6 @@ package daemon
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -18,20 +17,6 @@ import (
 // click handling for every later notification, not just this one.
 const zellijActionTimeout = 5 * time.Second
 
-// GetZellijFocusHints returns the zellij session and pane that produced the
-// notification, or empty strings when not running under zellij.
-//
-// The pane is read from the environment rather than asked of zellij when the
-// click arrives, because by then "the focused pane" is whatever the user is
-// looking at — precisely the pane they are not trying to get back to.
-func GetZellijFocusHints() (sessionName, paneID string) {
-	if !InZellij() {
-		return "", ""
-	}
-	return strings.TrimSpace(os.Getenv("ZELLIJ_SESSION_NAME")),
-		strings.TrimSpace(os.Getenv("ZELLIJ_PANE_ID"))
-}
-
 // TryZellijPane focuses paneID inside sessionName, switching tabs if the pane
 // lives in one that is not current.
 //
@@ -41,6 +26,22 @@ func TryZellijPane(sessionName, paneID string) error {
 	if sessionName == "" || paneID == "" {
 		return fmt.Errorf("zellij session name or pane id missing")
 	}
+	return runZellijAction(sessionName, "focus-pane-id", paneID)
+}
+
+// TryZellijTab brings the tab named tabName to the front. It is the fallback for
+// zellij older than 0.44.1, and lands on whichever pane that tab last had
+// focused, which need not be the one that raised the notification.
+func TryZellijTab(sessionName, tabName string) error {
+	if sessionName == "" || tabName == "" {
+		return fmt.Errorf("zellij session name or tab name missing")
+	}
+	return runZellijAction(sessionName, "go-to-tab-name", tabName)
+}
+
+// runZellijAction runs `zellij -s <session> action <action> <target>`, treating
+// "already focused" as success.
+func runZellijAction(sessionName, action, target string) error {
 	if _, err := exec.LookPath("zellij"); err != nil {
 		return fmt.Errorf("zellij not installed")
 	}
@@ -51,16 +52,25 @@ func TryZellijPane(sessionName, paneID string) error {
 	// -s names the session explicitly. The daemon is spawned by whichever hook
 	// first needed it and then keeps that session's ZELLIJ_* variables for the
 	// rest of its life, so letting zellij infer the session from the environment
-	// would focus a pane in whichever session happened to start the daemon.
-	cmd := exec.CommandContext(ctx, "zellij", "-s", sessionName, "action", "focus-pane-id", paneID)
+	// would act on whichever session happened to start the daemon.
+	cmd := exec.CommandContext(ctx, "zellij", "-s", sessionName, "action", action, target)
 	output, err := cmd.CombinedOutput()
-	if err == nil {
+	if err == nil || isZellijAlreadyFocused(string(output)) {
 		return nil
 	}
-	if isZellijAlreadyFocused(string(output)) {
+	return fmt.Errorf("zellij %s failed: %w, output: %s", action, err, strings.TrimSpace(string(output)))
+}
+
+// tryZellijFocus carries out the strategy the hook process chose.
+func tryZellijFocus(hints FocusHints) error {
+	switch hints.ZellijMode {
+	case ZellijFocusModePane:
+		return TryZellijPane(hints.ZellijSession, hints.ZellijPaneID)
+	case ZellijFocusModeTab:
+		return TryZellijTab(hints.ZellijSession, hints.ZellijTabName)
+	default:
 		return nil
 	}
-	return fmt.Errorf("zellij focus-pane-id failed: %w, output: %s", err, strings.TrimSpace(string(output)))
 }
 
 // isZellijAlreadyFocused reports whether zellij failed only because the pane was

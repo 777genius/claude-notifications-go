@@ -1,5 +1,5 @@
-// ABOUTME: Whether this process sits inside a zellij pane, decided from the environment.
-// ABOUTME: Untagged so the notifier and the daemon answer the question the same way.
+// ABOUTME: What the environment says about the surrounding zellij pane.
+// ABOUTME: Untagged so the notifier and the daemon read it the same way on every platform.
 package daemon
 
 import (
@@ -22,4 +22,18 @@ func InZellij() bool {
 	}
 	return strings.TrimSpace(os.Getenv("ZELLIJ_SESSION_NAME")) != "" &&
 		strings.TrimSpace(os.Getenv("ZELLIJ_PANE_ID")) != ""
+}
+
+// GetZellijFocusHints returns the zellij session and pane that produced the
+// notification, or empty strings when not running under zellij.
+//
+// The pane is read from the environment rather than asked of zellij when the
+// click arrives, because by then "the focused pane" is whatever the user is
+// looking at — precisely the pane they are not trying to get back to.
+func GetZellijFocusHints() (sessionName, paneID string) {
+	if !InZellij() {
+		return "", ""
+	}
+	return strings.TrimSpace(os.Getenv("ZELLIJ_SESSION_NAME")),
+		strings.TrimSpace(os.Getenv("ZELLIJ_PANE_ID"))
 }

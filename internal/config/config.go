@@ -49,6 +49,7 @@ type DesktopConfig struct {
 	ClickToFocus     bool    `json:"clickToFocus"`     // macOS/Linux/Windows: activate the originating terminal window on notification click (default: true)
 	ShowSessionLabel *bool   `json:"showSessionLabel"` // Include the "[name id]" session label in the notification title (default: true)
 	TerminalBundleID string  `json:"terminalBundleId"` // macOS: override auto-detected terminal bundle ID (empty = auto)
+	ZellijFocus      string  `json:"zellijFocus"`      // Linux: "auto" (default), "pane" (zellij 0.44.1+), "tab" (legacy), "off"
 }
 
 // WebhookConfig represents webhook settings

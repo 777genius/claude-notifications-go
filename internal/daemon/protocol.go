@@ -56,6 +56,8 @@ type NotifyRequest struct {
 	FocusWezTermSocket string `json:"focus_wezterm_socket,omitempty"`  // WezTerm unix socket ($WEZTERM_UNIX_SOCKET)
 	FocusZellijSession string `json:"focus_zellij_session,omitempty"`  // Zellij session name ($ZELLIJ_SESSION_NAME)
 	FocusZellijPaneID  string `json:"focus_zellij_pane_id,omitempty"`  // Zellij pane ID ($ZELLIJ_PANE_ID)
+	FocusZellijTabName string `json:"focus_zellij_tab_name,omitempty"` // Zellij tab name, captured only for the tab fallback
+	FocusZellijMode    string `json:"focus_zellij_mode,omitempty"`     // "pane", "tab" or "off", resolved in the hook process
 	Timeout            int    `json:"timeout"`                         // Notification timeout in seconds
 }
 

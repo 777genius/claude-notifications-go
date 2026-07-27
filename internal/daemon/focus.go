@@ -48,6 +48,8 @@ type FocusHints struct {
 	WezTermSocket string
 	ZellijSession string
 	ZellijPaneID  string
+	ZellijTabName string
+	ZellijMode    string
 }
 
 // TryFocus attempts to focus a window using available tools.
@@ -114,8 +116,8 @@ func TryFocusWithHints(hints FocusHints) error {
 	// switch is independent of how — or whether — window-level focus succeeded, and
 	// is attempted either way.
 	var zellijErr error
-	if hints.ZellijSession != "" && hints.ZellijPaneID != "" {
-		zellijErr = TryZellijPane(hints.ZellijSession, hints.ZellijPaneID)
+	if hints.ZellijSession != "" {
+		zellijErr = tryZellijFocus(hints)
 	}
 
 	if wezTermPaneID != "" {
