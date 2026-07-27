@@ -34,16 +34,34 @@ func GetFocusMethods() []FocusMethod {
 	}
 }
 
+// FocusHints identifies the session that produced a notification: its terminal,
+// project folder, window, and multiplexer pane. Every field is captured in the
+// hook process, where the environment still describes that session. The daemon
+// is shared by every session on the machine and outlives each of them, so it
+// cannot re-derive any of this when the click eventually arrives.
+type FocusHints struct {
+	TerminalName  string
+	FolderName    string
+	WindowID      string
+	WindowTitle   string
+	WezTermPaneID string
+	WezTermSocket string
+}
+
 // TryFocus attempts to focus a window using available tools.
 // folderName is the project folder name used for title-based window search (may be empty).
 // It tries each method in order until one succeeds.
 func TryFocus(terminalName, folderName string) error {
-	return TryFocusWithHints(terminalName, folderName, "", "", "", "")
+	return TryFocusWithHints(FocusHints{TerminalName: terminalName, FolderName: folderName})
 }
 
 // TryFocusWithWindowID preserves the previous API for callers that only have an exact X11 window ID.
 func TryFocusWithWindowID(terminalName, folderName, windowID string) error {
-	return TryFocusWithHints(terminalName, folderName, windowID, "", "", "")
+	return TryFocusWithHints(FocusHints{
+		TerminalName: terminalName,
+		FolderName:   folderName,
+		WindowID:     windowID,
+	})
 }
 
 // TryFocusWithHints attempts exact focus using hook-time hints first, then falls back to
@@ -56,21 +74,21 @@ func TryFocusWithWindowID(terminalName, folderName, windowID string) error {
 // switch runs first. Running the pane switch last ensures it wins.
 // If all window-level methods fail but a pane ID is available, TryWezTermPane is tried
 // as a last resort (activate-pane also raises the window on WezTerm).
-func TryFocusWithHints(terminalName, folderName, windowID, windowTitle, wezTermPaneID, wezTermSocket string) error {
-	wezTermPaneID, wezTermSocket = normalizeWezTermFocusHints(terminalName, wezTermPaneID, wezTermSocket)
+func TryFocusWithHints(hints FocusHints) error {
+	wezTermPaneID, wezTermSocket := normalizeWezTermFocusHints(hints.TerminalName, hints.WezTermPaneID, hints.WezTermSocket)
 	windowFocused := false
 	var exactErr, lastErr error
 
-	if strings.TrimSpace(windowID) != "" {
-		if err := tryX11WindowID(windowID); err == nil {
+	if strings.TrimSpace(hints.WindowID) != "" {
+		if err := tryX11WindowID(hints.WindowID); err == nil {
 			windowFocused = true
 		} else {
 			exactErr = err
 		}
 	}
 
-	if !windowFocused && strings.TrimSpace(windowTitle) != "" {
-		if err := tryWindowTitle(windowTitle); err == nil {
+	if !windowFocused && strings.TrimSpace(hints.WindowTitle) != "" {
+		if err := tryWindowTitle(hints.WindowTitle); err == nil {
 			windowFocused = true
 		} else if exactErr != nil {
 			exactErr = fmt.Errorf("%v; exact title focus failed: %v", exactErr, err)
@@ -81,7 +99,7 @@ func TryFocusWithHints(terminalName, folderName, windowID, windowTitle, wezTermP
 
 	if !windowFocused {
 		for _, method := range GetFocusMethods() {
-			if err := method.Fn(terminalName, folderName); err != nil {
+			if err := method.Fn(hints.TerminalName, hints.FolderName); err != nil {
 				lastErr = err
 				continue
 			}
