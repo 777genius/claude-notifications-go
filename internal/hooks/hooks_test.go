@@ -178,25 +178,17 @@ func createTempTranscript(t *testing.T, messages []jsonl.Message) string {
 	return transcriptPath
 }
 
+// buildTranscriptWithTools builds a turn that calls each tool in order and then
+// answers.
+//
+// Each tool call gets its own assistant message, and the answer gets one more.
+// That is the shape Claude Code writes: across the transcripts on hand, exactly one
+// assistant message in 15366 carried a tool call and prose together. Packing them
+// into a single message would make these fixtures describe a turn that has already
+// answered while a tool call is still pending, which is not a state the hook can
+// ever observe.
 func buildTranscriptWithTools(tools []string, textLength int) []jsonl.Message {
-	var content []jsonl.Content
-
-	// Add tools
-	for _, tool := range tools {
-		content = append(content, jsonl.Content{
-			Type: "tool_use",
-			Name: tool,
-		})
-	}
-
-	// Add text
-	text := strings.Repeat("a", textLength)
-	content = append(content, jsonl.Content{
-		Type: "text",
-		Text: text,
-	})
-
-	return []jsonl.Message{
+	messages := []jsonl.Message{
 		{
 			Type: "user",
 			Message: jsonl.MessageContent{
@@ -207,15 +199,27 @@ func buildTranscriptWithTools(tools []string, textLength int) []jsonl.Message {
 			},
 			Timestamp: "2025-01-01T12:00:00Z",
 		},
-		{
+	}
+
+	for _, tool := range tools {
+		messages = append(messages, jsonl.Message{
 			Type: "assistant",
 			Message: jsonl.MessageContent{
 				Role:    "assistant",
-				Content: content,
+				Content: []jsonl.Content{{Type: "tool_use", Name: tool}},
 			},
 			Timestamp: "2025-01-01T12:00:01Z",
-		},
+		})
 	}
+
+	return append(messages, jsonl.Message{
+		Type: "assistant",
+		Message: jsonl.MessageContent{
+			Role:    "assistant",
+			Content: []jsonl.Content{{Type: "text", Text: strings.Repeat("a", textLength)}},
+		},
+		Timestamp: "2025-01-01T12:00:02Z",
+	})
 }
 
 func newTestHandler(t *testing.T, cfg *config.Config) (*Handler, *mockNotifier, *mockWebhook) {
@@ -2801,5 +2805,73 @@ func TestHandleStopEvent_StatusEndingTheTurnDoesNotWait(t *testing.T) {
 
 	if *sleeps != 0 {
 		t.Errorf("a turn ending on its tool call must not wait, slept %d times", *sleeps)
+	}
+}
+
+// TestHandleStopEvent_WaitsWhenTextSharesMessageWithToolUse covers prose and a tool
+// call arriving in one assistant message. The shape is rare — one message in 15366
+// across the transcripts on hand — but the tool has yet to run when it appears, so
+// the text beside it is a preamble and the turn is still unfinished.
+func TestHandleStopEvent_WaitsWhenTextSharesMessageWithToolUse(t *testing.T) {
+	handler, mockNotif, _ := newTestHandler(t, settleTestConfig())
+
+	transcriptPath := createTempTranscript(t, []jsonl.Message{
+		{
+			Type: "user",
+			Message: jsonl.MessageContent{
+				Role:    "user",
+				Content: []jsonl.Content{{Type: "text", Text: "read go.mod"}},
+			},
+			Timestamp: "2025-01-01T12:00:00Z",
+		},
+		{
+			Type: "assistant",
+			Message: jsonl.MessageContent{
+				Role: "assistant",
+				Content: []jsonl.Content{
+					{Type: "text", Text: "Let me take a look."},
+					{Type: "tool_use", Name: "Read"},
+				},
+			},
+			Timestamp: "2025-01-01T12:00:02Z",
+		},
+		{
+			Type: "user",
+			Message: jsonl.MessageContent{
+				Role:    "user",
+				Content: []jsonl.Content{{Type: "tool_result"}},
+			},
+			Timestamp: "2025-01-01T12:00:03Z",
+		},
+	})
+
+	sleeps := stubSettleClock(t, 0, func(n int) {
+		if n == 2 {
+			appendToTranscript(t, transcriptPath, closingAnswer())
+		}
+	})
+
+	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
+		SessionID:      "test-settle-mixed-message",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Fatal("expected notification to be sent")
+	}
+
+	call := mockNotif.lastCall()
+	if !strings.Contains(call.message, "go.mod declares module") {
+		t.Errorf("body should be the answer that closes the turn, got: %q", call.message)
+	}
+	if strings.Contains(call.message, "Let me take a look") {
+		t.Errorf("text sharing a message with the tool call was treated as the answer: %q", call.message)
+	}
+	if *sleeps == 0 {
+		t.Error("a message holding a pending tool call must not end the wait")
 	}
 }

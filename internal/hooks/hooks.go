@@ -631,19 +631,34 @@ func turnStillWriting(messages []jsonl.Message) bool {
 	if len(window) == 0 {
 		return true
 	}
-	return !hasTextBlock(window[len(window)-1])
+	return !messageClosesTurn(window[len(window)-1])
 }
 
-// hasTextBlock reports whether an assistant message carries prose. Thinking blocks
-// are a distinct content type and deliberately do not count: they never reach the
-// notification body, so a turn that has only thought is still unfinished.
-func hasTextBlock(msg jsonl.Message) bool {
+// messageClosesTurn reports whether an assistant message is the answer that ends the
+// turn: it carries prose, and holds no tool call still waiting to run.
+//
+// Prose and a tool call can share one message. That shape is rare — one message in
+// 15366 across the transcripts on hand — but when it happens the call has yet to
+// run, so whatever was said alongside it is a preamble, not the answer.
+//
+// Thinking blocks are a distinct content type and deliberately do not count either:
+// they never reach the notification body, so a turn that has only thought is still
+// unfinished.
+func messageClosesTurn(msg jsonl.Message) bool {
+	prose := false
+
 	for _, content := range msg.Message.Content {
-		if content.Type == "text" && strings.TrimSpace(content.Text) != "" {
-			return true
+		switch content.Type {
+		case "tool_use":
+			return false
+		case "text":
+			if strings.TrimSpace(content.Text) != "" {
+				prose = true
+			}
 		}
 	}
-	return false
+
+	return prose
 }
 
 // statusEndsTheTurn reports whether a status is settled by something other than a
