@@ -821,3 +821,34 @@ func TestGetTerminalName_CLIEntrypointDefersToTerminal(t *testing.T) {
 		t.Errorf("GetTerminalName() = %q, want %q", got, "konsole")
 	}
 }
+
+// TestGetX11WindowID_VSCodeExtensionDropsInheritedID covers the window ID the
+// extension host inherits from an X11 terminal. It outranks the terminal name in
+// TryFocusWithHints, so leaving it in place would raise that terminal no matter what
+// GetTerminalName reports.
+func TestGetX11WindowID_VSCodeExtensionDropsInheritedID(t *testing.T) {
+	restore := saveTerminalEnv(t)
+	defer restore()
+
+	os.Setenv("CLAUDE_CODE_ENTRYPOINT", "claude-vscode")
+	os.Setenv("WINDOWID", "96249407204176")
+
+	if got := GetX11WindowID(); got != "" {
+		t.Errorf("GetX11WindowID() = %q, want empty for the extension host", got)
+	}
+}
+
+// TestGetX11WindowID_TerminalKeepsItsWindow pins the other direction: a terminal
+// session owns the window WINDOWID points at, and exact-ID focus is the best method
+// available on X11.
+func TestGetX11WindowID_TerminalKeepsItsWindow(t *testing.T) {
+	restore := saveTerminalEnv(t)
+	defer restore()
+
+	os.Setenv("CLAUDE_CODE_ENTRYPOINT", "cli")
+	os.Setenv("WINDOWID", "96249407204176")
+
+	if got := GetX11WindowID(); got != "96249407204176" {
+		t.Errorf("GetX11WindowID() = %q, want the inherited window ID", got)
+	}
+}

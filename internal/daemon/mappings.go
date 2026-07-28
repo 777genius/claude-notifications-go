@@ -230,15 +230,23 @@ func GetSearchTermWithFolder(terminalName, folderName string) string {
 	return GetSearchTerm(terminalName)
 }
 
+// isVSCodeExtensionHost reports whether Claude Code is running as its VS Code
+// extension rather than inside a terminal.
+//
+// The extension host inherits the environment of whatever launched VS Code, so every
+// variable describing a terminal survives into a session that has no terminal at all.
+// CLAUDE_CODE_ENTRYPOINT is set by Claude Code itself and says where it is running,
+// which makes it the only one of them worth believing.
+func isVSCodeExtensionHost() bool {
+	return os.Getenv("CLAUDE_CODE_ENTRYPOINT") == "claude-vscode"
+}
+
 // GetTerminalName detects the current terminal from environment variables.
 func GetTerminalName() string {
-	// Claude Code's VS Code extension runs inside the extension host, so there is no
-	// terminal to detect and every check below is answering the wrong question. Worse,
-	// they answer it confidently: the extension host inherits the environment of
-	// whatever launched VS Code, so a TERM_PROGRAM or KONSOLE_VERSION left over from
-	// that terminal names a window the session has nothing to do with. Settle it here,
-	// before anything inherited gets a chance to speak.
-	if os.Getenv("CLAUDE_CODE_ENTRYPOINT") == "claude-vscode" {
+	// Answer before anything inherited gets a chance to speak: a TERM_PROGRAM or
+	// KONSOLE_VERSION left over from the terminal that launched VS Code names a window
+	// this session has nothing to do with.
+	if isVSCodeExtensionHost() {
 		return "Code"
 	}
 
@@ -275,6 +283,13 @@ func GetTerminalName() string {
 // GetX11WindowID returns the current terminal window's X11 window ID when available.
 // It is captured in the hook process and later used by the daemon for exact focus on X11.
 func GetX11WindowID() string {
+	// WINDOWID is inherited exactly like the terminal markers are, and it outranks
+	// them: TryFocusWithHints activates a window ID before it consults anything else.
+	// Left in place, an extension host launched from an X11 terminal would raise that
+	// terminal however confidently GetTerminalName says "Code".
+	if isVSCodeExtensionHost() {
+		return ""
+	}
 	return strings.TrimSpace(os.Getenv("WINDOWID"))
 }
 
