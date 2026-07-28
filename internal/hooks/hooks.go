@@ -57,6 +57,7 @@ var (
 	// Kept separate from sleepFunc so tests that stub the notify delay do not also
 	// stub the transcript wait, and vice versa.
 	settleSleepFunc = time.Sleep
+	nowFunc         = time.Now
 )
 
 type notificationDelivery struct {
@@ -567,11 +568,18 @@ func (h *Handler) analyzeSettledTranscript(transcriptPath string) (analyzer.Stat
 		return analyzer.StatusUnknown, nil, err
 	}
 
+	deadline := nowFunc().Add(transcriptSettleWait)
 	maxRetries := int(transcriptSettleWait / transcriptSettleInterval)
 	lastSize, sized := transcriptSize(transcriptPath)
 
 	for retry := 1; status == analyzer.StatusUnknown && turnMissingFromTranscript(messages); retry++ {
-		if retry > maxRetries {
+		// The ceiling is wall-clock rather than a sleep count. A transcript that grows
+		// on every poll without gaining an assistant record — system entries, tool
+		// results and snapshots all enlarge the file — defeats the stat gate below and
+		// pays a full reparse each time, ~70ms on a multi-megabyte transcript. Counting
+		// sleeps alone would let that overrun the budget several times over. The retry
+		// count stays as a secondary bound in case the clock misbehaves.
+		if retry > maxRetries || !nowFunc().Before(deadline) {
 			logging.Debug("Transcript still has no assistant response after %v, giving up", transcriptSettleWait)
 			break
 		}

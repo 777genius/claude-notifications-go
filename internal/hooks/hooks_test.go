@@ -2437,6 +2437,46 @@ func assistantReply() jsonl.Message {
 	}
 }
 
+// stubSettleClock swaps the settle wait's sleep and clock for a virtual pair, so
+// tests exercise the real ceiling arithmetic without waiting on anything.
+//
+// Each sleep advances the clock by its own argument plus perRetryCost, which stands
+// in for the transcript reparse the loop pays when the file has grown. onSleep runs
+// after the clock moves and receives the 1-based sleep number.
+//
+// Returns a pointer to the sleep count, read after HandleHook returns.
+func stubSettleClock(t *testing.T, perRetryCost time.Duration, onSleep func(n int)) *int {
+	t.Helper()
+
+	restoreSleep, restoreNow := settleSleepFunc, nowFunc
+	t.Cleanup(func() { settleSleepFunc, nowFunc = restoreSleep, restoreNow })
+
+	now := time.Unix(0, 0)
+	sleeps := 0
+
+	nowFunc = func() time.Time { return now }
+	settleSleepFunc = func(d time.Duration) {
+		now = now.Add(d + perRetryCost)
+		sleeps++
+		if onSleep != nil {
+			onSleep(sleeps)
+		}
+	}
+
+	return &sleeps
+}
+
+func settleTestConfig() *config.Config {
+	return &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+}
+
 // TestHandleStopEvent_WaitsForTranscriptToSettle is a regression test for text-only
 // turns never producing a notification.
 //
@@ -2445,28 +2485,15 @@ func assistantReply() jsonl.Message {
 // analysis window is populated; a text-only turn leaves it empty, the analyzer
 // returns StatusUnknown and the hook exits silently.
 func TestHandleStopEvent_WaitsForTranscriptToSettle(t *testing.T) {
-	cfg := &config.Config{
-		Notifications: config.NotificationsConfig{
-			Desktop: config.DesktopConfig{Enabled: true},
-		},
-		Statuses: map[string]config.StatusInfo{
-			"task_complete": {Title: "Task Complete"},
-		},
-	}
-
-	handler, mockNotif, _ := newTestHandler(t, cfg)
+	handler, mockNotif, _ := newTestHandler(t, settleTestConfig())
 	transcriptPath := textOnlyTurnStart(t)
 
 	// Claude Code lands the reply while the hook is in its second wait.
-	restore := settleSleepFunc
-	defer func() { settleSleepFunc = restore }()
-	sleeps := 0
-	settleSleepFunc = func(time.Duration) {
-		sleeps++
-		if sleeps == 2 {
+	sleeps := stubSettleClock(t, 0, func(n int) {
+		if n == 2 {
 			appendToTranscript(t, transcriptPath, assistantReply())
 		}
-	}
+	})
 
 	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
 		SessionID:      "test-settle-waits",
@@ -2483,29 +2510,17 @@ func TestHandleStopEvent_WaitsForTranscriptToSettle(t *testing.T) {
 	if call := mockNotif.lastCall(); call.status != analyzer.StatusTaskComplete {
 		t.Errorf("got status %v, want StatusTaskComplete", call.status)
 	}
-	if sleeps != 2 {
-		t.Errorf("should stop waiting as soon as the turn lands, slept %d times", sleeps)
+	if *sleeps != 2 {
+		t.Errorf("should stop waiting as soon as the turn lands, slept %d times", *sleeps)
 	}
 }
 
 // TestHandleStopEvent_SettleWaitIsBounded pins the ceiling: a turn that never lands
 // must not spin forever, and must not notify.
 func TestHandleStopEvent_SettleWaitIsBounded(t *testing.T) {
-	cfg := &config.Config{
-		Notifications: config.NotificationsConfig{
-			Desktop: config.DesktopConfig{Enabled: true},
-		},
-		Statuses: map[string]config.StatusInfo{
-			"task_complete": {Title: "Task Complete"},
-		},
-	}
+	handler, mockNotif, _ := newTestHandler(t, settleTestConfig())
 
-	handler, mockNotif, _ := newTestHandler(t, cfg)
-
-	restore := settleSleepFunc
-	defer func() { settleSleepFunc = restore }()
-	sleeps := 0
-	settleSleepFunc = func(time.Duration) { sleeps++ }
+	sleeps := stubSettleClock(t, 0, nil)
 
 	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
 		SessionID:      "test-settle-bounded",
@@ -2519,9 +2534,57 @@ func TestHandleStopEvent_SettleWaitIsBounded(t *testing.T) {
 	if mockNotif.wasCalled() {
 		t.Error("should not notify when the turn never lands")
 	}
-	if want := int(transcriptSettleWait / transcriptSettleInterval); sleeps != want {
+	if want := int(transcriptSettleWait / transcriptSettleInterval); *sleeps != want {
 		t.Errorf("slept %d times, want %d (%v ceiling at %v intervals)",
-			sleeps, want, transcriptSettleWait, transcriptSettleInterval)
+			*sleeps, want, transcriptSettleWait, transcriptSettleInterval)
+	}
+}
+
+// TestHandleStopEvent_SettleWaitHonoursElapsedTime covers a transcript that grows on
+// every poll without ever gaining an assistant record — system entries, tool results
+// and snapshots all enlarge the file. That defeats the stat gate, so every poll pays
+// a full reparse. Counting sleeps alone would let those reparses run several times
+// past the ceiling, so the loop must stop on elapsed time instead.
+func TestHandleStopEvent_SettleWaitHonoursElapsedTime(t *testing.T) {
+	handler, mockNotif, _ := newTestHandler(t, settleTestConfig())
+	transcriptPath := textOnlyTurnStart(t)
+
+	// 70ms per retry is the measured reparse cost of a multi-megabyte transcript.
+	const reparseCost = 70 * time.Millisecond
+
+	sleeps := stubSettleClock(t, reparseCost, func(int) {
+		// Grow the file without adding an assistant record, so the window stays empty
+		// and the stat gate cannot skip the reparse.
+		appendToTranscript(t, transcriptPath, jsonl.Message{
+			Type:      "system",
+			Timestamp: "2025-01-01T12:00:01Z",
+		})
+	})
+
+	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
+		SessionID:      "test-settle-elapsed",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mockNotif.wasCalled() {
+		t.Error("should not notify when no assistant record ever lands")
+	}
+
+	maxRetries := int(transcriptSettleWait / transcriptSettleInterval)
+	if *sleeps >= maxRetries {
+		t.Errorf("elapsed time should stop the loop before the retry count does, slept %d of %d",
+			*sleeps, maxRetries)
+	}
+
+	// Each retry consumes interval + reparse, so the ceiling is reached in roughly
+	// transcriptSettleWait / (interval + reparse) rounds.
+	if want := int(transcriptSettleWait / (transcriptSettleInterval + reparseCost)); *sleeps > want+1 {
+		t.Errorf("slept %d times, expected about %d before hitting the %v ceiling",
+			*sleeps, want, transcriptSettleWait)
 	}
 }
 
@@ -2530,25 +2593,15 @@ func TestHandleStopEvent_SettleWaitIsBounded(t *testing.T) {
 // wait. Here notifyOnTextResponse is off, which no amount of waiting would change.
 func TestHandleStopEvent_SettledUnknownDoesNotWait(t *testing.T) {
 	notifyOnText := false
-	cfg := &config.Config{
-		Notifications: config.NotificationsConfig{
-			Desktop:              config.DesktopConfig{Enabled: true},
-			NotifyOnTextResponse: &notifyOnText,
-		},
-		Statuses: map[string]config.StatusInfo{
-			"task_complete": {Title: "Task Complete"},
-		},
-	}
+	cfg := settleTestConfig()
+	cfg.Notifications.NotifyOnTextResponse = &notifyOnText
 
 	handler, mockNotif, _ := newTestHandler(t, cfg)
 
 	transcriptPath := textOnlyTurnStart(t)
 	appendToTranscript(t, transcriptPath, assistantReply())
 
-	restore := settleSleepFunc
-	defer func() { settleSleepFunc = restore }()
-	sleeps := 0
-	settleSleepFunc = func(time.Duration) { sleeps++ }
+	sleeps := stubSettleClock(t, 0, nil)
 
 	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
 		SessionID:      "test-settle-settled-unknown",
@@ -2559,8 +2612,8 @@ func TestHandleStopEvent_SettledUnknownDoesNotWait(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if sleeps != 0 {
-		t.Errorf("a settled verdict must not wait, slept %d times", sleeps)
+	if *sleeps != 0 {
+		t.Errorf("a settled verdict must not wait, slept %d times", *sleeps)
 	}
 	if mockNotif.wasCalled() {
 		t.Error("notifyOnTextResponse is off, so no notification is expected")
