@@ -29,6 +29,9 @@ func GetFocusMethods() []FocusMethod {
 		{"GNOME Shell Eval (by app)", TryGnomeShellEval},
 		{"GNOME Shell FocusApp", TryGnomeFocusApp},
 		{"wlrctl", TryWlrctl},
+		// Ahead of kdotool, which wraps the same KWin interface behind a binary the
+		// user has to install themselves.
+		{"KWin script", TryKWinScript},
 		{"kdotool", TryKdotool},
 		{"xdotool", TryXdotool},
 	}
