@@ -5,10 +5,13 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -20,17 +23,22 @@ const (
 	kwinScriptIface  = "org.kde.kwin.Scripting"
 	kwinScriptRunner = "org.kde.kwin.Script"
 
-	// The reply the loaded script sends back, so a run that matched nothing is
-	// reported as a failure and the next focus method still gets its turn.
-	kwinReplyService = "org.kde.kwin.claudenotifications"
-	kwinReplyPath    = "/"
-	kwinReplyIface   = "org.kde.kwin.claudenotifications"
+	// The interface the loaded script reports back on, so a run that matched nothing
+	// is a failure and the next focus method still gets its turn. The destination is
+	// this connection's unique bus name and a path minted per call: a well-known name
+	// could only be held by one caller at a time, and a late reply from a call that
+	// already timed out would then be delivered to whoever holds it next.
+	kwinReplyIface = "org.kde.kwin.claudenotifications"
 
 	// KWin loads and runs the script asynchronously. Focus is a click response, so
 	// the budget is short: either the compositor answers quickly or the caller moves
-	// on to another method.
+	// on to another method. It covers the D-Bus round-trips as well as the wait —
+	// an unresponsive compositor blocks in loadScript just as effectively.
 	kwinReplyTimeout = 2 * time.Second
 )
+
+// kwinReplySeq keeps reply paths distinct between overlapping calls in one process.
+var kwinReplySeq atomic.Uint64
 
 // kwinFocusScript activates the best matching window and reports whether it worked.
 //
@@ -88,32 +96,42 @@ func TryKWinScript(terminalName, folderName string) error {
 		return fmt.Errorf("session bus unavailable: %w", err)
 	}
 
-	replies, release, err := listenForKWinReply(conn)
+	// One budget for the whole exchange. The reply wait is the obvious part, but a
+	// compositor that never answers loadScript would otherwise block here with no
+	// bound at all, and the caller would never reach kdotool or xdotool.
+	ctx, cancel := context.WithTimeout(context.Background(), kwinReplyTimeout)
+	defer cancel()
+
+	replyPath, replies, release, err := exportKWinReply(conn)
 	if err != nil {
 		return err
 	}
 	defer release()
 
-	scriptPath, cleanup, err := writeKWinScript(terminalName, folderName)
+	scriptPath, cleanup, err := writeKWinScript(terminalName, folderName, conn.Names()[0], string(replyPath))
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	name := fmt.Sprintf("claude-notifications-%d", os.Getpid())
+	name := fmt.Sprintf("claude-notifications-%s", path.Base(string(replyPath)))
 	scripting := conn.Object(kwinService, kwinScriptPath)
 
+	// FlagNoAutoStart so a desktop that merely has Plasma installed cannot be made to
+	// launch KWin by a notification click. Without it this method's failure on a
+	// non-KDE session would depend on how the distribution packages KWin rather than
+	// on anything stated here.
 	var scriptID int32
-	if err := scripting.Call(kwinScriptIface+".loadScript", 0, scriptPath, name).Store(&scriptID); err != nil {
+	if err := scripting.CallWithContext(ctx, kwinScriptIface+".loadScript", dbus.FlagNoAutoStart, scriptPath, name).Store(&scriptID); err != nil {
 		return fmt.Errorf("kwin loadScript failed: %w", err)
 	}
 	defer func() {
 		var unloaded bool
-		_ = scripting.Call(kwinScriptIface+".unloadScript", 0, name).Store(&unloaded)
+		_ = scripting.CallWithContext(ctx, kwinScriptIface+".unloadScript", dbus.FlagNoAutoStart, name).Store(&unloaded)
 	}()
 
 	runner := conn.Object(kwinService, dbus.ObjectPath(fmt.Sprintf("%s/Script%d", kwinScriptPath, scriptID)))
-	if err := runner.Call(kwinScriptRunner+".run", 0).Store(); err != nil {
+	if err := runner.CallWithContext(ctx, kwinScriptRunner+".run", dbus.FlagNoAutoStart).Store(); err != nil {
 		return fmt.Errorf("kwin script run failed: %w", err)
 	}
 
@@ -123,34 +141,26 @@ func TryKWinScript(terminalName, folderName string) error {
 			return fmt.Errorf("kwin script found no window for %q", terminalName)
 		}
 		return nil
-	case <-time.After(kwinReplyTimeout):
+	case <-ctx.Done():
 		return fmt.Errorf("kwin script did not report back within %v", kwinReplyTimeout)
 	}
 }
 
-// listenForKWinReply claims the bus name the script calls back on and returns a
-// channel carrying its verdict. The returned func releases the name.
-func listenForKWinReply(conn *dbus.Conn) (<-chan bool, func(), error) {
+// exportKWinReply publishes a receiver on a path unique to this call and returns it
+// along with the channel carrying the script's verdict. The returned func withdraws
+// the export, so a reply arriving after the caller has given up is discarded rather
+// than delivered to whoever runs next.
+func exportKWinReply(conn *dbus.Conn) (dbus.ObjectPath, <-chan bool, func(), error) {
+	replyPath := dbus.ObjectPath(fmt.Sprintf("/org/kde/kwin/claudenotifications/r%d_%d",
+		os.Getpid(), kwinReplySeq.Add(1)))
 	replies := make(chan bool, 1)
 
-	// DoNotQueue so a stale claim from a crashed run fails fast instead of leaving
-	// this call parked behind it.
-	reply, err := conn.RequestName(kwinReplyService, dbus.NameFlagDoNotQueue|dbus.NameFlagReplaceExisting)
-	if err != nil {
-		return nil, nil, fmt.Errorf("cannot claim %s: %w", kwinReplyService, err)
-	}
-	if reply != dbus.RequestNameReplyPrimaryOwner {
-		return nil, nil, fmt.Errorf("%s already owned", kwinReplyService)
+	if err := conn.Export(kwinReplyReceiver{replies: replies}, replyPath, kwinReplyIface); err != nil {
+		return "", nil, nil, fmt.Errorf("cannot export reply object: %w", err)
 	}
 
-	release := func() { _, _ = conn.ReleaseName(kwinReplyService) }
-
-	if err := conn.Export(kwinReplyReceiver{replies: replies}, kwinReplyPath, kwinReplyIface); err != nil {
-		release()
-		return nil, nil, fmt.Errorf("cannot export reply object: %w", err)
-	}
-
-	return replies, release, nil
+	release := func() { _ = conn.Export(nil, replyPath, kwinReplyIface) }
+	return replyPath, replies, release, nil
 }
 
 type kwinReplyReceiver struct {
@@ -168,12 +178,12 @@ func (r kwinReplyReceiver) Report(activated bool) *dbus.Error {
 
 // writeKWinScript renders the focus script to a file, since loadScript takes a path
 // rather than source.
-func writeKWinScript(terminalName, folderName string) (string, func(), error) {
+func writeKWinScript(terminalName, folderName, replyService, replyPath string) (string, func(), error) {
 	source := fmt.Sprintf(kwinFocusScript,
 		escapeJS(strings.ToLower(GetKdotoolClass(terminalName))),
 		escapeJS(folderName),
-		escapeJS(kwinReplyService),
-		escapeJS(kwinReplyPath),
+		escapeJS(replyService),
+		escapeJS(replyPath),
 		escapeJS(kwinReplyIface),
 	)
 

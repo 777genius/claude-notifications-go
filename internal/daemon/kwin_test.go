@@ -3,13 +3,16 @@
 package daemon
 
 import (
+	"time"
+
+	"github.com/godbus/dbus/v5"
 	"os"
 	"strings"
 	"testing"
 )
 
 func TestWriteKWinScript_RendersMatchers(t *testing.T) {
-	path, cleanup, err := writeKWinScript("konsole", "my-project")
+	path, cleanup, err := writeKWinScript("konsole", "my-project", ":1.42", "/org/kde/kwin/claudenotifications/r1_1")
 	if err != nil {
 		t.Fatalf("writeKWinScript() error: %v", err)
 	}
@@ -29,7 +32,7 @@ func TestWriteKWinScript_RendersMatchers(t *testing.T) {
 	if !strings.Contains(source, "my-project") {
 		t.Error("rendered script is missing the folder name used for caption matching")
 	}
-	if !strings.Contains(source, kwinReplyService) {
+	if !strings.Contains(source, ":1.42") {
 		t.Error("rendered script does not call back, so a failed match would look like success")
 	}
 	// Plasma 5 compatibility: both API generations must be handled.
@@ -43,7 +46,7 @@ func TestWriteKWinScript_RendersMatchers(t *testing.T) {
 func TestWriteKWinScript_EscapesFolderName(t *testing.T) {
 	// loadScript takes a path, so the folder name reaches the compositor as JS source
 	// and has to survive quoting the same way the GNOME Shell Eval path does.
-	path, cleanup, err := writeKWinScript("konsole", `evil'); workspace.slotWindowClose(); ('`)
+	path, cleanup, err := writeKWinScript("konsole", `evil'); workspace.slotWindowClose(); ('`, ":1.42", "/reply")
 	if err != nil {
 		t.Fatalf("writeKWinScript() error: %v", err)
 	}
@@ -63,7 +66,7 @@ func TestWriteKWinScript_EscapesFolderName(t *testing.T) {
 }
 
 func TestWriteKWinScript_CleanupRemovesFile(t *testing.T) {
-	path, cleanup, err := writeKWinScript("konsole", "")
+	path, cleanup, err := writeKWinScript("konsole", "", ":1.42", "/reply")
 	if err != nil {
 		t.Fatalf("writeKWinScript() error: %v", err)
 	}
@@ -101,5 +104,58 @@ func TestGetFocusMethods_KWinBeforeKdotool(t *testing.T) {
 	}
 	if kwin > kdotool {
 		t.Errorf("KWin script runs at %d, after kdotool at %d", kwin, kdotool)
+	}
+}
+
+// TestExportKWinReply_PathsAreUnique pins the isolation between overlapping calls.
+// A single well-known path would let a late reply from a call that already timed out
+// be delivered to whichever call is listening next, handing it someone else's verdict.
+func TestExportKWinReply_PathsAreUnique(t *testing.T) {
+	conn, err := dbus.SessionBus()
+	if err != nil {
+		t.Skipf("no session bus: %v", err)
+	}
+
+	seen := make(map[dbus.ObjectPath]bool)
+	for i := 0; i < 4; i++ {
+		replyPath, replies, release, err := exportKWinReply(conn)
+		if err != nil {
+			t.Fatalf("exportKWinReply() error: %v", err)
+		}
+		defer release()
+
+		if seen[replyPath] {
+			t.Errorf("reply path %s was handed out twice", replyPath)
+		}
+		seen[replyPath] = true
+
+		if replies == nil {
+			t.Error("exportKWinReply returned a nil channel")
+		}
+	}
+}
+
+// TestKWinReplyReceiver_DoesNotBlockOnLateReply covers a script reporting after the
+// caller has stopped listening. The receiver runs on the D-Bus dispatch goroutine, so
+// blocking there would stall every later message on the connection.
+func TestKWinReplyReceiver_DoesNotBlockOnLateReply(t *testing.T) {
+	replies := make(chan bool, 1)
+	receiver := kwinReplyReceiver{replies: replies}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// The second and third have nowhere to go once the buffer is full.
+		for i := 0; i < 3; i++ {
+			if err := receiver.Report(true); err != nil {
+				t.Errorf("Report() returned %v", err)
+			}
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Report blocked once the channel was full")
 	}
 }
