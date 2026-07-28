@@ -1,6 +1,7 @@
 package notifier
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,7 +23,23 @@ func getZellijPath() string {
 	return "zellij"
 }
 
+// zellijLayoutTimeout bounds the dump-layout call. A variable so the test can
+// shorten it; nothing else writes to it.
+var zellijLayoutTimeout = 2 * time.Second
+
+// zellijLayoutWaitDelay is the grace Output gets to finish reading once the
+// deadline has fired. Killing zellij does not close a pipe that a child of it
+// still holds, and Output waits on that pipe, so without this the read outlives
+// the deadline that was supposed to bound it.
+const zellijLayoutWaitDelay = 100 * time.Millisecond
+
 // GetZellijTabTarget returns the active tab name and session name for the current zellij session.
+//
+// dump-layout is answered by the running zellij server, so it can hang in a way
+// that argument parsing cannot. It runs in the hook process, ahead of the
+// notification the user is waiting for, so it is bounded: a session that stops
+// answering costs the deadline and then reports a failed target, which every
+// caller already treats as "no zellij focus" rather than "no notification".
 func GetZellijTabTarget() (tabName, sessionName string, err error) {
 	sessionName = os.Getenv("ZELLIJ_SESSION_NAME")
 	if sessionName == "" {
@@ -31,8 +48,18 @@ func GetZellijTabTarget() (tabName, sessionName string, err error) {
 
 	zellijPath := getZellijPath()
 
-	cmd := exec.Command(zellijPath, "action", "dump-layout")
+	ctx, cancel := context.WithTimeout(context.Background(), zellijLayoutTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, zellijPath, "action", "dump-layout")
+	cmd.WaitDelay = zellijLayoutWaitDelay
+
 	output, err := cmd.Output()
+	// The kill surfaces as "signal: killed", which does not say why, so the
+	// deadline is reported ahead of the process error.
+	if ctx.Err() == context.DeadlineExceeded {
+		return "", "", fmt.Errorf("zellij dump-layout timed out after %s: %w", zellijLayoutTimeout, ctx.Err())
+	}
 	if err != nil {
 		return "", "", fmt.Errorf("failed to run zellij dump-layout: %w", err)
 	}
