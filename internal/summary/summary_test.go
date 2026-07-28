@@ -1928,6 +1928,9 @@ func TestExtractFirstSentence_ThaiFallsBackByDesign(t *testing.T) {
 	}
 }
 
+// TestContainsQuestionMark covers the detection that decides whether an assistant
+// message reads as a question. Testing for an ASCII '?' alone missed every script
+// that asks with its own mark.
 func TestContainsQuestionMark(t *testing.T) {
 	tests := []struct {
 		name string
