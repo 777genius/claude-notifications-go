@@ -54,6 +54,10 @@ type HookData struct {
 	CWD            string `json:"cwd"`
 	ToolName       string `json:"tool_name,omitempty"`
 	HookEventName  string `json:"hook_event_name,omitempty"`
+	// ToolInput carries the raw arguments of the tool that is about to run
+	// (PreToolUse). It is the only authoritative source for the current call:
+	// the assistant message holding it has not reached the transcript yet.
+	ToolInput json.RawMessage `json:"tool_input,omitempty"`
 	// Team-related fields (present in TeammateIdle, TaskCreated, TaskCompleted hooks)
 	TeamName     string `json:"team_name,omitempty"`
 	TeammateName string `json:"teammate_name,omitempty"`
@@ -569,6 +573,13 @@ func (h *Handler) generateMessage(hookData *HookData, status analyzer.Status, me
 		if parsed, err := jsonl.ParseFile(hookData.TranscriptPath); err == nil {
 			body, actions = summary.GenerateFromMessagesStructured(parsed, status, h.cfg)
 		}
+	}
+
+	// PreToolUse announces a call that is not in the transcript yet, so the body
+	// derived above describes the previous turn. When the payload carries the tool
+	// arguments they are authoritative and win. Actions stay transcript-derived.
+	if fromInput := summary.BodyFromToolInput(hookData.ToolName, hookData.ToolInput); fromInput != "" {
+		body = fromInput
 	}
 
 	if body == "" {

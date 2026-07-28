@@ -1,6 +1,7 @@
 package summary
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -160,17 +161,78 @@ func generateQuestionBody(messages []jsonl.Message) string {
 // generatePlanBody generates the body text for plan_ready status (no actions appended).
 // Matches bash: lib/summarizer.sh lines 471-492.
 func generatePlanBody(messages []jsonl.Message) string {
-	plan := extractExitPlanModePlan(messages)
-	if plan != "" {
-		// Get first non-empty line, clean markdown
-		for _, line := range strings.Split(plan, "\n") {
-			cleaned := CleanMarkdown(line)
-			if strings.TrimSpace(cleaned) != "" {
-				return truncateText(cleaned, 150)
-			}
-		}
+	if headline := firstMeaningfulLine(extractExitPlanModePlan(messages)); headline != "" {
+		return headline
 	}
 	return "Plan is ready for review"
+}
+
+// BodyFromToolInput renders a notification body from the raw tool arguments a
+// PreToolUse hook carries, or "" when the tool has nothing worth showing.
+//
+// PreToolUse fires before Claude Code appends the assistant message holding the
+// tool call to the transcript, so transcript-based extraction describes the
+// PREVIOUS turn instead of the call being announced. The hook payload is the only
+// authoritative source at that point. Returning "" keeps callers on their
+// existing transcript-based path.
+func BodyFromToolInput(toolName string, raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	switch toolName {
+	case "AskUserQuestion":
+		return questionBodyFromToolInput(raw)
+	case "ExitPlanMode":
+		return planBodyFromToolInput(raw)
+	}
+	return ""
+}
+
+// questionBodyFromToolInput reads the first non-empty question out of an
+// AskUserQuestion payload: {"questions":[{"question":"...","header":"..."}]}.
+// AskUserQuestion accepts several questions at once; a notification only has room
+// for one, so the first is shown and the rest are left to the UI.
+func questionBodyFromToolInput(raw json.RawMessage) string {
+	var input struct {
+		Questions []struct {
+			Question string `json:"question"`
+		} `json:"questions"`
+	}
+	if err := json.Unmarshal(raw, &input); err != nil {
+		return ""
+	}
+
+	for _, q := range input.Questions {
+		if cleaned := CleanMarkdown(q.Question); strings.TrimSpace(cleaned) != "" {
+			return truncateText(cleaned, 150)
+		}
+	}
+	return ""
+}
+
+// planBodyFromToolInput reads the plan headline out of an ExitPlanMode payload:
+// {"plan":"markdown"}.
+func planBodyFromToolInput(raw json.RawMessage) string {
+	var input struct {
+		Plan string `json:"plan"`
+	}
+	if err := json.Unmarshal(raw, &input); err != nil {
+		return ""
+	}
+	return firstMeaningfulLine(input.Plan)
+}
+
+// firstMeaningfulLine returns the first non-blank line of text, markdown-stripped
+// and truncated for notification display, or "" when there is no such line.
+func firstMeaningfulLine(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		cleaned := CleanMarkdown(line)
+		if strings.TrimSpace(cleaned) != "" {
+			return truncateText(cleaned, 150)
+		}
+	}
+	return ""
 }
 
 // generateReviewBody generates the body text for review_complete status (no actions appended).

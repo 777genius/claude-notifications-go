@@ -1822,3 +1822,105 @@ func TestGenerateFromMessagesStructured_EmptyMessages(t *testing.T) {
 		t.Errorf("actions = %q, want empty for empty messages", actions)
 	}
 }
+
+// === Tests for BodyFromToolInput ===
+
+// Payload shapes below mirror what Claude Code actually sends in the PreToolUse
+// hook: AskUserQuestion carries {"questions":[{"question":...}]} and ExitPlanMode
+// carries {"plan":"markdown"}.
+func TestBodyFromToolInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		toolName string
+		raw      string
+		expected string
+	}{
+		{
+			name:     "AskUserQuestion returns the question",
+			toolName: "AskUserQuestion",
+			raw:      `{"questions":[{"question":"Deploy to staging first?","header":"Deploy","multiSelect":false,"options":[{"label":"Yes","description":"ship it"}]}]}`,
+			expected: "Deploy to staging first?",
+		},
+		{
+			name:     "AskUserQuestion strips markdown from the question",
+			toolName: "AskUserQuestion",
+			raw:      `{"questions":[{"question":"Use **Postgres** or ` + "`sqlite`" + `?"}]}`,
+			expected: "Use Postgres or sqlite?",
+		},
+		{
+			name:     "AskUserQuestion with several questions shows the first",
+			toolName: "AskUserQuestion",
+			raw:      `{"questions":[{"question":"Which database?"},{"question":"Which region?"}]}`,
+			expected: "Which database?",
+		},
+		{
+			name:     "AskUserQuestion skips a blank leading question",
+			toolName: "AskUserQuestion",
+			raw:      `{"questions":[{"question":"   "},{"question":"Which region?"}]}`,
+			expected: "Which region?",
+		},
+		{
+			name:     "AskUserQuestion with no questions falls back",
+			toolName: "AskUserQuestion",
+			raw:      `{"questions":[]}`,
+			expected: "",
+		},
+		{
+			name:     "ExitPlanMode returns the plan headline",
+			toolName: "ExitPlanMode",
+			raw:      `{"plan":"## Migrate the parser\n\n1. Extract the lexer\n2. Rewrite tests"}`,
+			expected: "Migrate the parser",
+		},
+		{
+			name:     "ExitPlanMode skips leading blank lines",
+			toolName: "ExitPlanMode",
+			raw:      `{"plan":"\n\n   \nAdd retry to the uploader"}`,
+			expected: "Add retry to the uploader",
+		},
+		{
+			name:     "ExitPlanMode with empty plan falls back",
+			toolName: "ExitPlanMode",
+			raw:      `{"plan":""}`,
+			expected: "",
+		},
+		{
+			name:     "unsummarized tool falls back",
+			toolName: "Bash",
+			raw:      `{"command":"rm -rf /"}`,
+			expected: "",
+		},
+		{
+			name:     "empty payload falls back",
+			toolName: "AskUserQuestion",
+			raw:      ``,
+			expected: "",
+		},
+		{
+			name:     "malformed JSON falls back",
+			toolName: "AskUserQuestion",
+			raw:      `{"questions":[`,
+			expected: "",
+		},
+		{
+			name:     "unexpected shape falls back",
+			toolName: "AskUserQuestion",
+			raw:      `{"questions":"not an array"}`,
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BodyFromToolInput(tt.toolName, json.RawMessage(tt.raw))
+			if got != tt.expected {
+				t.Errorf("BodyFromToolInput(%q, %q) = %q, want %q", tt.toolName, tt.raw, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBodyFromToolInput_NilPayload(t *testing.T) {
+	if got := BodyFromToolInput("AskUserQuestion", nil); got != "" {
+		t.Errorf("nil payload should fall back, got %q", got)
+	}
+}

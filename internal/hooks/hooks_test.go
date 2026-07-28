@@ -2394,3 +2394,121 @@ func setupTeamStateManager(t *testing.T, homeDir string) *teamstate.Manager {
 	t.Helper()
 	return teamstate.NewManager(filepath.Join(homeDir, ".claude"))
 }
+
+// TestHandler_PreToolUse_AskUserQuestion_PrefersToolInput is a regression test for
+// question notifications showing the PREVIOUS turn's text.
+//
+// PreToolUse fires before Claude Code appends the assistant message holding the
+// AskUserQuestion call to the transcript. Transcript-based extraction therefore
+// finds the previous turn's question-shaped text and shows that instead. The hook
+// payload carries the real question, so it must win.
+func TestHandler_PreToolUse_AskUserQuestion_PrefersToolInput(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"question": {Title: "Question"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+
+	// Transcript ends on the previous turn — the call being announced is not in it.
+	transcriptPath := createTempTranscript(t, []jsonl.Message{
+		{
+			Type: "user",
+			Message: jsonl.MessageContent{
+				Role:    "user",
+				Content: []jsonl.Content{{Type: "text", Text: "Let's set up the database"}},
+			},
+			Timestamp: "2025-01-01T12:00:00Z",
+		},
+		{
+			Type: "assistant",
+			Message: jsonl.MessageContent{
+				Role:    "assistant",
+				Content: []jsonl.Content{{Type: "text", Text: "Which database should we use?"}},
+			},
+			Timestamp: "2025-01-01T12:00:01Z",
+		},
+	})
+
+	hookData := buildHookDataJSON(HookData{
+		SessionID:      "test-question-prefers-tool-input",
+		ToolName:       "AskUserQuestion",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+		ToolInput:      json.RawMessage(`{"questions":[{"question":"Deploy to staging first?","header":"Deploy"}]}`),
+	})
+
+	if err := handler.HandleHook("PreToolUse", hookData); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Fatal("expected notification to be sent")
+	}
+
+	call := mockNotif.lastCall()
+	if !strings.Contains(call.message, "Deploy to staging first?") {
+		t.Errorf("notification should show the current question, got: %q", call.message)
+	}
+	if strings.Contains(call.message, "Which database") {
+		t.Errorf("notification leaked the previous turn's question: %q", call.message)
+	}
+}
+
+// TestHandler_PreToolUse_AskUserQuestion_FallsBackWithoutToolInput pins the
+// pre-existing transcript-based behaviour for payloads that carry no tool_input,
+// so older Claude Code versions keep working.
+func TestHandler_PreToolUse_AskUserQuestion_FallsBackWithoutToolInput(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"question": {Title: "Question"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+
+	transcriptPath := createTempTranscript(t, []jsonl.Message{
+		{
+			Type: "user",
+			Message: jsonl.MessageContent{
+				Role:    "user",
+				Content: []jsonl.Content{{Type: "text", Text: "Let's set up the database"}},
+			},
+			Timestamp: "2025-01-01T12:00:00Z",
+		},
+		{
+			Type: "assistant",
+			Message: jsonl.MessageContent{
+				Role:    "assistant",
+				Content: []jsonl.Content{{Type: "text", Text: "Which database should we use?"}},
+			},
+			Timestamp: "2025-01-01T12:00:01Z",
+		},
+	})
+
+	hookData := buildHookDataJSON(HookData{
+		SessionID:      "test-question-no-tool-input",
+		ToolName:       "AskUserQuestion",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	})
+
+	if err := handler.HandleHook("PreToolUse", hookData); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Fatal("expected notification to be sent")
+	}
+
+	if call := mockNotif.lastCall(); !strings.Contains(call.message, "Which database") {
+		t.Errorf("without tool_input the transcript-based body should be used, got: %q", call.message)
+	}
+}
