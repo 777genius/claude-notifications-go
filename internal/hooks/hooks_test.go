@@ -2619,3 +2619,187 @@ func TestHandleStopEvent_SettledUnknownDoesNotWait(t *testing.T) {
 		t.Error("notifyOnTextResponse is off, so no notification is expected")
 	}
 }
+
+// toolTurnStart builds a transcript for a turn that has called a tool and is still
+// writing its answer. withPreamble adds the text an assistant often emits before
+// reaching for a tool.
+func toolTurnStart(t *testing.T, withPreamble bool) string {
+	t.Helper()
+
+	msgs := []jsonl.Message{
+		{
+			Type: "user",
+			Message: jsonl.MessageContent{
+				Role:    "user",
+				Content: []jsonl.Content{{Type: "text", Text: "read go.mod"}},
+			},
+			Timestamp: "2025-01-01T12:00:00Z",
+		},
+	}
+
+	if withPreamble {
+		msgs = append(msgs, jsonl.Message{
+			Type: "assistant",
+			Message: jsonl.MessageContent{
+				Role:    "assistant",
+				Content: []jsonl.Content{{Type: "text", Text: "Let me take a look."}},
+			},
+			Timestamp: "2025-01-01T12:00:01Z",
+		})
+	}
+
+	msgs = append(msgs,
+		jsonl.Message{
+			Type: "assistant",
+			Message: jsonl.MessageContent{
+				Role:    "assistant",
+				Content: []jsonl.Content{{Type: "tool_use", Name: "Read"}},
+			},
+			Timestamp: "2025-01-01T12:00:02Z",
+		},
+		jsonl.Message{
+			Type: "user",
+			Message: jsonl.MessageContent{
+				Role:    "user",
+				Content: []jsonl.Content{{Type: "tool_result"}},
+			},
+			Timestamp: "2025-01-01T12:00:03Z",
+		},
+	)
+
+	return createTempTranscript(t, msgs)
+}
+
+func closingAnswer() jsonl.Message {
+	return jsonl.Message{
+		Type: "assistant",
+		Message: jsonl.MessageContent{
+			Role:    "assistant",
+			Content: []jsonl.Content{{Type: "text", Text: "go.mod declares module claude-notifications on Go 1.21.5."}},
+		},
+		Timestamp: "2025-01-01T12:00:05Z",
+	}
+}
+
+// TestHandleStopEvent_WaitsForClosingTextAfterTool is a regression test for tool
+// turns notifying with the generic fallback body.
+//
+// The turn classifies fine from its tool_use record, so the status never needs the
+// wait — but generateTaskBody finds no text in the window and falls back to
+// "Task completed successfully". Waiting only on an empty window misses this
+// entirely, because a tool_use record makes the window non-empty.
+func TestHandleStopEvent_WaitsForClosingTextAfterTool(t *testing.T) {
+	handler, mockNotif, _ := newTestHandler(t, settleTestConfig())
+	transcriptPath := toolTurnStart(t, false)
+
+	sleeps := stubSettleClock(t, 0, func(n int) {
+		if n == 2 {
+			appendToTranscript(t, transcriptPath, closingAnswer())
+		}
+	})
+
+	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
+		SessionID:      "test-settle-tool-body",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Fatal("expected notification to be sent")
+	}
+
+	call := mockNotif.lastCall()
+	if !strings.Contains(call.message, "go.mod declares module") {
+		t.Errorf("body should be the answer that closes the turn, got: %q", call.message)
+	}
+	if strings.Contains(call.message, "Task completed successfully") {
+		t.Errorf("body fell back to the generic message: %q", call.message)
+	}
+	if *sleeps != 2 {
+		t.Errorf("should stop waiting as soon as the answer lands, slept %d times", *sleeps)
+	}
+}
+
+// TestHandleStopEvent_WaitsPastPreToolText is the quieter half of the same defect.
+// With text emitted before the tool call the body is not obviously broken — it is a
+// whole, readable sentence — it is just the wrong one, taken from before the work
+// happened rather than after.
+func TestHandleStopEvent_WaitsPastPreToolText(t *testing.T) {
+	handler, mockNotif, _ := newTestHandler(t, settleTestConfig())
+	transcriptPath := toolTurnStart(t, true)
+
+	stubSettleClock(t, 0, func(n int) {
+		if n == 2 {
+			appendToTranscript(t, transcriptPath, closingAnswer())
+		}
+	})
+
+	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
+		SessionID:      "test-settle-preamble",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Fatal("expected notification to be sent")
+	}
+
+	call := mockNotif.lastCall()
+	if !strings.Contains(call.message, "go.mod declares module") {
+		t.Errorf("body should be the answer that closes the turn, got: %q", call.message)
+	}
+	if strings.Contains(call.message, "Let me take a look") {
+		t.Errorf("body leaked the text written before the tool ran: %q", call.message)
+	}
+}
+
+// TestHandleStopEvent_StatusEndingTheTurnDoesNotWait guards the ceiling against
+// turns that end on the tool call itself. A question or a plan leaves Claude waiting
+// on the user, so there is no closing message coming and waiting would burn the full
+// budget for nothing.
+func TestHandleStopEvent_StatusEndingTheTurnDoesNotWait(t *testing.T) {
+	cfg := settleTestConfig()
+	cfg.Statuses["question"] = config.StatusInfo{Title: "Question"}
+
+	handler, _, _ := newTestHandler(t, cfg)
+
+	transcriptPath := createTempTranscript(t, []jsonl.Message{
+		{
+			Type: "user",
+			Message: jsonl.MessageContent{
+				Role:    "user",
+				Content: []jsonl.Content{{Type: "text", Text: "which database?"}},
+			},
+			Timestamp: "2025-01-01T12:00:00Z",
+		},
+		{
+			Type: "assistant",
+			Message: jsonl.MessageContent{
+				Role:    "assistant",
+				Content: []jsonl.Content{{Type: "tool_use", Name: "AskUserQuestion"}},
+			},
+			Timestamp: "2025-01-01T12:00:02Z",
+		},
+	})
+
+	sleeps := stubSettleClock(t, 0, nil)
+
+	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
+		SessionID:      "test-settle-question-no-wait",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if *sleeps != 0 {
+		t.Errorf("a turn ending on its tool call must not wait, slept %d times", *sleeps)
+	}
+}

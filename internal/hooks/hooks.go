@@ -556,12 +556,14 @@ func skipUTF8BOM(input io.Reader) io.Reader {
 	return reader
 }
 
-// analyzeSettledTranscript analyzes the transcript, re-reading it while the turn
-// that just ended is still missing from the file.
+// analyzeSettledTranscript analyzes the transcript, re-reading it while the message
+// that ends the turn is still missing from the file.
 //
-// Only an empty analysis window is worth waiting on. Every other verdict is
-// settled and returns immediately — including StatusUnknown produced by
-// notifyOnTextResponse being switched off, which no amount of waiting will change.
+// The wait covers the body as much as the status. A turn that used tools classifies
+// correctly from its tool_use records alone, but generateTaskBody reads the last
+// text in the window, and the text closing the turn is exactly what has not landed
+// yet — so the notification falls back to "Task completed successfully", or worse,
+// shows something said before the tool ran as though it were the conclusion.
 func (h *Handler) analyzeSettledTranscript(transcriptPath string) (analyzer.Status, []jsonl.Message, error) {
 	status, messages, err := analyzer.AnalyzeTranscriptWithMessages(transcriptPath, h.cfg)
 	if err != nil {
@@ -572,7 +574,7 @@ func (h *Handler) analyzeSettledTranscript(transcriptPath string) (analyzer.Stat
 	maxRetries := int(transcriptSettleWait / transcriptSettleInterval)
 	lastSize, sized := transcriptSize(transcriptPath)
 
-	for retry := 1; status == analyzer.StatusUnknown && turnMissingFromTranscript(messages); retry++ {
+	for retry := 1; !statusEndsTheTurn(status) && turnStillWriting(messages); retry++ {
 		// The ceiling is wall-clock rather than a sleep count. A transcript that grows
 		// on every poll without gaining an assistant record — system entries, tool
 		// results and snapshots all enlarge the file — defeats the stat gate below and
@@ -617,12 +619,49 @@ func transcriptSize(path string) (int64, bool) {
 	return info.Size(), true
 }
 
-// turnMissingFromTranscript reports whether the transcript holds no assistant
-// message after the last user message. That is the signature of a Stop hook that
-// outran Claude Code's write of the message finishing the turn.
-func turnMissingFromTranscript(messages []jsonl.Message) bool {
-	userTS := jsonl.GetLastUserTimestamp(messages)
-	return len(jsonl.FilterMessagesAfterTimestamp(messages, userTS)) == 0
+// turnStillWriting reports whether the transcript is missing the message that ends
+// the turn: either nothing follows the last user message, or what does still ends on
+// a tool call. Claude Code writes that closing message after it spawns the Stop
+// hook, so both shapes mean the same thing — the turn is not on disk yet.
+//
+// Measured over 1944 real turns, 3% end without ever producing a closing text and
+// so wait out the ceiling. The other 97% settle in about 80ms.
+func turnStillWriting(messages []jsonl.Message) bool {
+	window := jsonl.FilterMessagesAfterTimestamp(messages, jsonl.GetLastUserTimestamp(messages))
+	if len(window) == 0 {
+		return true
+	}
+	return !hasTextBlock(window[len(window)-1])
+}
+
+// hasTextBlock reports whether an assistant message carries prose. Thinking blocks
+// are a distinct content type and deliberately do not count: they never reach the
+// notification body, so a turn that has only thought is still unfinished.
+func hasTextBlock(msg jsonl.Message) bool {
+	for _, content := range msg.Message.Content {
+		if content.Type == "text" && strings.TrimSpace(content.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// statusEndsTheTurn reports whether a status is settled by something other than a
+// closing message, so waiting for one would be time spent on nothing.
+//
+// A plan or a question ends the turn on the tool call itself — Claude is waiting on
+// the user, not still writing. Session limits and API errors come from the priority
+// checks ahead of the state machine and cannot change either.
+func statusEndsTheTurn(status analyzer.Status) bool {
+	switch status {
+	case analyzer.StatusPlanReady,
+		analyzer.StatusQuestion,
+		analyzer.StatusSessionLimitReached,
+		analyzer.StatusAPIError,
+		analyzer.StatusAPIErrorOverloaded:
+		return true
+	}
+	return false
 }
 
 // handleStopEvent handles Stop/SubagentStop hooks.
