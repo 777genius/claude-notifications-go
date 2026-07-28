@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -33,8 +34,15 @@ func TestWriteKWinScript_RendersMatchers(t *testing.T) {
 	if !strings.Contains(source, "my-project") {
 		t.Error("rendered script is missing the folder name used for caption matching")
 	}
-	if !strings.Contains(source, ":1.42") {
-		t.Error("rendered script does not call back, so a failed match would look like success")
+	// Asserted as one expression rather than by the presence of its parts. The
+	// destination is three plain strings in a single call, so a swapped pair still
+	// renders both values and satisfies any check that only asks whether each
+	// appears. The cost lands on the reply rather than the run: the script reports
+	// where nobody is listening, this call waits out its budget, and focus falls
+	// through to a tool KDE users are unlikely to have installed.
+	wantCallback := fmt.Sprintf("callDBus(':1.42', '/org/kde/kwin/claudenotifications/r1_1', '%s', 'Report', ok)", kwinReplyIface)
+	if !strings.Contains(source, wantCallback) {
+		t.Errorf("rendered script does not report back correctly, want %q", wantCallback)
 	}
 	// Plasma 5 compatibility: both API generations must be handled.
 	for _, api := range []string{"windowList", "clientList", "activeWindow", "activeClient"} {
