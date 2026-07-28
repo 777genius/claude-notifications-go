@@ -11,6 +11,11 @@ import (
 func saveTerminalEnv(t *testing.T) func() {
 	t.Helper()
 	vars := []string{
+		// Set whenever the suite is run from Claude Code's own VS Code extension, and
+		// GetTerminalName now answers on it before anything else. Leaving it in place
+		// would make every case below detect "Code" — passing in CI, failing for
+		// anyone running the tests from the extension.
+		"CLAUDE_CODE_ENTRYPOINT",
 		"TERM_PROGRAM",
 		"VSCODE_INJECTION",
 		"VSCODE_GIT_IPC_HANDLE",
@@ -755,5 +760,64 @@ func TestMappingConsistency_CommonTerminals(t *testing.T) {
 		if r := GetSearchTerm(term); r == "" {
 			t.Errorf("GetSearchTerm(%q) returned empty", term)
 		}
+	}
+}
+
+// TestGetTerminalName_VSCodeExtension covers Claude Code running as the VS Code
+// extension rather than in a terminal. The extension host inherits the environment
+// of whatever launched VS Code, so terminal markers from that launcher are present
+// and wrong: the session belongs to no terminal at all.
+func TestGetTerminalName_VSCodeExtension(t *testing.T) {
+	tests := []struct {
+		name     string
+		leftover map[string]string
+	}{
+		{
+			name:     "nothing inherited",
+			leftover: nil,
+		},
+		{
+			name:     "launched from Konsole",
+			leftover: map[string]string{"KONSOLE_VERSION": "251203", "KONSOLE_DBUS_SESSION": "/Sessions/1"},
+		},
+		{
+			name:     "launched from a terminal that sets TERM_PROGRAM",
+			leftover: map[string]string{"TERM_PROGRAM": "ghostty"},
+		},
+		{
+			name:     "launched from GNOME Terminal",
+			leftover: map[string]string{"GNOME_TERMINAL_SCREEN": "/org/gnome/Terminal/screen/x"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restore := saveTerminalEnv(t)
+			defer restore()
+
+			os.Setenv("CLAUDE_CODE_ENTRYPOINT", "claude-vscode")
+			for k, v := range tt.leftover {
+				os.Setenv(k, v)
+			}
+
+			if got := GetTerminalName(); got != "Code" {
+				t.Errorf("GetTerminalName() = %q, want %q", got, "Code")
+			}
+		})
+	}
+}
+
+// TestGetTerminalName_CLIEntrypointDefersToTerminal pins the other direction: the
+// CLI running inside a terminal is still that terminal, and the entrypoint check
+// must not swallow it.
+func TestGetTerminalName_CLIEntrypointDefersToTerminal(t *testing.T) {
+	restore := saveTerminalEnv(t)
+	defer restore()
+
+	os.Setenv("CLAUDE_CODE_ENTRYPOINT", "cli")
+	os.Setenv("KONSOLE_VERSION", "251203")
+
+	if got := GetTerminalName(); got != "konsole" {
+		t.Errorf("GetTerminalName() = %q, want %q", got, "konsole")
 	}
 }

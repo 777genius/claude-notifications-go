@@ -232,12 +232,23 @@ func GetSearchTermWithFolder(terminalName, folderName string) string {
 
 // GetTerminalName detects the current terminal from environment variables.
 func GetTerminalName() string {
+	// Claude Code's VS Code extension runs inside the extension host, so there is no
+	// terminal to detect and every check below is answering the wrong question. Worse,
+	// they answer it confidently: the extension host inherits the environment of
+	// whatever launched VS Code, so a TERM_PROGRAM or KONSOLE_VERSION left over from
+	// that terminal names a window the session has nothing to do with. Settle it here,
+	// before anything inherited gets a chance to speak.
+	if os.Getenv("CLAUDE_CODE_ENTRYPOINT") == "claude-vscode" {
+		return "Code"
+	}
+
 	// Try TERM_PROGRAM first (set by many terminals)
 	if termProg := os.Getenv("TERM_PROGRAM"); termProg != "" {
 		return termProg
 	}
 
-	// Check VS Code indicators
+	// Check VS Code indicators (integrated terminal: shell integration injects
+	// VSCODE_INJECTION, the git extension exports VSCODE_GIT_IPC_HANDLE)
 	if os.Getenv("VSCODE_INJECTION") != "" || os.Getenv("VSCODE_GIT_IPC_HANDLE") != "" {
 		return "Code"
 	}
