@@ -521,7 +521,15 @@ func extractFirstSentence(text string) string {
 				sentences = append(sentences, sentence)
 				currentStart = i + 1
 
-				// Calculate total length so far
+				// Calculate total length so far.
+				//
+				// This is a byte count, so the two thresholds below land differently
+				// per script: 20 bytes is 20 characters of Latin text but roughly 7
+				// of a three-byte script. Left as is deliberately — the limits exist
+				// to judge whether one sentence carries enough for a notification,
+				// and a denser script needs fewer characters to say as much. Counting
+				// runes here would triple the effective minimum for those scripts and
+				// staple a second sentence onto bodies that already read well.
 				totalLength := len(strings.Join(sentences, " "))
 
 				// If we have at least one sentence and either:
