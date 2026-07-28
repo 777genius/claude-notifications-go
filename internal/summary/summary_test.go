@@ -1822,3 +1822,146 @@ func TestGenerateFromMessagesStructured_EmptyMessages(t *testing.T) {
 		t.Errorf("actions = %q, want empty for empty messages", actions)
 	}
 }
+
+// === Sentence boundaries outside ASCII ===
+
+// TestExtractFirstSentence_NonASCIITerminators covers scripts whose sentence
+// terminator is not an ASCII period. The split is not "CJK vs the rest": Korean
+// terminates with an ASCII period and a space and always worked, while Devanagari
+// does not and did not.
+func TestExtractFirstSentence_NonASCIITerminators(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		expected string
+	}{
+		{
+			name:     "Chinese ideographic full stop",
+			text:     "把音频后端重写成了 miniaudio 实现。之前的做法是在 Linux 上调用 aplay，没有音量控制。现在全部改成进程内解码。",
+			expected: "把音频后端重写成了 miniaudio 实现。",
+		},
+		{
+			name:     "Japanese ideographic full stop",
+			text:     "オーディオバックエンドを miniaudio で書き直しました。以前は aplay を呼び出していたため、音量調整もできませんでした。現在はプロセス内でデコードしています。",
+			expected: "オーディオバックエンドを miniaudio で書き直しました。",
+		},
+		{
+			name:     "Hindi danda",
+			text:     "ऑडियो बैकएंड को miniaudio से फिर से लिखा गया। पिछला कार्यान्वयन aplay को कॉल करता था। अब सब कुछ डिकोड होता है।",
+			expected: "ऑडियो बैकएंड को miniaudio से फिर से लिखा गया।",
+		},
+		{
+			name:     "Fullwidth question mark",
+			text:     "这个方案你觉得可行吗？如果可行我就按这个思路继续往下写，把剩下的部分补完。",
+			expected: "这个方案你觉得可行吗？",
+		},
+		{
+			name:     "Fullwidth exclamation mark",
+			text:     "全部测试都通过了！接下来我会把改动整理成一个提交，然后推送到远端分支上面去。",
+			expected: "全部测试都通过了！",
+		},
+		{
+			name:     "Arabic question mark",
+			text:     "هل تريد أن أكمل بهذه الطريقة؟ سوف أقوم بكتابة بقية الكود ثم أرسل النتيجة إليك لاحقا.",
+			expected: "هل تريد أن أكمل بهذه الطريقة؟",
+		},
+		{
+			name: "Ideographic comma is not a sentence end",
+			// 、 separates clauses; only the trailing 。 ends the sentence.
+			text:     "读取了配置、解析了参数、初始化了播放器。然后开始播放音频文件。",
+			expected: "读取了配置、解析了参数、初始化了播放器。",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractFirstSentence(tt.text); got != tt.expected {
+				t.Errorf("extractFirstSentence() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestExtractFirstSentence_AlreadyWorkingScripts pins the scripts that terminate
+// with an ASCII period plus a space, so the non-ASCII additions cannot regress them.
+func TestExtractFirstSentence_AlreadyWorkingScripts(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		expected string
+	}{
+		{
+			name:     "English",
+			text:     "Rewrote the audio backend to use miniaudio. The previous implementation shelled out to aplay on Linux. Now everything decodes in process.",
+			expected: "Rewrote the audio backend to use miniaudio.",
+		},
+		{
+			name:     "Russian",
+			text:     "Переписал аудио-бэкенд на miniaudio. Прежняя реализация вызывала aplay в Linux. Теперь всё декодируется внутри процесса.",
+			expected: "Переписал аудио-бэкенд на miniaudio.",
+		},
+		{
+			name:     "Korean",
+			text:     "오디오 백엔드를 miniaudio로 다시 작성했습니다. 이전에는 aplay를 호출했습니다. 이제는 프로세스 내에서 디코딩됩니다.",
+			expected: "오디오 백엔드를 miniaudio로 다시 작성했습니다.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractFirstSentence(tt.text); got != tt.expected {
+				t.Errorf("extractFirstSentence() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestExtractFirstSentence_ThaiFallsBackByDesign documents a limit rather than a
+// bug: Thai separates sentences with spaces and has no terminating punctuation, so
+// no character list can help. It falls back to the leading-100-runes behaviour.
+func TestExtractFirstSentence_ThaiFallsBackByDesign(t *testing.T) {
+	thai := "เขียนแบ็กเอนด์เสียงใหม่โดยใช้ miniaudio การใช้งานก่อนหน้านี้เรียก aplay บนลินุกซ์และ afplay บนแมค ซึ่งหมายความว่าไม่มีการควบคุมระดับเสียง ตอนนี้ทุกอย่างถอดรหัสภายในกระบวนการ"
+
+	got := extractFirstSentence(thai)
+	if n := len([]rune(got)); n != 100 {
+		t.Errorf("expected the 100-rune fallback for Thai, got %d runes", n)
+	}
+}
+
+func TestContainsQuestionMark(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"ASCII question mark", "Which database should we use?", true},
+		{"Fullwidth question mark", "我们应该用哪个数据库？", true},
+		{"Arabic question mark", "أي قاعدة بيانات نستخدم؟", true},
+		{"No question mark", "已经全部改完了。", false},
+		{"Ideographic full stop only", "这是一句陈述。", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := containsQuestionMark(tt.text); got != tt.want {
+				t.Errorf("containsQuestionMark(%q) = %v, want %v", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestTruncateText_NonASCIISentenceBoundary covers the other half: a terminator with
+// no space after it is invisible to the ". " style pair search.
+func TestTruncateText_NonASCIISentenceBoundary(t *testing.T) {
+	// Two sentences; the first ends past maxLen/3 so it is a usable cut point.
+	text := "先把音频后端整个重写了一遍，改用 miniaudio 来做解码和播放。剩下的部分包括音量控制、设备枚举以及跨平台的行为一致性，都会在后续的提交里面继续补完。"
+
+	got := truncateText(text, 60)
+	want := "先把音频后端整个重写了一遍，改用 miniaudio 来做解码和播放。"
+	if got != want {
+		t.Errorf("truncateText() = %q, want %q", got, want)
+	}
+	if strings.HasSuffix(got, "...") {
+		t.Error("should cut at the sentence boundary, not fall back to word truncation")
+	}
+}

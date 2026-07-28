@@ -127,7 +127,7 @@ func generateQuestionBody(messages []jsonl.Message) string {
 	// Strategy A: Find texts with "?" and prioritize short ones
 	var questionTexts []string
 	for i := len(texts) - 1; i >= 0; i-- {
-		if strings.Contains(texts[i], "?") {
+		if containsQuestionMark(texts[i]) {
 			questionTexts = append(questionTexts, texts[i])
 		}
 	}
@@ -455,6 +455,36 @@ func buildActionsString(toolCounts map[string]int, duration string) string {
 
 // Helper functions
 
+// isNonASCIISentenceEnd reports whether r ends a sentence in a script that does not
+// use the ASCII period. These also do not put a space after the terminator, which is
+// why the ASCII matching below — built around ". ", "! " and "? " — cannot see them.
+//
+//	U+3002 。 ideographic full stop       Chinese, Japanese
+//	U+FF01 ！ fullwidth exclamation mark  Chinese, Japanese
+//	U+FF1F ？ fullwidth question mark     Chinese, Japanese
+//	U+FF0E ． fullwidth full stop         occasionally used in CJK text
+//	U+0964 । danda                        Hindi and other Devanagari scripts
+//	U+0965 ॥ double danda                 Devanagari
+//	U+061F ؟ Arabic question mark         Arabic, Persian, Urdu
+//	U+06D4 ۔ Arabic full stop             Urdu
+//
+// U+3001 、 is deliberately absent: it is a comma, not a sentence end. Korean is not
+// listed because it terminates sentences with an ASCII period and a space, so it
+// already works; Thai has no sentence-ending punctuation at all and cannot be helped
+// by any character list.
+func isNonASCIISentenceEnd(r rune) bool {
+	switch r {
+	case '。', '！', '？', '．', '।', '॥', '؟', '۔':
+		return true
+	}
+	return false
+}
+
+// containsQuestionMark reports whether text holds a question mark in any script.
+func containsQuestionMark(text string) bool {
+	return strings.ContainsAny(text, "?？؟")
+}
+
 func extractFirstSentence(text string) string {
 	// Find first sentence (ending with . ! or ?)
 	// If first sentence is too short (< 20 chars), try to include second sentence too
@@ -466,7 +496,7 @@ func extractFirstSentence(text string) string {
 	runes := []rune(text)
 
 	for i, char := range runes {
-		if char == '.' || char == '!' || char == '?' {
+		if char == '.' || char == '!' || char == '?' || isNonASCIISentenceEnd(char) {
 			// For dots, check if this is really end of sentence:
 			// - Must be followed by space + uppercase letter, or end of string
 			// - Should not be preceded by a digit (to avoid "v1.6.0")
@@ -568,6 +598,17 @@ func truncateText(text string, maxLen int) string {
 		}
 		if lastSentenceEnd >= 0 {
 			break // Found a suitable sentence, no need to check other enders
+		}
+	}
+
+	// Scripts whose terminator is not followed by a space are invisible to the pair
+	// search above, so scan runes for one. Runes matter here: the search above indexes
+	// bytes, which in a multibyte script would land mid-character.
+	if lastSentenceEnd < 0 {
+		for i, r := range runes[:maxLen] {
+			if i > maxLen/3 && isNonASCIISentenceEnd(r) {
+				return strings.TrimSpace(string(runes[:i+1]))
+			}
 		}
 	}
 
