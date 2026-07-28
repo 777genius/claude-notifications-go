@@ -32,10 +32,31 @@ import (
 // delay can never push the hook past the timeout configured in hooks.json.
 const maxNotifyDelaySeconds = 25
 
+// Claude Code appends the assistant message that ends a turn *after* it spawns the
+// Stop hook. Measured on Linux across 13 runs, the message lands 65-85ms after the
+// hook process starts, and response length does not change that — a three-word
+// reply and a 600-word reply are indistinguishable.
+//
+// A turn that used tools is unaffected: its tool_use records were written seconds
+// earlier, so the analyzer still sees a populated window. A text-only turn has
+// nothing else in the window, comes back StatusUnknown and is dropped without a
+// notification — every time, not intermittently.
+//
+// Re-read the transcript until the finishing message lands. The ceiling is ~24x the
+// slowest measured write and stays far inside the 30s hook timeout in hooks.json.
+// Waiting costs a stat per interval; the transcript is only re-parsed when it grows.
+const (
+	transcriptSettleWait     = 2 * time.Second
+	transcriptSettleInterval = 25 * time.Millisecond
+)
+
 // Test seams for the focus-aware / delayed desktop notification path.
 var (
 	isTerminalFocused = notifier.IsTerminalFocused
 	sleepFunc         = time.Sleep
+	// Kept separate from sleepFunc so tests that stub the notify delay do not also
+	// stub the transcript wait, and vice versa.
+	settleSleepFunc = time.Sleep
 )
 
 type notificationDelivery struct {
@@ -534,6 +555,68 @@ func skipUTF8BOM(input io.Reader) io.Reader {
 	return reader
 }
 
+// analyzeSettledTranscript analyzes the transcript, re-reading it while the turn
+// that just ended is still missing from the file.
+//
+// Only an empty analysis window is worth waiting on. Every other verdict is
+// settled and returns immediately — including StatusUnknown produced by
+// notifyOnTextResponse being switched off, which no amount of waiting will change.
+func (h *Handler) analyzeSettledTranscript(transcriptPath string) (analyzer.Status, []jsonl.Message, error) {
+	status, messages, err := analyzer.AnalyzeTranscriptWithMessages(transcriptPath, h.cfg)
+	if err != nil {
+		return analyzer.StatusUnknown, nil, err
+	}
+
+	maxRetries := int(transcriptSettleWait / transcriptSettleInterval)
+	lastSize, sized := transcriptSize(transcriptPath)
+
+	for retry := 1; status == analyzer.StatusUnknown && turnMissingFromTranscript(messages); retry++ {
+		if retry > maxRetries {
+			logging.Debug("Transcript still has no assistant response after %v, giving up", transcriptSettleWait)
+			break
+		}
+
+		settleSleepFunc(transcriptSettleInterval)
+
+		// Re-parsing costs ~70ms on a multi-megabyte transcript while a stat costs
+		// microseconds, so only pay for the parse once the file has actually grown.
+		// Without this the ceiling above would bound the sleeping alone, and a long
+		// session could burn seconds of CPU re-reading an unchanged file.
+		size, ok := transcriptSize(transcriptPath)
+		if ok && sized && size == lastSize {
+			continue
+		}
+		lastSize, sized = size, ok
+
+		status, messages, err = analyzer.AnalyzeTranscriptWithMessages(transcriptPath, h.cfg)
+		if err != nil {
+			return analyzer.StatusUnknown, nil, err
+		}
+		logging.Debug("Transcript grew, re-analyzed after %v", time.Duration(retry)*transcriptSettleInterval)
+	}
+
+	return status, messages, nil
+}
+
+// transcriptSize reports the transcript's current size. The bool is false when the
+// file cannot be stat'd, which makes the caller re-parse rather than assume the
+// file is unchanged.
+func transcriptSize(path string) (int64, bool) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, false
+	}
+	return info.Size(), true
+}
+
+// turnMissingFromTranscript reports whether the transcript holds no assistant
+// message after the last user message. That is the signature of a Stop hook that
+// outran Claude Code's write of the message finishing the turn.
+func turnMissingFromTranscript(messages []jsonl.Message) bool {
+	userTS := jsonl.GetLastUserTimestamp(messages)
+	return len(jsonl.FilterMessagesAfterTimestamp(messages, userTS)) == 0
+}
+
 // handleStopEvent handles Stop/SubagentStop hooks.
 // Returns the parsed messages alongside the status so callers can reuse them
 // (e.g., for summary generation) without re-reading the transcript file.
@@ -548,7 +631,7 @@ func (h *Handler) handleStopEvent(hookData *HookData) (analyzer.Status, []jsonl.
 		return analyzer.StatusUnknown, nil, nil
 	}
 
-	status, messages, err := analyzer.AnalyzeTranscriptWithMessages(hookData.TranscriptPath, h.cfg)
+	status, messages, err := h.analyzeSettledTranscript(hookData.TranscriptPath)
 	if err != nil {
 		logging.Error("Failed to analyze transcript: %v", err)
 		return analyzer.StatusUnknown, nil, nil

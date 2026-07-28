@@ -2394,3 +2394,175 @@ func setupTeamStateManager(t *testing.T, homeDir string) *teamstate.Manager {
 	t.Helper()
 	return teamstate.NewManager(filepath.Join(homeDir, ".claude"))
 }
+
+// appendToTranscript writes one more record to an existing transcript, standing in
+// for Claude Code finishing its write while the hook waits.
+func appendToTranscript(t *testing.T, path string, msg jsonl.Message) {
+	t.Helper()
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatalf("failed to open transcript for append: %v", err)
+	}
+	defer f.Close()
+
+	if err := json.NewEncoder(f).Encode(msg); err != nil {
+		t.Fatalf("failed to append to transcript: %v", err)
+	}
+}
+
+func textOnlyTurnStart(t *testing.T) string {
+	t.Helper()
+
+	return createTempTranscript(t, []jsonl.Message{
+		{
+			Type: "user",
+			Message: jsonl.MessageContent{
+				Role:    "user",
+				Content: []jsonl.Content{{Type: "text", Text: "tell me a joke"}},
+			},
+			Timestamp: "2025-01-01T12:00:00Z",
+		},
+	})
+}
+
+func assistantReply() jsonl.Message {
+	return jsonl.Message{
+		Type: "assistant",
+		Message: jsonl.MessageContent{
+			Role:    "assistant",
+			Content: []jsonl.Content{{Type: "text", Text: strings.Repeat("a joke ", 40)}},
+		},
+		Timestamp: "2025-01-01T12:00:05Z",
+	}
+}
+
+// TestHandleStopEvent_WaitsForTranscriptToSettle is a regression test for text-only
+// turns never producing a notification.
+//
+// Claude Code appends the assistant message that ends a turn after it spawns the
+// Stop hook. A turn that used tools still has its tool_use records on disk, so the
+// analysis window is populated; a text-only turn leaves it empty, the analyzer
+// returns StatusUnknown and the hook exits silently.
+func TestHandleStopEvent_WaitsForTranscriptToSettle(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+	transcriptPath := textOnlyTurnStart(t)
+
+	// Claude Code lands the reply while the hook is in its second wait.
+	restore := settleSleepFunc
+	defer func() { settleSleepFunc = restore }()
+	sleeps := 0
+	settleSleepFunc = func(time.Duration) {
+		sleeps++
+		if sleeps == 2 {
+			appendToTranscript(t, transcriptPath, assistantReply())
+		}
+	}
+
+	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
+		SessionID:      "test-settle-waits",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Fatal("text-only turn should still notify once the transcript lands")
+	}
+	if call := mockNotif.lastCall(); call.status != analyzer.StatusTaskComplete {
+		t.Errorf("got status %v, want StatusTaskComplete", call.status)
+	}
+	if sleeps != 2 {
+		t.Errorf("should stop waiting as soon as the turn lands, slept %d times", sleeps)
+	}
+}
+
+// TestHandleStopEvent_SettleWaitIsBounded pins the ceiling: a turn that never lands
+// must not spin forever, and must not notify.
+func TestHandleStopEvent_SettleWaitIsBounded(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+
+	restore := settleSleepFunc
+	defer func() { settleSleepFunc = restore }()
+	sleeps := 0
+	settleSleepFunc = func(time.Duration) { sleeps++ }
+
+	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
+		SessionID:      "test-settle-bounded",
+		TranscriptPath: textOnlyTurnStart(t),
+		CWD:            "/test",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mockNotif.wasCalled() {
+		t.Error("should not notify when the turn never lands")
+	}
+	if want := int(transcriptSettleWait / transcriptSettleInterval); sleeps != want {
+		t.Errorf("slept %d times, want %d (%v ceiling at %v intervals)",
+			sleeps, want, transcriptSettleWait, transcriptSettleInterval)
+	}
+}
+
+// TestHandleStopEvent_SettledUnknownDoesNotWait guards the fast path: an unknown
+// verdict reached with a populated window is final, so the hook must not pay the
+// wait. Here notifyOnTextResponse is off, which no amount of waiting would change.
+func TestHandleStopEvent_SettledUnknownDoesNotWait(t *testing.T) {
+	notifyOnText := false
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop:              config.DesktopConfig{Enabled: true},
+			NotifyOnTextResponse: &notifyOnText,
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+
+	transcriptPath := textOnlyTurnStart(t)
+	appendToTranscript(t, transcriptPath, assistantReply())
+
+	restore := settleSleepFunc
+	defer func() { settleSleepFunc = restore }()
+	sleeps := 0
+	settleSleepFunc = func(time.Duration) { sleeps++ }
+
+	err := handler.HandleHook("Stop", buildHookDataJSON(HookData{
+		SessionID:      "test-settle-settled-unknown",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sleeps != 0 {
+		t.Errorf("a settled verdict must not wait, slept %d times", sleeps)
+	}
+	if mockNotif.wasCalled() {
+		t.Error("notifyOnTextResponse is off, so no notification is expected")
+	}
+}
