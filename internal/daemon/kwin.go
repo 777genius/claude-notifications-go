@@ -35,6 +35,12 @@ const (
 	// on to another method. It covers the D-Bus round-trips as well as the wait —
 	// an unresponsive compositor blocks in loadScript just as effectively.
 	kwinReplyTimeout = 2 * time.Second
+
+	// Withdrawing the script gets its own budget rather than the remains of the one
+	// above, which on the timeout path is spent by definition. It is a backstop, not
+	// a wait: by the time it runs KWin has already answered loadScript and run, and
+	// the call itself measures 0.15ms median, 0.8ms worst over 40 samples.
+	kwinUnloadTimeout = 250 * time.Millisecond
 )
 
 // kwinReplySeq keeps reply paths distinct between overlapping calls in one process.
@@ -125,10 +131,7 @@ func TryKWinScript(terminalName, folderName string) error {
 	if err := scripting.CallWithContext(ctx, kwinScriptIface+".loadScript", dbus.FlagNoAutoStart, scriptPath, name).Store(&scriptID); err != nil {
 		return fmt.Errorf("kwin loadScript failed: %w", err)
 	}
-	defer func() {
-		var unloaded bool
-		_ = scripting.CallWithContext(ctx, kwinScriptIface+".unloadScript", dbus.FlagNoAutoStart, name).Store(&unloaded)
-	}()
+	defer unloadKWinScript(scripting, name)
 
 	runner := conn.Object(kwinService, dbus.ObjectPath(fmt.Sprintf("%s/Script%d", kwinScriptPath, scriptID)))
 	if err := runner.CallWithContext(ctx, kwinScriptRunner+".run", dbus.FlagNoAutoStart).Store(); err != nil {
@@ -144,6 +147,23 @@ func TryKWinScript(terminalName, folderName string) error {
 	case <-ctx.Done():
 		return fmt.Errorf("kwin script did not report back within %v", kwinReplyTimeout)
 	}
+}
+
+// unloadKWinScript withdraws the loaded script from KWin.
+//
+// It deliberately takes no context from its caller. The focus budget is spent on the
+// very path that most needs cleaning up — a run that timed out — and godbus declines
+// to send a message whose context is already cancelled ("short path: don't even send
+// the message if context already cancelled", dbus/conn.go). Inheriting it therefore
+// meant the script stayed registered exactly when the timeout repeated, so a
+// compositor that never reported back accumulated a /Scripting/Script<id> object per
+// notification click for as long as it ran.
+func unloadKWinScript(scripting dbus.BusObject, name string) {
+	ctx, cancel := context.WithTimeout(context.Background(), kwinUnloadTimeout)
+	defer cancel()
+
+	var unloaded bool
+	_ = scripting.CallWithContext(ctx, kwinScriptIface+".unloadScript", dbus.FlagNoAutoStart, name).Store(&unloaded)
 }
 
 // exportKWinReply publishes a receiver on a path unique to this call and returns it

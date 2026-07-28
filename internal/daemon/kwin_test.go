@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"context"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -157,5 +158,57 @@ func TestKWinReplyReceiver_DoesNotBlockOnLateReply(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("Report blocked once the channel was full")
+	}
+}
+
+// recordingBusObject captures the context each call runs under. Only CallWithContext
+// is exercised; the embedded interface is nil, so any other method would panic rather
+// than pass silently.
+type recordingBusObject struct {
+	dbus.BusObject
+	contexts  []context.Context
+	methods   []string
+	errAtCall []error
+	remaining []time.Duration
+	bounded   []bool
+}
+
+// CallWithContext samples the context as godbus would see it — at the moment of the
+// call. Inspecting it afterwards proves nothing: unloadKWinScript cancels its own
+// context on the way out, as it should.
+func (r *recordingBusObject) CallWithContext(ctx context.Context, method string, _ dbus.Flags, _ ...any) *dbus.Call {
+	r.contexts = append(r.contexts, ctx)
+	r.methods = append(r.methods, method)
+	r.errAtCall = append(r.errAtCall, ctx.Err())
+
+	deadline, ok := ctx.Deadline()
+	r.bounded = append(r.bounded, ok)
+	r.remaining = append(r.remaining, time.Until(deadline))
+
+	return &dbus.Call{}
+}
+
+// TestUnloadKWinScript_RunsOnItsOwnBudget pins the reason unloadKWinScript takes no
+// context from its caller. godbus refuses to send on a cancelled context, so running
+// cleanup under the focus budget skipped the unload on exactly the path that creates
+// the mess — a timed-out run — and left the script registered with KWin.
+func TestUnloadKWinScript_RunsOnItsOwnBudget(t *testing.T) {
+	obj := &recordingBusObject{}
+	unloadKWinScript(obj, "claude-notifications-r1_1")
+
+	if len(obj.contexts) != 1 {
+		t.Fatalf("expected exactly one call, got %d", len(obj.contexts))
+	}
+	if want := kwinScriptIface + ".unloadScript"; obj.methods[0] != want {
+		t.Errorf("called %q, want %q", obj.methods[0], want)
+	}
+	if err := obj.errAtCall[0]; err != nil {
+		t.Errorf("cleanup ran under a cancelled context (%v); godbus would not send it", err)
+	}
+	if !obj.bounded[0] {
+		t.Fatal("cleanup must stay bounded, so an unresponsive compositor cannot hold up the fallback chain")
+	}
+	if r := obj.remaining[0]; r <= 0 || r > kwinUnloadTimeout {
+		t.Errorf("cleanup deadline %v away, want within (0, %v]", r, kwinUnloadTimeout)
 	}
 }
