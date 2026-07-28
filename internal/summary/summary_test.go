@@ -1884,6 +1884,24 @@ func TestBodyFromToolInput(t *testing.T) {
 			expected: "",
 		},
 		{
+			name:     "ExitPlanMode skips a leading fenced code block",
+			toolName: "ExitPlanMode",
+			raw:      `{"plan":"` + "```" + `go\nfunc main() {}\n` + "```" + `\n\nExtract the lexer first"}`,
+			expected: "Extract the lexer first",
+		},
+		{
+			name:     "ExitPlanMode with an unterminated fence falls back",
+			toolName: "ExitPlanMode",
+			raw:      `{"plan":"` + "```" + `\nfunc main() {}\n\nExtract the lexer first"}`,
+			expected: "",
+		},
+		{
+			name:     "ExitPlanMode malformed JSON falls back",
+			toolName: "ExitPlanMode",
+			raw:      `{"plan":{"not":"a string"}}`,
+			expected: "",
+		},
+		{
 			name:     "unsummarized tool falls back",
 			toolName: "Bash",
 			raw:      `{"command":"rm -rf /"}`,

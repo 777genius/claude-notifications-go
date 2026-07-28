@@ -223,10 +223,27 @@ func planBodyFromToolInput(raw json.RawMessage) string {
 	return firstMeaningfulLine(input.Plan)
 }
 
-// firstMeaningfulLine returns the first non-blank line of text, markdown-stripped
-// and truncated for notification display, or "" when there is no such line.
+// firstMeaningfulLine returns the first non-blank prose line of text,
+// markdown-stripped and truncated for notification display, or "" when there is
+// no such line.
+//
+// Fenced code blocks are skipped by tracking the fence state as lines are
+// consumed. Cleaning each line in isolation is not enough: CleanMarkdown removes
+// a ```…``` pair, but a lone opening fence survives it and would surface the
+// language tag ("go") as the headline. Tracking state also covers an unterminated
+// fence, where no pair exists to match.
 func firstMeaningfulLine(text string) string {
+	inFence := false
+
 	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+
 		cleaned := CleanMarkdown(line)
 		if strings.TrimSpace(cleaned) != "" {
 			return truncateText(cleaned, 150)
