@@ -1741,3 +1741,39 @@ func TestValidate_NegativeNotifyDelay(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "notifyDelaySeconds must be >= 0")
 }
+
+func TestGetSessionNameSource_DefaultsGenerated(t *testing.T) {
+	cfg := &Config{}
+	assert.Equal(t, "generated", cfg.GetSessionNameSource())
+
+	cfgExplicit := &Config{Notifications: NotificationsConfig{SessionNameSource: "generated"}}
+	assert.Equal(t, "generated", cfgExplicit.GetSessionNameSource())
+}
+
+func TestGetSessionNameSource_AiTitle(t *testing.T) {
+	cfg := &Config{Notifications: NotificationsConfig{SessionNameSource: "aiTitle"}}
+	assert.Equal(t, "aiTitle", cfg.GetSessionNameSource())
+}
+
+func TestGetSessionNameSource_UnknownFallsBackToGenerated(t *testing.T) {
+	// Validate rejects unknown values, but the getter is defensive
+	cfg := &Config{Notifications: NotificationsConfig{SessionNameSource: "tab-title"}}
+	assert.Equal(t, "generated", cfg.GetSessionNameSource())
+}
+
+func TestValidate_InvalidSessionNameSource(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Notifications.SessionNameSource = "tab-title"
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid sessionNameSource")
+}
+
+func TestValidate_ValidSessionNameSources(t *testing.T) {
+	for _, source := range []string{"", "generated", "aiTitle"} {
+		cfg := DefaultConfig()
+		cfg.Notifications.SessionNameSource = source
+		assert.NoError(t, cfg.Validate(), "source %q should be valid", source)
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/777genius/claude-notifications/internal/analyzer"
 	"github.com/777genius/claude-notifications/internal/config"
 	"github.com/777genius/claude-notifications/internal/dedup"
+	"github.com/777genius/claude-notifications/internal/sessionname"
 	"github.com/777genius/claude-notifications/internal/state"
 	"github.com/777genius/claude-notifications/internal/teamstate"
 	"github.com/777genius/claude-notifications/internal/webhook"
@@ -2393,4 +2394,117 @@ func TestHandler_Stop_NonTeamLead_NormalBehavior(t *testing.T) {
 func setupTeamStateManager(t *testing.T, homeDir string) *teamstate.Manager {
 	t.Helper()
 	return teamstate.NewManager(filepath.Join(homeDir, ".claude"))
+}
+
+// === Session label source tests ===
+
+func buildTranscriptWithAiTitle(aiTitle string) []jsonl.Message {
+	messages := buildTranscriptWithTools([]string{"Read", "Edit", "Write"}, 300)
+	return append(messages, jsonl.Message{Type: jsonl.TypeAiTitle, AiTitle: aiTitle})
+}
+
+func TestHandler_Stop_SessionNameFromAiTitle(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop:           config.DesktopConfig{Enabled: true},
+			SessionNameSource: "aiTitle",
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+	transcriptPath := createTempTranscript(t, buildTranscriptWithAiTitle("Fix the flaky auth test"))
+
+	hookData := buildHookDataJSON(HookData{
+		SessionID:      "test-session-ai-title",
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	})
+
+	if err := handler.HandleHook("Stop", hookData); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Fatal("expected notification to be sent")
+	}
+
+	if !strings.Contains(mockNotif.lastCall().message, "[Fix the flaky auth test") {
+		t.Errorf("expected message to be labeled with the session title, got %q", mockNotif.lastCall().message)
+	}
+}
+
+func TestHandler_Stop_SessionNameFallsBackWithoutAiTitle(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop:           config.DesktopConfig{Enabled: true},
+			SessionNameSource: "aiTitle",
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+	// No ai-title entry: a session Claude has not named yet
+	transcriptPath := createTempTranscript(t, buildTranscriptWithTools([]string{"Read", "Edit", "Write"}, 300))
+
+	sessionID := "test-session-no-title"
+	hookData := buildHookDataJSON(HookData{
+		SessionID:      sessionID,
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	})
+
+	if err := handler.HandleHook("Stop", hookData); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Fatal("expected notification to be sent")
+	}
+
+	expected := "[" + sessionname.GenerateSessionLabel(sessionID)
+	if !strings.Contains(mockNotif.lastCall().message, expected) {
+		t.Errorf("expected generated label %q, got %q", expected, mockNotif.lastCall().message)
+	}
+}
+
+func TestHandler_Stop_SessionNameDefaultIgnoresAiTitle(t *testing.T) {
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Desktop: config.DesktopConfig{Enabled: true},
+		},
+		Statuses: map[string]config.StatusInfo{
+			"task_complete": {Title: "Task Complete"},
+		},
+	}
+
+	handler, mockNotif, _ := newTestHandler(t, cfg)
+	transcriptPath := createTempTranscript(t, buildTranscriptWithAiTitle("Fix the flaky auth test"))
+
+	sessionID := "test-session-default-source"
+	hookData := buildHookDataJSON(HookData{
+		SessionID:      sessionID,
+		TranscriptPath: transcriptPath,
+		CWD:            "/test",
+	})
+
+	if err := handler.HandleHook("Stop", hookData); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mockNotif.wasCalled() {
+		t.Fatal("expected notification to be sent")
+	}
+
+	message := mockNotif.lastCall().message
+	if strings.Contains(message, "Fix the flaky auth test") {
+		t.Errorf("default source should not use the session title, got %q", message)
+	}
+	if !strings.Contains(message, "["+sessionname.GenerateSessionLabel(sessionID)) {
+		t.Errorf("expected generated label, got %q", message)
+	}
 }

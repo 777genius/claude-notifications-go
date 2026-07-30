@@ -1,7 +1,9 @@
 package sessionname
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -154,4 +156,69 @@ func TestHexToInt_PartiallyValid(t *testing.T) {
 	result := hexToInt("12z45")
 	assert.Equal(t, 0x12, result, "Should parse valid hex prefix '12'")
 	assert.Equal(t, 18, result)
+}
+
+func TestFromAiTitle(t *testing.T) {
+	sessionID := "06ddb8f7-1234-5678-9abc-def012345678"
+
+	tests := []struct {
+		name     string
+		aiTitle  string
+		expected string
+	}{
+		{
+			name:     "plain title is used as-is",
+			aiTitle:  "Fix the flaky auth test",
+			expected: "Fix the flaky auth test",
+		},
+		{
+			name:     "prefix delimiters are dropped",
+			aiTitle:  "Handle [brackets] and | pipes",
+			expected: "Handle brackets and pipes",
+		},
+		{
+			name:     "newlines and runs of whitespace collapse",
+			aiTitle:  "Multi\nline\ttitle   with   gaps",
+			expected: "Multi line title with gaps",
+		},
+		{
+			name:     "long title is truncated",
+			aiTitle:  strings.Repeat("a", MaxAiTitleLength+20),
+			expected: strings.Repeat("a", MaxAiTitleLength),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, FromAiTitle(tt.aiTitle, sessionID))
+		})
+	}
+}
+
+func TestFromAiTitleFallsBackToGeneratedLabel(t *testing.T) {
+	sessionID := "06ddb8f7-1234-5678-9abc-def012345678"
+	generated := GenerateSessionLabel(sessionID)
+
+	tests := []struct {
+		name    string
+		aiTitle string
+	}{
+		{"empty title", ""},
+		{"whitespace only", "   \n\t "},
+		{"delimiters only", "[|]"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, generated, FromAiTitle(tt.aiTitle, sessionID))
+		})
+	}
+}
+
+func TestFromAiTitleTruncatesOnRuneBoundary(t *testing.T) {
+	// Multi-byte runes must not be cut mid-rune
+	title := strings.Repeat("日", MaxAiTitleLength+5)
+	result := FromAiTitle(title, "06ddb8f7-1234-5678-9abc-def012345678")
+	assert.Equal(t, MaxAiTitleLength, len([]rune(result)))
+	assert.True(t, utf8.ValidString(result))
 }

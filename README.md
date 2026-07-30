@@ -230,6 +230,7 @@ Edit the config file directly:
     "respectJudgeMode": true,
     "notifyOnlyWhenUnfocused": false,
     "notifyDelaySeconds": 0,
+    "sessionNameSource": "generated",
     "suppressFilters": [
       {
         "name": "Suppress ClaudeProbe completions (remote-control)",
@@ -280,6 +281,7 @@ Edit the config file directly:
 | `respectJudgeMode` | `true` | Honor `CLAUDE_HOOK_JUDGE_MODE=true` env var to suppress notifications |
 | `notifyOnlyWhenUnfocused` | `false` | Skip the desktop notification only when the focused terminal window can be matched to the current Claude Code session. Best-effort per platform; if focus can't be determined the notification is still shown. |
 | `notifyDelaySeconds` | `0` | Wait N seconds before delivering a desktop notification (capped at 25s by the hook timeout). With `notifyOnlyWhenUnfocused`, focus is re-checked after the wait. Webhooks are unaffected. |
+| `sessionNameSource` | `"generated"` | How the session is labeled in the message prefix. `"generated"` uses a word plus the session id (`bold 06ddb8f7`). `"aiTitle"` uses Claude Code's own session title — the name it shows on the terminal tab (`Fix the flaky auth test`) — which tells apart several sessions running in one folder; it falls back to the generated label until Claude has named the session. Note that the label also reaches webhooks. |
 | `suppressQuestionAfterTaskCompleteSeconds` | `12` | Suppress question notifications for N seconds after task complete |
 | `suppressQuestionAfterAnyNotificationSeconds` | `7` | Suppress question notifications for N seconds after any notification |
 | `suppressFilters` | `[]` | Array of rules to suppress notifications by status, git branch, and/or folder. Each rule is an AND of its fields; omitted fields match any value. Set `gitBranch` to `""` to match sessions outside git repos. |
@@ -304,6 +306,27 @@ You can also override individual channels per status:
 `statuses.<name>.enabled` is still the master switch for both channels. Use
 `desktop.enabled` and `webhook.enabled` when you want one channel on and the
 other off for the same status.
+
+### Session Labels
+
+Every notification is prefixed with the session it came from: `[bold 06ddb8f7|main my-app] …`. That label is a word derived from the session id, which is stable but arbitrary — when several sessions run in the same folder and on the same branch, the label is the only thing telling them apart, and there's nothing to recognize.
+
+Set `sessionNameSource: "aiTitle"` to use Claude Code's own session title instead — the same name it shows on the terminal tab:
+
+```json
+{
+  "notifications": {
+    "sessionNameSource": "aiTitle"
+  }
+}
+```
+
+```
+[bold 06ddb8f7|main my-app] Added the retry path        <- "generated" (default)
+[Fix the flaky auth test|main my-app] Added the retry path   <- "aiTitle"
+```
+
+Claude names a session a little after it starts, and subagent transcripts often have no title at all, so the generated label is still used whenever no title exists. Titles are squeezed onto one line and capped at 60 characters. Since this label is also sent to webhooks, opting in means your session titles leave the machine.
 
 ### Focus-Aware & Delayed Notifications
 

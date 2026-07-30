@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+// TypeAiTitle is the transcript entry type Claude Code writes when it names a
+// session: {"type":"ai-title","aiTitle":"Fix the flaky auth test","sessionId":"..."}
+const TypeAiTitle = "ai-title"
+
 // Message represents a Claude Code transcript message
 type Message struct {
 	ParentUUID        string         `json:"parentUuid"`
@@ -17,6 +21,7 @@ type Message struct {
 	Timestamp         string         `json:"timestamp"`
 	IsApiErrorMessage bool           `json:"isApiErrorMessage,omitempty"`
 	Error             string         `json:"error,omitempty"`
+	AiTitle           string         `json:"aiTitle,omitempty"` // Set on TypeAiTitle entries only
 }
 
 // MessageContent represents the content of a message
@@ -129,6 +134,55 @@ func Parse(r io.Reader) ([]Message, error) {
 	}
 
 	return messages, nil
+}
+
+// LastAiTitle returns the most recent ai-title from already-parsed messages, or
+// "" when the session has not been named yet. Claude Code rewrites the title as
+// the conversation moves on, so the last entry wins.
+func LastAiTitle(messages []Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Type == TypeAiTitle && messages[i].AiTitle != "" {
+			return messages[i].AiTitle
+		}
+	}
+	return ""
+}
+
+// LastAiTitleFromFile returns the most recent ai-title in a transcript file.
+// Only lines that look like ai-title entries are unmarshalled, so this stays
+// cheap on multi-megabyte transcripts. Callers that already hold parsed
+// messages should use LastAiTitle instead.
+func LastAiTitleFromFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+
+	marker := []byte(`"` + TypeAiTitle + `"`)
+	title := ""
+	reader := bufio.NewReaderSize(f, 64*1024)
+
+	for {
+		line, err := reader.ReadBytes('\n')
+		line = bytes.TrimRight(line, "\r\n")
+		if bytes.Contains(line, marker) {
+			var msg Message
+			if jsonErr := json.Unmarshal(line, &msg); jsonErr == nil {
+				if msg.Type == TypeAiTitle && msg.AiTitle != "" {
+					title = msg.AiTitle
+				}
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return "", err
+		}
+	}
+
+	return title, nil
 }
 
 // GetLastApiErrorMessages returns the last N messages with isApiErrorMessage=true

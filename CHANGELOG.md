@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Notifications can be labeled with Claude Code's own session title** - set `notifications.sessionNameSource: "aiTitle"` to replace the generated `bold 06ddb8f7` label with the session name Claude shows on the terminal tab, so parallel sessions in one folder are distinguishable. Falls back to the generated label until Claude has named the session; default behavior is unchanged.
+
 ## [1.40.1] - 2026-07-17
 
 ### Changed

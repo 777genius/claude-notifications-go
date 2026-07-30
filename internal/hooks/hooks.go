@@ -418,7 +418,7 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 	// Send notifications
 	bench.Start("notify.send")
-	delivery := h.sendNotifications(status, body, actions, hookData.SessionID, hookData.CWD)
+	delivery := h.sendNotifications(status, body, actions, hookData.SessionID, h.resolveSessionName(&hookData, parsedMessages), hookData.CWD)
 	bench.Elapsed("notify.send")
 
 	if delivery.delivered() {
@@ -519,7 +519,9 @@ func (h *Handler) handleTeammateIdle(hookData *HookData) error {
 	status := analyzer.StatusTaskComplete
 	body := fmt.Sprintf("Team %q: all teammates finished work", hookData.TeamName)
 
-	h.sendNotifications(status, body, "", hookData.SessionID, hookData.CWD)
+	// Team notifications are not tied to one session's transcript, so they keep
+	// the generated label.
+	h.sendNotifications(status, body, "", hookData.SessionID, "", hookData.CWD)
 
 	logging.Debug("=== Hook completed: TeammateIdle (team notification sent) ===")
 	return nil
@@ -558,6 +560,37 @@ func (h *Handler) handleStopEvent(hookData *HookData) (analyzer.Status, []jsonl.
 	return status, messages, nil
 }
 
+// resolveSessionName returns the label identifying this session in the
+// notification prefix. With sessionNameSource="aiTitle" it prefers Claude Code's
+// own session title — the same name shown on the terminal tab — which tells
+// several sessions in one folder apart. Returns "" to mean "use the generated
+// label", which is also what happens when the session has no title yet.
+//
+// Already-parsed messages are reused when the caller has them (Stop events);
+// otherwise the transcript is scanned for ai-title lines alone, not fully parsed.
+func (h *Handler) resolveSessionName(hookData *HookData, messages []jsonl.Message) string {
+	if h.cfg.GetSessionNameSource() != "aiTitle" {
+		return ""
+	}
+
+	aiTitle := jsonl.LastAiTitle(messages)
+	if aiTitle == "" && hookData.TranscriptPath != "" && platform.FileExists(hookData.TranscriptPath) {
+		scanned, err := jsonl.LastAiTitleFromFile(hookData.TranscriptPath)
+		if err != nil {
+			logging.Warn("Failed to read session title from transcript: %v", err)
+		} else {
+			aiTitle = scanned
+		}
+	}
+
+	if aiTitle == "" {
+		logging.Debug("sessionNameSource=aiTitle but no title found, using generated label")
+		return ""
+	}
+
+	return sessionname.FromAiTitle(aiTitle, hookData.SessionID)
+}
+
 // generateMessage generates a notification body and action summary.
 // If messages are provided (from handleStopEvent), uses them directly to avoid re-reading the transcript.
 func (h *Handler) generateMessage(hookData *HookData, status analyzer.Status, messages []jsonl.Message) (body, actions string) {
@@ -591,13 +624,17 @@ func joinMessageParts(body, actions string) string {
 //
 // body is the summary text (no metadata prefix, no action segments).
 // actions is the formatted action summary (e.g. "📝 1 new  ▶ 2 cmds  ⏱ 41s") or "".
-func (h *Handler) sendNotifications(status analyzer.Status, body, actions, sessionID, cwd string) notificationDelivery {
+// sessionName labels the session in the message prefix; empty falls back to the
+// generated word-plus-id label.
+func (h *Handler) sendNotifications(status analyzer.Status, body, actions, sessionID, sessionName, cwd string) notificationDelivery {
 	// Add panic recovery to prevent notification failures from crashing the plugin
 	defer errorhandler.HandlePanic()
 
 	var delivery notificationDelivery
 
-	sessionName := sessionname.GenerateSessionLabel(sessionID)
+	if sessionName == "" {
+		sessionName = sessionname.GenerateSessionLabel(sessionID)
+	}
 	gitBranch := platform.GetGitBranch(cwd)
 	folderName := filepath.Base(cwd)
 

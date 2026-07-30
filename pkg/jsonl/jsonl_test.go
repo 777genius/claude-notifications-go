@@ -974,3 +974,85 @@ func TestMessageContent_MarshalJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestLastAiTitle(t *testing.T) {
+	tests := []struct {
+		name     string
+		jsonl    string
+		expected string
+	}{
+		{
+			name: "single title",
+			jsonl: `{"type":"user","message":{"role":"user","content":"hi"}}
+{"type":"ai-title","aiTitle":"Fix the flaky auth test","sessionId":"abc"}`,
+			expected: "Fix the flaky auth test",
+		},
+		{
+			name: "last title wins when Claude renames the session",
+			jsonl: `{"type":"ai-title","aiTitle":"First guess","sessionId":"abc"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}
+{"type":"ai-title","aiTitle":"What it turned into","sessionId":"abc"}`,
+			expected: "What it turned into",
+		},
+		{
+			name:     "no title yet",
+			jsonl:    `{"type":"user","message":{"role":"user","content":"hi"}}`,
+			expected: "",
+		},
+		{
+			name:     "empty title is ignored",
+			jsonl:    `{"type":"ai-title","aiTitle":"","sessionId":"abc"}`,
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages, err := Parse(strings.NewReader(tt.jsonl))
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, LastAiTitle(messages))
+		})
+	}
+}
+
+func TestLastAiTitleEmptyMessages(t *testing.T) {
+	assert.Equal(t, "", LastAiTitle(nil))
+	assert.Equal(t, "", LastAiTitle([]Message{}))
+}
+
+func TestLastAiTitleFromFile(t *testing.T) {
+	content := `{"type":"user","message":{"role":"user","content":"hi"}}
+{"type":"ai-title","aiTitle":"First guess","sessionId":"abc"}
+not json at all
+{"type":"ai-title","aiTitle":"Make notifications click through","sessionId":"abc"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}`
+
+	path := t.TempDir() + "/transcript.jsonl"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	title, err := LastAiTitleFromFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "Make notifications click through", title)
+}
+
+func TestLastAiTitleFromFileWithoutTitle(t *testing.T) {
+	path := t.TempDir() + "/transcript.jsonl"
+	require.NoError(t, os.WriteFile(path, []byte(`{"type":"user","message":{"role":"user","content":"hi"}}`), 0o600))
+
+	title, err := LastAiTitleFromFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "", title)
+}
+
+func TestLastAiTitleFromFileMissingFile(t *testing.T) {
+	_, err := LastAiTitleFromFile(t.TempDir() + "/does-not-exist.jsonl")
+	assert.Error(t, err)
+}
+
+func TestAiTitleRoundTrips(t *testing.T) {
+	line := `{"type":"ai-title","aiTitle":"Round trip","sessionId":"abc"}`
+	var msg Message
+	require.NoError(t, json.Unmarshal([]byte(line), &msg))
+	assert.Equal(t, TypeAiTitle, msg.Type)
+	assert.Equal(t, "Round trip", msg.AiTitle)
+}

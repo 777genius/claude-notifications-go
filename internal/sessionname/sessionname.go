@@ -80,6 +80,48 @@ func GenerateSessionLabel(sessionID string) string {
 	return name + " " + prefix
 }
 
+// MaxAiTitleLength caps how much of a session title reaches a notification, so a
+// long title cannot crowd out the message body it is prefixed to.
+const MaxAiTitleLength = 60
+
+// FromAiTitle returns Claude Code's own session title as the session label,
+// falling back to GenerateSessionLabel when the session has no title yet (early
+// in a conversation, or on subagent transcripts).
+//
+// The title is squeezed onto one line and stripped of the characters that
+// delimit the notification's "[name|branch folder]" prefix, so a title can never
+// be mistaken for those fields.
+func FromAiTitle(aiTitle, sessionID string) string {
+	cleaned := sanitizeAiTitle(aiTitle)
+	if cleaned == "" {
+		return GenerateSessionLabel(sessionID)
+	}
+	return cleaned
+}
+
+// sanitizeAiTitle collapses whitespace, drops prefix delimiters, and truncates
+// to MaxAiTitleLength runes.
+func sanitizeAiTitle(aiTitle string) string {
+	replaced := strings.Map(func(r rune) rune {
+		switch r {
+		case '\n', '\r', '\t':
+			return ' '
+		case '[', ']', '|':
+			return -1
+		}
+		return r
+	}, aiTitle)
+
+	cleaned := strings.Join(strings.Fields(replaced), " ")
+
+	runes := []rune(cleaned)
+	if len(runes) > MaxAiTitleLength {
+		cleaned = strings.TrimSpace(string(runes[:MaxAiTitleLength]))
+	}
+
+	return cleaned
+}
+
 // hexToInt converts hex string to int (takes first 6 characters for safety)
 func hexToInt(hex string) int {
 	if len(hex) > 6 {

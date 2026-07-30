@@ -28,14 +28,15 @@ type NotificationsConfig struct {
 	Webhook                                     WebhookConfig    `json:"webhook"`
 	SuppressQuestionAfterTaskCompleteSeconds    *int             `json:"suppressQuestionAfterTaskCompleteSeconds"`
 	SuppressQuestionAfterAnyNotificationSeconds *int             `json:"suppressQuestionAfterAnyNotificationSeconds"`
-	NotifyOnSubagentStop                        bool             `json:"notifyOnSubagentStop"`      // Send notifications when subagents (Task tool) complete, default: false. Requires suppressForSubagents=false to take effect.
-	SuppressForSubagents                        *bool            `json:"suppressForSubagents"`      // Suppress subagent (SubagentStop) notifications, and Stop notifications whose transcript_path is a subagent/teammate transcript; default: true. Overrides notifyOnSubagentStop.
-	NotifyOnTextResponse                        *bool            `json:"notifyOnTextResponse"`      // Send notifications for text-only responses (no tools), default: true
-	RespectJudgeMode                            *bool            `json:"respectJudgeMode"`          // Honor CLAUDE_HOOK_JUDGE_MODE=true env var to suppress notifications, default: true
-	SuppressFilters                             []SuppressFilter `json:"suppressFilters,omitempty"` // Rules for suppressing notifications by status/branch/folder
-	TeamMode                                    string           `json:"teamMode,omitempty"`        // Team mode: "always" (no suppression, default), "wait-all" (suppress lead, notify when all idle), "never" (silent in team mode)
-	NotifyOnlyWhenUnfocused                     *bool            `json:"notifyOnlyWhenUnfocused"`   // Suppress desktop notifications while the terminal window running Claude Code has OS focus, default: false
-	NotifyDelaySeconds                          *int             `json:"notifyDelaySeconds"`        // Wait N seconds before delivering a desktop notification (paired with notifyOnlyWhenUnfocused, it re-checks focus after the wait), default: 0
+	NotifyOnSubagentStop                        bool             `json:"notifyOnSubagentStop"`        // Send notifications when subagents (Task tool) complete, default: false. Requires suppressForSubagents=false to take effect.
+	SuppressForSubagents                        *bool            `json:"suppressForSubagents"`        // Suppress subagent (SubagentStop) notifications, and Stop notifications whose transcript_path is a subagent/teammate transcript; default: true. Overrides notifyOnSubagentStop.
+	NotifyOnTextResponse                        *bool            `json:"notifyOnTextResponse"`        // Send notifications for text-only responses (no tools), default: true
+	RespectJudgeMode                            *bool            `json:"respectJudgeMode"`            // Honor CLAUDE_HOOK_JUDGE_MODE=true env var to suppress notifications, default: true
+	SuppressFilters                             []SuppressFilter `json:"suppressFilters,omitempty"`   // Rules for suppressing notifications by status/branch/folder
+	TeamMode                                    string           `json:"teamMode,omitempty"`          // Team mode: "always" (no suppression, default), "wait-all" (suppress lead, notify when all idle), "never" (silent in team mode)
+	NotifyOnlyWhenUnfocused                     *bool            `json:"notifyOnlyWhenUnfocused"`     // Suppress desktop notifications while the terminal window running Claude Code has OS focus, default: false
+	NotifyDelaySeconds                          *int             `json:"notifyDelaySeconds"`          // Wait N seconds before delivering a desktop notification (paired with notifyOnlyWhenUnfocused, it re-checks focus after the wait), default: 0
+	SessionNameSource                           string           `json:"sessionNameSource,omitempty"` // Session label source: "generated" (word + session id prefix, default) or "aiTitle" (Claude Code's own session title, falling back to generated)
 }
 
 // DesktopConfig represents desktop notification settings
@@ -561,6 +562,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid teamMode %q (must be one of: always, wait-all, never)", c.Notifications.TeamMode)
 	}
 
+	// Validate sessionNameSource
+	validSessionNameSources := map[string]bool{"": true, "generated": true, "aiTitle": true}
+	if !validSessionNameSources[c.Notifications.SessionNameSource] {
+		return fmt.Errorf("invalid sessionNameSource %q (must be one of: generated, aiTitle)", c.Notifications.SessionNameSource)
+	}
+
 	// Validate suppress-filters
 	validStatuses := map[string]bool{
 		"task_complete":         true,
@@ -682,6 +689,15 @@ func (c *Config) GetTeamMode() string {
 	default:
 		return "always"
 	}
+}
+
+// GetSessionNameSource returns the session label source: "generated" (default)
+// or "aiTitle".
+func (c *Config) GetSessionNameSource() string {
+	if c.Notifications.SessionNameSource == "aiTitle" {
+		return "aiTitle"
+	}
+	return "generated"
 }
 
 // IsStatusEnabled returns true if notifications for this status are enabled
