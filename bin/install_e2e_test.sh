@@ -73,6 +73,32 @@ cleanup_test_dir() {
     fi
 }
 
+write_installed_plugin_registry() {
+    local output_path="$1"
+    local version="$2"
+    local install_path="$3"
+
+    cat > "$output_path" <<EOF
+{
+  "plugins": {
+    "claude-notifications-go@claude-notifications-go": [
+      {"version": "$version", "installPath": "$install_path"}
+    ]
+  }
+}
+EOF
+}
+
+run_bootstrap_version_verification() {
+    local claude_home="$1"
+    local sourceable_bootstrap="$2"
+    local expected_version="$3"
+
+    CLAUDE_CONFIG_DIR="$claude_home" bash -c \
+        'source "$1"; verify_installed_plugin_version "$2"' \
+        _ "$sourceable_bootstrap" "$expected_version"
+}
+
 # Get normalized platform name (matching install.sh)
 get_platform() {
     local os=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -455,6 +481,54 @@ UNAME_EOF
     assert_contains "$output" "Git Bash" "Windows Git Bash guidance shown"
     assert_not_contains "$output" "Platform:" "WSL guard stops before platform output"
     assert_dir_not_exists "$TEST_DIR/.install.lock" "WSL guard stops before acquiring install lock"
+
+    cleanup_test_dir
+}
+
+test_bootstrap_version_verification_uses_installed_manifest_for_unknown_registry() {
+    echo -e "\n${CYAN}▶ test_bootstrap_version_verification_uses_installed_manifest_for_unknown_registry${NC}"
+    setup_test_dir
+
+    local claude_home="$TEST_DIR/claude"
+    local plugin_root="$claude_home/plugins/cache/claude-notifications-go/claude-notifications-go/1.40.1"
+    local sourceable_bootstrap="$TEST_DIR/bootstrap-functions.sh"
+    mkdir -p "$claude_home/plugins" "$plugin_root/.claude-plugin"
+
+    # Load the production helpers without executing bootstrap's main function.
+    sed '/^main "\$@"$/d' "$SCRIPT_DIR/bootstrap.sh" > "$sourceable_bootstrap"
+
+    write_installed_plugin_registry "$claude_home/plugins/installed_plugins.json" "unknown" "$plugin_root"
+    cat > "$plugin_root/.claude-plugin/plugin.json" <<'EOF'
+{"name":"claude-notifications-go","version":"1.40.1"}
+EOF
+
+    local exit_code
+    run_bootstrap_version_verification "$claude_home" "$sourceable_bootstrap" "1.40.1"
+    exit_code=$?
+    assert_exit_code 0 "$exit_code" "Bootstrap accepts the installed manifest when the registry version is unknown"
+
+    write_installed_plugin_registry "$claude_home/plugins/installed_plugins.json" "" "$plugin_root"
+    run_bootstrap_version_verification "$claude_home" "$sourceable_bootstrap" "1.40.1"
+    exit_code=$?
+    assert_exit_code 0 "$exit_code" "Bootstrap accepts the installed manifest when the registry version is empty"
+
+    write_installed_plugin_registry "$claude_home/plugins/installed_plugins.json" "1.39.0" "$plugin_root"
+    run_bootstrap_version_verification "$claude_home" "$sourceable_bootstrap" "1.40.1"
+    exit_code=$?
+    assert_exit_code 1 "$exit_code" "Bootstrap preserves explicit registry version mismatch failures"
+
+    write_installed_plugin_registry "$claude_home/plugins/installed_plugins.json" "unknown" "$plugin_root"
+    cat > "$plugin_root/.claude-plugin/plugin.json" <<'EOF'
+{"name":"claude-notifications-go","version":"1.39.0"}
+EOF
+    run_bootstrap_version_verification "$claude_home" "$sourceable_bootstrap" "1.40.1"
+    exit_code=$?
+    assert_exit_code 1 "$exit_code" "Bootstrap rejects an unknown registry version when the installed manifest is stale"
+
+    rm -f "$plugin_root/.claude-plugin/plugin.json"
+    run_bootstrap_version_verification "$claude_home" "$sourceable_bootstrap" "1.40.1"
+    exit_code=$?
+    assert_exit_code 1 "$exit_code" "Bootstrap rejects an unknown registry version without an installed manifest"
 
     cleanup_test_dir
 }
@@ -2209,6 +2283,7 @@ main() {
         test_platform_detection
         test_binary_name_format
         test_wsl_guard_blocks_linux_install
+        test_bootstrap_version_verification_uses_installed_manifest_for_unknown_registry
         test_lock_created
         test_lock_prevents_parallel
         test_lock_stale_removal

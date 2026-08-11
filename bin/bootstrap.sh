@@ -434,7 +434,27 @@ verify_installed_plugin_version() {
 
     local installed_version=""
     installed_version=$(get_installed_plugin_version)
-    [ "$installed_version" = "$expected_version" ]
+    if [ "$installed_version" = "$expected_version" ]; then
+        return 0
+    fi
+
+    # Claude Code can record a successfully installed plugin with an unknown or
+    # empty registry version. In that case, verify the files at the selected
+    # installPath instead of treating the registry placeholder as authoritative.
+    case "$installed_version" in
+        ""|unknown)
+            local installed_root=""
+            local manifest_version=""
+            installed_root=$(get_installed_plugin_root)
+            if [ -n "$installed_root" ]; then
+                manifest_version=$(get_manifest_version "${installed_root}/.claude-plugin/plugin.json")
+            fi
+            [ "$manifest_version" = "$expected_version" ]
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 # ──────────────────────────────────────────────
