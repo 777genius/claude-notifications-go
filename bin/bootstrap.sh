@@ -191,9 +191,16 @@ get_installed_plugin_version() {
         PLUGIN_KEY="$PLUGIN_KEY" jq -r '
           (.plugins[env.PLUGIN_KEY] // []) as $entries
           | ($entries | map(select((.installPath // "") != ""))) as $with_paths
-          | (if ($with_paths | length) == 0 then $entries else $with_paths end)
-          | sort_by((.version // "0.0.0") | split(".") | map(tonumber? // 0))
-          | if length == 0 then {} else .[-1] end
+          | (if ($with_paths | length) == 0 then $entries else $with_paths end) as $candidates
+          | ($candidates | map(select(
+              ((.version // "") | ascii_downcase | ltrimstr("v")) as $version
+              | $version == "" or $version == "unknown"
+            ))) as $placeholders
+          | if ($placeholders | length) > 0 then $placeholders[-1]
+            else ($candidates
+              | sort_by((.version // "0.0.0") | split(".") | map(tonumber? // 0))
+              | if length == 0 then {} else .[-1] end)
+            end
           | .version // empty
         ' "$INSTALLED_JSON" 2>/dev/null || true
         return 0
@@ -209,6 +216,11 @@ def ver_tuple(value):
         return tuple(int(p) for p in parts)
     except Exception:
         return (0, 0, 0)
+def is_placeholder(value):
+    normalized = str(value or '').lower()
+    if normalized.startswith('v'):
+        normalized = normalized[1:]
+    return normalized in ('', 'unknown')
 try:
     with open(sys.argv[1]) as f:
         d = json.load(f)
@@ -217,7 +229,8 @@ try:
         with_paths = [e for e in entries if isinstance(e, dict) and e.get('installPath')]
         candidates = with_paths or [e for e in entries if isinstance(e, dict)]
         if candidates:
-            best = max(candidates, key=lambda e: ver_tuple(e.get('version')))
+            placeholders = [e for e in candidates if is_placeholder(e.get('version'))]
+            best = placeholders[-1] if placeholders else max(candidates, key=lambda e: ver_tuple(e.get('version')))
             print(best.get('version', '') or '')
 except Exception:
     pass
@@ -245,6 +258,10 @@ function compareVersions(a, b) {
   }
   return 0;
 }
+function isPlaceholder(value) {
+  const normalized = String(value || '').toLowerCase().replace(/^v/, '');
+  return normalized === '' || normalized === 'unknown';
+}
 try {
   const installedPath = process.argv[2];
   const pluginKey = process.env.PLUGIN_KEY;
@@ -253,7 +270,10 @@ try {
   const candidates = entries.filter((entry) => entry.installPath) || entries;
   const pool = candidates.length > 0 ? candidates : entries;
   if (pool.length > 0) {
-    const best = pool.slice().sort(compareVersions).pop();
+    const placeholders = pool.filter((entry) => isPlaceholder(entry.version));
+    const best = placeholders.length > 0
+      ? placeholders[placeholders.length - 1]
+      : pool.slice().sort(compareVersions).pop();
     process.stdout.write(String((best && best.version) || ''));
   }
 } catch (_) {}
@@ -273,9 +293,16 @@ get_installed_plugin_root() {
     if command -v jq &>/dev/null; then
         PLUGIN_KEY="$PLUGIN_KEY" jq -r '
           (.plugins[env.PLUGIN_KEY] // [])
-          | map(select((.installPath // "") != ""))
-          | sort_by((.version // "0.0.0") | split(".") | map(tonumber? // 0))
-          | if length == 0 then {} else .[-1] end
+          | map(select((.installPath // "") != "")) as $candidates
+          | ($candidates | map(select(
+              ((.version // "") | ascii_downcase | ltrimstr("v")) as $version
+              | $version == "" or $version == "unknown"
+            ))) as $placeholders
+          | if ($placeholders | length) > 0 then $placeholders[-1]
+            else ($candidates
+              | sort_by((.version // "0.0.0") | split(".") | map(tonumber? // 0))
+              | if length == 0 then {} else .[-1] end)
+            end
           | .installPath // empty
         ' "$INSTALLED_JSON" 2>/dev/null || true
         return 0
@@ -291,13 +318,19 @@ def ver_tuple(value):
         return tuple(int(p) for p in parts)
     except Exception:
         return (0, 0, 0)
+def is_placeholder(value):
+    normalized = str(value or '').lower()
+    if normalized.startswith('v'):
+        normalized = normalized[1:]
+    return normalized in ('', 'unknown')
 try:
     with open(sys.argv[1]) as f:
         d = json.load(f)
     entries = d.get('plugins', {}).get(sys.argv[2], [])
     candidates = [e for e in entries if isinstance(e, dict) and e.get('installPath')]
     if candidates:
-        best = max(candidates, key=lambda e: ver_tuple(e.get('version')))
+        placeholders = [e for e in candidates if is_placeholder(e.get('version'))]
+        best = placeholders[-1] if placeholders else max(candidates, key=lambda e: ver_tuple(e.get('version')))
         print(best.get('installPath', '') or '')
 except Exception:
     pass
@@ -325,6 +358,10 @@ function compareVersions(a, b) {
   }
   return 0;
 }
+function isPlaceholder(value) {
+  const normalized = String(value || '').toLowerCase().replace(/^v/, '');
+  return normalized === '' || normalized === 'unknown';
+}
 try {
   const installedPath = process.argv[2];
   const pluginKey = process.env.PLUGIN_KEY;
@@ -332,7 +369,10 @@ try {
   const entries = ((data.plugins || {})[pluginKey] || [])
     .filter((entry) => entry && typeof entry === 'object' && entry.installPath);
   if (entries.length > 0) {
-    const best = entries.slice().sort(compareVersions).pop();
+    const placeholders = entries.filter((entry) => isPlaceholder(entry.version));
+    const best = placeholders.length > 0
+      ? placeholders[placeholders.length - 1]
+      : entries.slice().sort(compareVersions).pop();
     process.stdout.write(String((best && best.installPath) || ''));
   }
 } catch (_) {}
@@ -441,7 +481,7 @@ verify_installed_plugin_version() {
     # Claude Code can record a successfully installed plugin with an unknown or
     # empty registry version. In that case, verify the files at the selected
     # installPath instead of treating the registry placeholder as authoritative.
-    case "$installed_version" in
+    case "${installed_version#v}" in
         ""|unknown)
             local installed_root=""
             local manifest_version=""
@@ -524,10 +564,12 @@ install_plugin() {
     expected_version=$(get_manifest_version "$MARKETPLACE_PLUGIN_JSON")
 
     local installed_before=""
+    local installed_root_before=""
     installed_before=$(get_installed_plugin_version)
+    installed_root_before=$(get_installed_plugin_root)
 
     local output
-    if [ -n "$installed_before" ]; then
+    if [ -n "$installed_before" ] || [ -n "$installed_root_before" ]; then
         if output=$(claude plugin update "$PLUGIN_KEY" </dev/null 2>&1); then
             echo -e "${GREEN}✓${NC} Plugin updated"
         else

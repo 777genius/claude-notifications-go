@@ -99,6 +99,20 @@ run_bootstrap_version_verification() {
         _ "$sourceable_bootstrap" "$expected_version"
 }
 
+run_bootstrap_install_plugin() {
+    local claude_home="$1"
+    local sourceable_bootstrap="$2"
+    local command_log="$3"
+
+    CLAUDE_CONFIG_DIR="$claude_home" COMMAND_LOG="$command_log" bash -c '
+        source "$1"
+        claude() {
+            printf "%s\n" "$*" >> "$COMMAND_LOG"
+        }
+        install_plugin
+    ' _ "$sourceable_bootstrap"
+}
+
 # Get normalized platform name (matching install.sh)
 get_platform() {
     local os=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -512,6 +526,25 @@ EOF
     exit_code=$?
     assert_exit_code 0 "$exit_code" "Bootstrap accepts the installed manifest when the registry version is empty"
 
+    write_installed_plugin_registry "$claude_home/plugins/installed_plugins.json" "vunknown" "$plugin_root"
+    run_bootstrap_version_verification "$claude_home" "$sourceable_bootstrap" "1.40.1"
+    exit_code=$?
+    assert_exit_code 0 "$exit_code" "Bootstrap accepts the installed manifest when the registry version is vunknown"
+
+    cat > "$claude_home/plugins/installed_plugins.json" <<EOF
+{
+  "plugins": {
+    "claude-notifications-go@claude-notifications-go": [
+      {"version": "1.39.0", "installPath": "$claude_home/plugins/cache/claude-notifications-go/claude-notifications-go/1.39.0"},
+      {"version": "unknown", "installPath": "$plugin_root"}
+    ]
+  }
+}
+EOF
+    run_bootstrap_version_verification "$claude_home" "$sourceable_bootstrap" "1.40.1"
+    exit_code=$?
+    assert_exit_code 0 "$exit_code" "Bootstrap verifies the path paired with a current unknown entry before older numeric versions"
+
     write_installed_plugin_registry "$claude_home/plugins/installed_plugins.json" "1.39.0" "$plugin_root"
     run_bootstrap_version_verification "$claude_home" "$sourceable_bootstrap" "1.40.1"
     exit_code=$?
@@ -529,6 +562,37 @@ EOF
     run_bootstrap_version_verification "$claude_home" "$sourceable_bootstrap" "1.40.1"
     exit_code=$?
     assert_exit_code 1 "$exit_code" "Bootstrap rejects an unknown registry version without an installed manifest"
+
+    cleanup_test_dir
+}
+
+test_bootstrap_empty_registry_version_preserves_installed_manifest() {
+    echo -e "\n${CYAN}▶ test_bootstrap_empty_registry_version_preserves_installed_manifest${NC}"
+    setup_test_dir
+
+    local claude_home="$TEST_DIR/claude"
+    local plugin_root="$claude_home/plugins/cache/claude-notifications-go/claude-notifications-go/1.40.1"
+    local marketplace_manifest="$claude_home/plugins/marketplaces/claude-notifications-go/.claude-plugin/plugin.json"
+    local sourceable_bootstrap="$TEST_DIR/bootstrap-functions.sh"
+    local command_log="$TEST_DIR/claude-commands.log"
+    mkdir -p "$claude_home/plugins" "$plugin_root/.claude-plugin" "$(dirname "$marketplace_manifest")"
+
+    sed '/^main "\$@"$/d' "$SCRIPT_DIR/bootstrap.sh" > "$sourceable_bootstrap"
+    write_installed_plugin_registry "$claude_home/plugins/installed_plugins.json" "" "$plugin_root"
+    cat > "$plugin_root/.claude-plugin/plugin.json" <<'EOF'
+{"name":"claude-notifications-go","version":"1.40.1"}
+EOF
+    cat > "$marketplace_manifest" <<'EOF'
+{"name":"claude-notifications-go","version":"1.40.1"}
+EOF
+
+    local exit_code
+    run_bootstrap_install_plugin "$claude_home" "$sourceable_bootstrap" "$command_log"
+    exit_code=$?
+    assert_exit_code 0 "$exit_code" "Bootstrap keeps a path-bearing empty-version installation"
+    assert_file_exists "$plugin_root/.claude-plugin/plugin.json" "Bootstrap does not clear the manifest before verification"
+    assert_contains "$(cat "$command_log")" "plugin update" "Bootstrap updates a path-bearing empty-version installation"
+    assert_not_contains "$(cat "$command_log")" "plugin install" "Bootstrap avoids an unnecessary reinstall for an empty registry version"
 
     cleanup_test_dir
 }
@@ -2284,6 +2348,7 @@ main() {
         test_binary_name_format
         test_wsl_guard_blocks_linux_install
         test_bootstrap_version_verification_uses_installed_manifest_for_unknown_registry
+        test_bootstrap_empty_registry_version_preserves_installed_manifest
         test_lock_created
         test_lock_prevents_parallel
         test_lock_stale_removal
