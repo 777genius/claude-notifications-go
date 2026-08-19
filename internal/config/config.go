@@ -47,6 +47,7 @@ type DesktopConfig struct {
 	AudioDevice      string  `json:"audioDevice"`      // Audio output device name (empty = system default)
 	AppIcon          string  `json:"appIcon"`          // Path to app icon
 	ClickToFocus     bool    `json:"clickToFocus"`     // macOS/Linux/Windows: activate the originating terminal window on notification click (default: true)
+	ShowSessionLabel *bool   `json:"showSessionLabel"` // Include the "[name id]" session label in the notification title (default: true)
 	TerminalBundleID string  `json:"terminalBundleId"` // macOS: override auto-detected terminal bundle ID (empty = auto)
 }
 
@@ -710,6 +711,15 @@ func (c *Config) IsTerminalBellEnabled() bool {
 		return true // Default: enabled
 	}
 	return *c.Notifications.Desktop.TerminalBell
+}
+
+// IsSessionLabelEnabled returns true if the session label should be appended to the
+// notification title (default: true)
+func (c *Config) IsSessionLabelEnabled() bool {
+	if c.Notifications.Desktop.ShowSessionLabel == nil {
+		return true // Default: enabled
+	}
+	return *c.Notifications.Desktop.ShowSessionLabel
 }
 
 // IsStatusDesktopEnabled returns true if desktop notifications for this status are enabled

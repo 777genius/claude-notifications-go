@@ -98,7 +98,7 @@ func (n *Notifier) SendDesktop(status analyzer.Status, message, sessionID, cwd s
 	// Build clean title (status only + session name)
 	// Format: "✅ Completed [peak]" or "✅ Completed"
 	title := statusInfo.Title
-	if sessionName != "" {
+	if sessionName != "" && n.cfg.IsSessionLabelEnabled() {
 		title = fmt.Sprintf("%s [%s]", title, sessionName)
 	}
 
