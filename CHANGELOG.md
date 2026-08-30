@@ -5,10 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.41.0] - 2026-08-31
+
+### Added
+- **Optional session label in notification titles** - new `desktop.showSessionLabel` setting (default `true`) keeps existing behavior; set it to `false` to drop the `[name id]` session label from titles so the branch/folder subtitle gets the space ([#134](https://github.com/777genius/claude-notifications-go/pull/134))
+- **Linux: Alacritty click-to-focus detection** - terminal detection now recognizes `ALACRITTY_WINDOW_ID` (Alacritty deliberately sets no `TERM_PROGRAM`), so notification clicks can raise Alacritty windows instead of doing nothing ([#121](https://github.com/777genius/claude-notifications-go/pull/121))
 
 ### Fixed
 - **Ghostty: cwd fallback no longer switches to an arbitrary same-directory tab** - click-to-focus selects a terminal by working directory only when exactly one tab matches, leaving ambiguous sessions to the existing window-level fallback instead ([#115](https://github.com/777genius/claude-notifications-go/issues/115)).
+- **Windows: toast clicks no longer flash a console window and raise the right window across projects** - protocol activation now targets a GUI-subsystem `-focus.exe` sibling binary (no console auto-allocation, with fallback to the main binary on older installs), and window selection prefers the window whose title contains the project folder when one process owns several windows ([#118](https://github.com/777genius/claude-notifications-go/issues/118), [#120](https://github.com/777genius/claude-notifications-go/pull/120))
+- **Bootstrap: unknown registry versions no longer trigger reinstall loops** - when Claude Code records the installed plugin version as `unknown` or empty, bootstrap verifies the manifest at the recorded install path instead of treating the placeholder as a mismatch; explicit version mismatches and stale or missing manifests still fail closed ([#132](https://github.com/777genius/claude-notifications-go/issues/132), [#133](https://github.com/777genius/claude-notifications-go/pull/133))
 
 ## [1.40.1] - 2026-07-17
 

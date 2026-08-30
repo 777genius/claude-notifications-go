@@ -1,6 +1,6 @@
 {
     "name": "claude-notifications-go",
-    "version": "1.40.1",
+    "version": "1.41.0",
     "description": "Smart notifications for Claude Code task statuses (Go implementation)",
     "author": {
         "name": "777genius",

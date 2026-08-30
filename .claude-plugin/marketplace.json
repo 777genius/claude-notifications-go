@@ -6,13 +6,13 @@
     },
     "metadata": {
         "description": "Smart notifications marketplace for Claude Code (Go implementation)",
-        "version": "1.40.1"
+        "version": "1.41.0"
     },
     "plugins": [{
         "name": "claude-notifications-go",
         "source": "./",
         "description": "Smart notifications for Claude Code task statuses (Go implementation)",
-        "version": "1.40.1",
+        "version": "1.41.0",
         "author": {
             "name": "777genius",
             "email": "iliyazelenkog@gmail.com"
