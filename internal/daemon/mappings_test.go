@@ -25,6 +25,7 @@ func saveTerminalEnv(t *testing.T) func() {
 		"XDG_SESSION_DESKTOP",
 		"WEZTERM_PANE",
 		"WEZTERM_UNIX_SOCKET",
+		"ALACRITTY_WINDOW_ID",
 	}
 	type envState struct {
 		value string
@@ -507,6 +508,33 @@ func TestGetTerminalName_TermProgramTakesPriority(t *testing.T) {
 	result := GetTerminalName()
 	if result != "alacritty" {
 		t.Errorf("GetTerminalName() with TERM_PROGRAM+VSCODE = %q, want %q", result, "alacritty")
+	}
+}
+
+func TestGetTerminalName_Alacritty(t *testing.T) {
+	restore := saveTerminalEnv(t)
+	defer restore()
+
+	os.Setenv("ALACRITTY_WINDOW_ID", "103739285932688")
+
+	result := GetTerminalName()
+	if result != "alacritty" {
+		t.Errorf("GetTerminalName() with ALACRITTY_WINDOW_ID = %q, want %q", result, "alacritty")
+	}
+}
+
+// A supported terminal running inside Alacritty inherits ALACRITTY_WINDOW_ID, so
+// the more specific indicator has to win or its windows are never found.
+func TestGetTerminalName_AlacrittyYieldsToMoreSpecificTerminal(t *testing.T) {
+	restore := saveTerminalEnv(t)
+	defer restore()
+
+	os.Setenv("ALACRITTY_WINDOW_ID", "103739285932688")
+	os.Setenv("KONSOLE_VERSION", "220401")
+
+	result := GetTerminalName()
+	if result != "konsole" {
+		t.Errorf("GetTerminalName() with ALACRITTY_WINDOW_ID+KONSOLE_VERSION = %q, want %q", result, "konsole")
 	}
 }
 

@@ -257,6 +257,13 @@ func GetTerminalName() string {
 		return "konsole"
 	}
 
+	// Check Alacritty (deliberately never sets TERM_PROGRAM, but exports
+	// ALACRITTY_WINDOW_ID into every window it spawns). Checked last so that a
+	// more specific indicator wins when a supported terminal is nested inside it.
+	if os.Getenv("ALACRITTY_WINDOW_ID") != "" {
+		return "alacritty"
+	}
+
 	// Fallback to generic terminal
 	return "Terminal"
 }
