@@ -816,6 +816,71 @@ func TestIsTerminalBellEnabled(t *testing.T) {
 	assert.False(t, cfg.IsTerminalBellEnabled(), "TerminalBell should be false when set to false")
 }
 
+func TestIsSessionLabelEnabled(t *testing.T) {
+	// Default (nil) should be true
+	cfg := DefaultConfig()
+	assert.True(t, cfg.IsSessionLabelEnabled(), "ShowSessionLabel should be true by default (nil)")
+
+	// Explicitly true
+	labelOn := true
+	cfg.Notifications.Desktop.ShowSessionLabel = &labelOn
+	assert.True(t, cfg.IsSessionLabelEnabled(), "ShowSessionLabel should be true when set to true")
+
+	// Explicitly false
+	labelOff := false
+	cfg.Notifications.Desktop.ShowSessionLabel = &labelOff
+	assert.False(t, cfg.IsSessionLabelEnabled(), "ShowSessionLabel should be false when set to false")
+}
+
+func TestLoadConfig_ShowSessionLabel(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	// Test explicit showSessionLabel: false
+	configJSON := `{
+		"notifications": {
+			"desktop": {
+				"enabled": true,
+				"sound": true,
+				"showSessionLabel": false
+			}
+		}
+	}`
+
+	err := os.WriteFile(configPath, []byte(configJSON), 0644)
+	require.NoError(t, err)
+
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+
+	require.NotNil(t, cfg.Notifications.Desktop.ShowSessionLabel)
+	assert.False(t, cfg.IsSessionLabelEnabled(), "ShowSessionLabel should be false when explicitly set")
+}
+
+func TestLoadConfig_ShowSessionLabel_DefaultWhenNotSpecified(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	// Config without showSessionLabel - existing installs keep the label
+	configJSON := `{
+		"notifications": {
+			"desktop": {
+				"enabled": true,
+				"sound": true
+			}
+		}
+	}`
+
+	err := os.WriteFile(configPath, []byte(configJSON), 0644)
+	require.NoError(t, err)
+
+	cfg, err := Load(configPath)
+	require.NoError(t, err)
+
+	assert.Nil(t, cfg.Notifications.Desktop.ShowSessionLabel)
+	assert.True(t, cfg.IsSessionLabelEnabled(), "ShowSessionLabel should default to true")
+}
+
 func TestLoadConfig_ClickToFocus(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.json")
