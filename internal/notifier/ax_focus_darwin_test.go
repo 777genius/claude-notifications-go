@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -308,5 +309,22 @@ func TestTryGhosttyExactFocus_FallsBackToCWDWhenTerminalIDFails(t *testing.T) {
 	wantCandidates := []string{"/tmp/project"}
 	if !reflect.DeepEqual(gotCandidates, wantCandidates) {
 		t.Fatalf("runner candidates = %#v, want %#v", gotCandidates, wantCandidates)
+	}
+}
+
+func TestGhosttyFocusAppleScript_RequiresUniqueCWDMatch(t *testing.T) {
+	countMatch := strings.Index(ghosttyFocusAppleScript, "set matchCount to matchCount + 1")
+	uniqueGuard := strings.Index(ghosttyFocusAppleScript, "if matchCount is 1 then")
+	focusMatch := strings.Index(ghosttyFocusAppleScript, "focus matchedTerminal")
+	ambiguousGuard := strings.Index(ghosttyFocusAppleScript, "if matchCount is greater than 1 then")
+
+	if countMatch < 0 || uniqueGuard < 0 || focusMatch < 0 || ambiguousGuard < 0 {
+		t.Fatalf("Ghostty cwd focus script must count matches and reject ambiguity:\n%s", ghosttyFocusAppleScript)
+	}
+	if !(countMatch < uniqueGuard && uniqueGuard < focusMatch && focusMatch < ambiguousGuard) {
+		t.Fatalf("Ghostty cwd focus script must count all matches before focusing:\n%s", ghosttyFocusAppleScript)
+	}
+	if strings.Contains(ghosttyFocusAppleScript, "focus t") {
+		t.Fatalf("Ghostty cwd focus script must not focus the first matching terminal:\n%s", ghosttyFocusAppleScript)
 	}
 }
