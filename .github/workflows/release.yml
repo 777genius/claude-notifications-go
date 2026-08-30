@@ -127,6 +127,12 @@ jobs:
           LIST_SOUNDS_BINARY="${{ matrix.binary }}"
           LIST_SOUNDS_BINARY="${LIST_SOUNDS_BINARY//claude-notifications/list-sounds}"
           go build -ldflags="-s -w" -trimpath -o "dist/$LIST_SOUNDS_BINARY" ./cmd/list-sounds
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            echo "Building claude-notifications focus-handler (GUI subsystem, no console flash on toast click)..."
+            FOCUS_BINARY="${{ matrix.binary }}"
+            FOCUS_BINARY="${FOCUS_BINARY%.exe}-focus.exe"
+            go build -ldflags="-s -w -H=windowsgui" -trimpath -o "dist/$FOCUS_BINARY" ./cmd/claude-notifications
+          fi
 
       - name: Verify macOS deployment target
         if: matrix.platform == 'darwin'
@@ -302,6 +308,13 @@ jobs:
               exit 1
             fi
           done
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            focus_binary="${MAIN_BINARY%.exe}-focus.exe"
+            if [ ! -s "dist/$focus_binary" ]; then
+              echo "Missing or empty artifact: $focus_binary"
+              exit 1
+            fi
+          fi
         shell: bash
 
       - name: Make binaries executable (Unix)

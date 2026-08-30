@@ -34,6 +34,8 @@ build-all: ## Build optimized binaries for all platforms
 	@GOOS=linux GOARCH=amd64 go build $(RELEASE_FLAGS) -o dist/$(BINARY)-linux-amd64 ./cmd/claude-notifications
 	@GOOS=linux GOARCH=arm64 go build $(RELEASE_FLAGS) -o dist/$(BINARY)-linux-arm64 ./cmd/claude-notifications
 	@GOOS=windows GOARCH=amd64 go build $(RELEASE_FLAGS) -o dist/$(BINARY)-windows-amd64.exe ./cmd/claude-notifications
+	@echo "Building claude-notifications focus-handler (GUI subsystem, no console flash on toast click)..."
+	@GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -H=windowsgui" -trimpath -o dist/$(BINARY)-windows-amd64-focus.exe ./cmd/claude-notifications
 	@echo "Building sound-preview..."
 	@GOOS=darwin GOARCH=amd64 go build $(RELEASE_FLAGS) -o dist/$(SOUND_PREVIEW)-darwin-amd64 ./cmd/sound-preview
 	@GOOS=darwin GOARCH=arm64 go build $(RELEASE_FLAGS) -o dist/$(SOUND_PREVIEW)-darwin-arm64 ./cmd/sound-preview

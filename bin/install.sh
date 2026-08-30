@@ -137,17 +137,25 @@ detect_platform() {
         SOUND_PREVIEW_NAME="sound-preview-${PLATFORM}-${ARCH}.exe"
         LIST_DEVICES_NAME="list-devices-${PLATFORM}-${ARCH}.exe"
         LIST_SOUNDS_NAME="list-sounds-${PLATFORM}-${ARCH}.exe"
+        # GUI-subsystem sibling of BINARY_NAME, registered as the click-to-focus
+        # target so a toast click never flashes a console window (see winfocus.go).
+        FOCUS_HANDLER_NAME="claude-notifications-${PLATFORM}-${ARCH}-focus.exe"
     else
         BINARY_NAME="claude-notifications-${PLATFORM}-${ARCH}"
         SOUND_PREVIEW_NAME="sound-preview-${PLATFORM}-${ARCH}"
         LIST_DEVICES_NAME="list-devices-${PLATFORM}-${ARCH}"
         LIST_SOUNDS_NAME="list-sounds-${PLATFORM}-${ARCH}"
+        FOCUS_HANDLER_NAME=""
     fi
 
     BINARY_PATH="${SCRIPT_DIR}/${BINARY_NAME}"
     SOUND_PREVIEW_PATH="${SCRIPT_DIR}/${SOUND_PREVIEW_NAME}"
     LIST_DEVICES_PATH="${SCRIPT_DIR}/${LIST_DEVICES_NAME}"
     LIST_SOUNDS_PATH="${SCRIPT_DIR}/${LIST_SOUNDS_NAME}"
+    FOCUS_HANDLER_PATH=""
+    if [ -n "$FOCUS_HANDLER_NAME" ]; then
+        FOCUS_HANDLER_PATH="${SCRIPT_DIR}/${FOCUS_HANDLER_NAME}"
+    fi
     CHECKSUMS_PATH="${SCRIPT_DIR}/.checksums.txt"
 
     configure_curl_options
@@ -586,7 +594,7 @@ check_github_availability() {
 check_existing() {
     if [ "$FORCE_UPDATE" = true ]; then
         echo -e "${BLUE}🔄 Force update requested, removing old files...${NC}"
-        rm -f "$BINARY_PATH" "$SOUND_PREVIEW_PATH" "$LIST_DEVICES_PATH" "$LIST_SOUNDS_PATH" 2>/dev/null
+        rm -f "$BINARY_PATH" "$SOUND_PREVIEW_PATH" "$LIST_DEVICES_PATH" "$LIST_SOUNDS_PATH" "$FOCUS_HANDLER_PATH" 2>/dev/null
         # Remove symlinks (Unix) and .bat wrappers (Windows)
         rm -f "${SCRIPT_DIR}/claude-notifications" "${SCRIPT_DIR}/sound-preview" "${SCRIPT_DIR}/list-devices" "${SCRIPT_DIR}/list-sounds" 2>/dev/null
         rm -f "${SCRIPT_DIR}/claude-notifications.bat" "${SCRIPT_DIR}/sound-preview.bat" "${SCRIPT_DIR}/list-devices.bat" "${SCRIPT_DIR}/list-sounds.bat" 2>/dev/null
@@ -656,11 +664,16 @@ download_utilities() {
     download_utility "$SOUND_PREVIEW_NAME" "$SOUND_PREVIEW_PATH" || true
     download_utility "$LIST_DEVICES_NAME" "$LIST_DEVICES_PATH" || true
     download_utility "$LIST_SOUNDS_NAME" "$LIST_SOUNDS_PATH" || true
+    if [ -n "$FOCUS_HANDLER_NAME" ]; then
+        download_utility "$FOCUS_HANDLER_NAME" "$FOCUS_HANDLER_PATH" || true
+    fi
 
     # Create symlinks for utilities (may fail if downloads failed - that's OK)
     create_utility_symlink "sound-preview" "$SOUND_PREVIEW_NAME" "$SOUND_PREVIEW_PATH" || true
     create_utility_symlink "list-devices" "$LIST_DEVICES_NAME" "$LIST_DEVICES_PATH" || true
     create_utility_symlink "list-sounds" "$LIST_SOUNDS_NAME" "$LIST_SOUNDS_PATH" || true
+    # No symlink for the focus handler: it's only ever launched by the Go code's
+    # own registry entry via its full path, never invoked by name from a shell.
 }
 
 # Create symlink for a utility binary

@@ -33,6 +33,7 @@ var (
 
 	kernel32               = windows.NewLazySystemDLL("kernel32.dll")
 	procGetCurrentThreadId = kernel32.NewProc("GetCurrentThreadId")
+	procFreeConsole        = kernel32.NewProc("FreeConsole")
 )
 
 const (
@@ -101,24 +102,45 @@ func windowText(hwnd uintptr) string {
 	return windows.UTF16ToString(buf)
 }
 
-// windowForPID returns a window owned by pid, preferring one with a title.
-func windowForPID(list []winInfo, pid uint32) uintptr {
+// windowForPID returns a window owned by pid, resolving ambiguity when pid
+// owns several top-level windows (e.g. Windows Terminal's shared "monarch"
+// process hosting one window per project). Preference order:
+//  1. a window whose title contains folder — the only signal that can tell
+//     two same-PID windows for different projects apart.
+//  2. hint, if it is itself one of pid's windows (typically the foreground
+//     window at capture time).
+//  3. any window with a non-empty title.
+//  4. any window at all.
+func windowForPID(list []winInfo, pid uint32, folder string, hint uintptr) uintptr {
 	if pid == 0 {
 		return 0
 	}
-	var fallback uintptr
+	lower := strings.ToLower(strings.TrimSpace(folder))
+	var hintOwned, firstTitled, firstAny uintptr
 	for _, w := range list {
 		if w.pid != pid {
 			continue
 		}
-		if w.title != "" {
+		if lower != "" && w.title != "" && strings.Contains(strings.ToLower(w.title), lower) {
 			return w.hwnd
 		}
-		if fallback == 0 {
-			fallback = w.hwnd
+		if w.hwnd == hint && hintOwned == 0 {
+			hintOwned = w.hwnd
+		}
+		if w.title != "" && firstTitled == 0 {
+			firstTitled = w.hwnd
+		}
+		if firstAny == 0 {
+			firstAny = w.hwnd
 		}
 	}
-	return fallback
+	if hintOwned != 0 {
+		return hintOwned
+	}
+	if firstTitled != 0 {
+		return firstTitled
+	}
+	return firstAny
 }
 
 func windowByTitleContains(list []winInfo, needle string) uintptr {
@@ -160,28 +182,19 @@ func CaptureFocusContext(cwd string) (FocusContext, bool) {
 	parents := parentMap()
 
 	// A single process can own several top-level windows — notably the Windows
-	// Terminal "monarch" hosting multiple windows. When the foreground window
-	// belongs to the terminal process we resolve to, prefer it: it is almost
-	// always the window the user was looking at when Claude produced output.
+	// Terminal "monarch" hosting one window per project. The foreground window
+	// is passed in as a hint (it's often the window the user was looking at),
+	// but windowForPID prefers an explicit folder-title match first: trusting
+	// "foreground window's PID matches this ancestor" alone is wrong whenever
+	// that shared PID owns windows for other projects too.
 	fg, _, _ := procGetForegroundWindow.Call()
-	fgPID := uint32(0)
-	if fg != 0 {
-		fgPID = pidForWindow(fg)
-	}
 
 	pid := windows.GetCurrentProcessId()
 	seen := map[uint32]bool{}
 	for i := 0; i < 32 && pid != 0 && !seen[pid]; i++ {
 		seen[pid] = true
 
-		hwnd := uintptr(0)
-		if fg != 0 && fgPID == pid {
-			hwnd = fg
-		}
-		if hwnd == 0 {
-			hwnd = windowForPID(list, pid)
-		}
-		if hwnd != 0 {
+		if hwnd := windowForPID(list, pid, folder, fg); hwnd != 0 {
 			return FocusContext{
 				HWND:   int64(hwnd),
 				PID:    pid,
@@ -211,7 +224,7 @@ func resolveWindow(ctx FocusContext) uintptr {
 			return hwnd
 		}
 	}
-	if hwnd := windowForPID(list, ctx.PID); hwnd != 0 {
+	if hwnd := windowForPID(list, ctx.PID, ctx.Folder, 0); hwnd != 0 {
 		return hwnd
 	}
 	for _, needle := range []string{ctx.Folder, ctx.Title} {
@@ -220,6 +233,18 @@ func resolveWindow(ctx FocusContext) uintptr {
 		}
 	}
 	return 0
+}
+
+// HideConsole detaches the calling process from its console. A process
+// launched with no inherited console (e.g. by clicking a toast's
+// protocol-activation link) gets one auto-created and shown by Windows for
+// the console-subsystem binary; calling this immediately on entry tears it
+// down again before the flash is visible for long. Safe to call even when a
+// real console is inherited (e.g. manual invocation from a terminal for
+// debugging) — FreeConsole only detaches this process, it doesn't close the
+// console window while other processes (the shell) remain attached to it.
+func HideConsole() {
+	procFreeConsole.Call()
 }
 
 // Focus raises the terminal window described by ctx to the foreground.
@@ -269,8 +294,8 @@ func forceForeground(hwnd uintptr) {
 }
 
 // EnsureRegistered registers (or refreshes) the click-to-focus URI handler under
-// HKCU pointing at the currently running executable. Idempotent: a no-op when
-// the stored command already matches.
+// HKCU pointing at the focus-handler executable. Idempotent: a no-op when the
+// stored command already matches.
 func EnsureRegistered() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -279,7 +304,8 @@ func EnsureRegistered() error {
 	if abs, err := filepath.Abs(exe); err == nil {
 		exe = abs
 	}
-	want := commandValue(exe)
+	target := focusHandlerExecutable(exe)
+	want := commandValue(target)
 
 	cmdPath := `Software\Classes\` + ProtocolScheme + `\shell\open\command`
 	if k, err := registry.OpenKey(registry.CURRENT_USER, cmdPath, registry.QUERY_VALUE); err == nil {
@@ -289,7 +315,25 @@ func EnsureRegistered() error {
 			return nil
 		}
 	}
-	return RegisterProtocolHandler(exe)
+	return RegisterProtocolHandler(target)
+}
+
+// focusHandlerExecutable returns the GUI-subsystem sibling of the running
+// console exe (same name plus a "-focus" suffix before the extension) that
+// should be registered as the click-to-focus target instead of exe itself.
+// Windows auto-creates and shows a console window for the instant a
+// console-subsystem process starts with no inherited console — exactly what
+// happens on a toast click — and that first paint can't be suppressed from
+// inside the process once it's running. A GUI-subsystem binary never gets one
+// allocated in the first place. Falls back to exe when the sibling hasn't
+// been installed alongside it (older install, or a dev build without one).
+func focusHandlerExecutable(exe string) string {
+	ext := filepath.Ext(exe)
+	sibling := strings.TrimSuffix(exe, ext) + "-focus" + ext
+	if _, err := os.Stat(sibling); err == nil {
+		return sibling
+	}
+	return exe
 }
 
 func commandValue(exe string) string {

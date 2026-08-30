@@ -17,3 +17,6 @@ func Focus(ctx FocusContext) error { return errWindowsOnly }
 
 // EnsureRegistered is a no-op on non-Windows platforms.
 func EnsureRegistered() error { return errWindowsOnly }
+
+// HideConsole is a no-op on non-Windows platforms.
+func HideConsole() {}

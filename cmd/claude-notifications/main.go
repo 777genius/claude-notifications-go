@@ -483,6 +483,12 @@ func runPlaySound(args []string) {
 // launches the registered claude-notify-focus: protocol with the encoded focus
 // context as the single argument; we decode it and raise the terminal window.
 func runFocusWindows(args []string) {
+	// Clicking a toast's protocol-activation link launches this process with no
+	// inherited console; Windows auto-creates and shows one for the duration of
+	// this console-subsystem binary. Detach immediately to cut the visible
+	// flash as short as possible.
+	winfocus.HideConsole()
+
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Error: focus-windows requires a focus URI argument")
 		os.Exit(1)
