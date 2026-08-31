@@ -19,16 +19,6 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// focusInfo holds the focus target and folder for a notification.
-type focusInfo struct {
-	target        string
-	folder        string
-	windowID      string
-	windowTitle   string
-	wezTermPaneID string
-	wezTermSocket string
-}
-
 // Server is the notification daemon server
 type Server struct {
 	conn      *dbus.Conn
@@ -37,7 +27,7 @@ type Server struct {
 	startTime time.Time
 
 	// Focus context mapping: notification ID -> focus info
-	focusCtx   map[uint32]focusInfo
+	focusCtx   map[uint32]FocusHints
 	focusCtxMu sync.RWMutex
 
 	// Idle timeout for auto-shutdown
@@ -75,7 +65,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	s := &Server{
 		conn:         conn,
 		startTime:    time.Now(),
-		focusCtx:     make(map[uint32]focusInfo),
+		focusCtx:     make(map[uint32]FocusHints),
 		idleTimeout:  cfg.IdleTimeout,
 		lastActivity: time.Now(),
 		done:         make(chan struct{}),
@@ -281,18 +271,23 @@ func (s *Server) handleNotification(req *NotifyRequest) (*NotifyResponse, error)
 
 	// Store focus context
 	s.focusCtxMu.Lock()
-	s.focusCtx[id] = focusInfo{
-		target:        focusTarget,
-		folder:        req.FocusFolder,
-		windowID:      req.FocusWindowID,
-		windowTitle:   req.FocusWindowTitle,
-		wezTermPaneID: req.FocusWezTermPaneID,
-		wezTermSocket: req.FocusWezTermSocket,
+	s.focusCtx[id] = FocusHints{
+		TerminalName:  focusTarget,
+		FolderName:    req.FocusFolder,
+		WindowID:      req.FocusWindowID,
+		WindowTitle:   req.FocusWindowTitle,
+		WezTermPaneID: req.FocusWezTermPaneID,
+		WezTermSocket: req.FocusWezTermSocket,
+		ZellijSession: req.FocusZellijSession,
+		ZellijPaneID:  req.FocusZellijPaneID,
+		ZellijTabName: req.FocusZellijTabName,
+		ZellijMode:    req.FocusZellijMode,
 	}
 	s.focusCtxMu.Unlock()
 
-	log.Printf("[INFO] Notification sent: ID=%d, focus_target=%s, focus_folder=%s, focus_window_id=%s, focus_window_title=%q, wezterm_pane=%s",
-		id, focusTarget, req.FocusFolder, req.FocusWindowID, req.FocusWindowTitle, req.FocusWezTermPaneID)
+	log.Printf("[INFO] Notification sent: ID=%d, focus_target=%s, focus_folder=%s, focus_window_id=%s, focus_window_title=%q, wezterm_pane=%s, zellij=%s/%s mode=%s",
+		id, focusTarget, req.FocusFolder, req.FocusWindowID, req.FocusWindowTitle, req.FocusWezTermPaneID,
+		req.FocusZellijSession, req.FocusZellijPaneID, req.FocusZellijMode)
 
 	return &NotifyResponse{
 		Success:        true,
@@ -310,14 +305,8 @@ func (s *Server) onActionInvoked(sig *notify.ActionInvokedSignal) {
 
 	// Get focus target
 	s.focusCtxMu.RLock()
-	info, exists := s.focusCtx[sig.ID]
+	hints, exists := s.focusCtx[sig.ID]
 	s.focusCtxMu.RUnlock()
-	focusTarget := info.target
-	focusFolder := info.folder
-	focusWindowID := info.windowID
-	focusWindowTitle := info.windowTitle
-	wezTermPaneID := info.wezTermPaneID
-	wezTermSocket := info.wezTermSocket
 
 	if !exists {
 		log.Printf("[WARN] No focus context for notification %d", sig.ID)
@@ -325,9 +314,10 @@ func (s *Server) onActionInvoked(sig *notify.ActionInvokedSignal) {
 	}
 
 	// Attempt to focus
-	log.Printf("[INFO] Attempting to focus: %s (folder: %s, window_id: %s, window_title: %q, wezterm_pane: %s)",
-		focusTarget, focusFolder, focusWindowID, focusWindowTitle, wezTermPaneID)
-	if err := TryFocusWithHints(focusTarget, focusFolder, focusWindowID, focusWindowTitle, wezTermPaneID, wezTermSocket); err != nil {
+	log.Printf("[INFO] Attempting to focus: %s (folder: %s, window_id: %s, window_title: %q, wezterm_pane: %s, zellij: %s/%s mode=%s)",
+		hints.TerminalName, hints.FolderName, hints.WindowID, hints.WindowTitle, hints.WezTermPaneID,
+		hints.ZellijSession, hints.ZellijPaneID, hints.ZellijMode)
+	if err := TryFocusWithHints(hints); err != nil {
 		log.Printf("[ERROR] Focus failed: %v", err)
 	} else {
 		log.Printf("[INFO] Focus succeeded")

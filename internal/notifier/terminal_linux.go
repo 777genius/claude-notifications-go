@@ -57,7 +57,7 @@ func sendLinuxNotification(title, body, appIcon string, cfg *config.Config, cwd 
 	}
 
 	// Try to use daemon for click-to-focus
-	if err := sendViaDaemon(title, body, cwd); err == nil {
+	if err := sendViaDaemon(title, body, cwd, cfg); err == nil {
 		logging.Debug("Notification sent via daemon with click-to-focus support")
 		return nil
 	} else {
@@ -71,7 +71,7 @@ func sendLinuxNotification(title, body, appIcon string, cfg *config.Config, cwd 
 // sendViaDaemon sends a notification via the background daemon.
 // Returns an error if daemon is not available or fails.
 // cwd is used to extract the project folder name for window-specific focus.
-func sendViaDaemon(title, body, cwd string) error {
+func sendViaDaemon(title, body, cwd string, cfg *config.Config) error {
 	// Start daemon on-demand (no-op if already running)
 	if !daemon.StartDaemonOnDemand() {
 		return daemon.ErrDaemonNotAvailable
@@ -102,7 +102,21 @@ func sendViaDaemon(title, body, cwd string) error {
 	// Capture WezTerm pane info only when the focus target is actually WezTerm.
 	wezTermPaneID, wezTermSocket := daemon.GetWezTermFocusHints(focusTarget)
 
-	_, err = client.SendNotification(title, body, focusTarget, folderName, focusWindowID, focusWindowTitle, wezTermPaneID, wezTermSocket, 30)
+	hints := daemon.FocusHints{
+		TerminalName:  focusTarget,
+		FolderName:    folderName,
+		WindowID:      focusWindowID,
+		WindowTitle:   focusWindowTitle,
+		WezTermPaneID: wezTermPaneID,
+		WezTermSocket: wezTermSocket,
+	}
+
+	// Zellij is not tied to a focus target the way WezTerm is: it runs inside
+	// whichever terminal the user launched it from, so it is consulted for
+	// every terminal.
+	applyZellijFocusHints(cfg, &hints)
+
+	_, err = client.SendNotification(title, body, hints, 30)
 	return err
 }
 
