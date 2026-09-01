@@ -1,5 +1,10 @@
 # Фаза 0: архитектурные решения для Codex notification support в claude-notifications-go
 
+> [!WARNING]
+> **ИСТОРИЧЕСКИЙ ДОКУМЕНТ. НЕ РЕАЛИЗОВЫВАТЬ БУКВАЛЬНО.** Нормативный контракт находится в
+> `00-overview-and-decisions.md`. В частности, устарели решения про manual installer, config,
+> trust hash, hand-rolled decoder, CLI и Go 1.21. При любом конфликте приоритет у `00`.
+
 ## Контекст (что уже есть, факты, не предположения)
 
 - Репозиторий: `/Users/belief/dev/projects/claude/notification_plugin_go`, текущая версия v1.41.0, релиз только что вышел.
@@ -9,7 +14,7 @@
 - `internal/config.Config` — JSON-конфиг в `~/.claude/claude-notifications-go/config.json` (путь фиксирован через `CLAUDE_PLUGIN_ROOT`/executable-relative fallback, независимо от того, стоит ли реально Claude Code). Паттерн tri-state настроек: `*bool` (nil = default).
 - `internal/dedup`, `internal/state` — дедупликация уведомлений, персистентное состояние по session ID.
 - **Codex wire-факты (изначально из исходников codex-rs, ДОПОЛНЕНО и частично ИСПРАВЛЕНО реальным ресёрчем в фазе 3 — см. АДДЕНДУМ ниже)**:
-  - Новая hooks-система: `~/.codex/hooks.json`, 11 событий, транспорт — **JSON на stdin**, общие поля `session_id, transcript_path, cwd, hook_event_name, model, permission_mode`; `Stop` добавляет `turn_id, stop_hook_active, last_assistant_message`; `PermissionRequest` добавляет `turn_id, tool_name, tool_input`.
+  - Новая hooks-система: 12 событий, транспорт — **JSON на stdin**, общие поля `session_id, transcript_path, cwd, hook_event_name, model, permission_mode`; `Stop` добавляет `turn_id, stop_hook_active, last_assistant_message`; `PermissionRequest` добавляет `turn_id, tool_name, tool_input`.
   - Trust-модель: несистемные хуки требуют одноразового ручного `/hooks` review+trust, **привязанного к хэшу command-строки** — путь бинаря в hooks.json должен быть стабильным (неверсионированным), иначе re-trust на каждый релиз.
   - `PermissionRequest` не фаерится при `bypassPermissions`/`dontAsk`/`--ask-for-approval never` — **НЕ подтверждено** ни кодом, ни доками (research-item фазы 3, остался открытым).
   - Legacy `notify` (config.toml, argv-JSON, только `agent-turn-complete`) — fallback для старых Codex, помечен legacy в апстриме.
@@ -42,7 +47,7 @@
 
 ## Решение 0.5 — установка: hooks.json merge, детально с edge cases
 
-**Общий подход**: новая подкоманда `codex-install` (и `codex-uninstall`) на существующем бинаре. **ВНИМАНИЕ: детальная реализация этого решения полностью развёрнута и неоднократно отревизирована в отдельном документе Фазы 2 (`codex-phase2-installer.md`) — там же итоговый АДДЕНДУМ после ресёрча фазы 3, меняющий стратегию детекта целиком (у Codex нет CLI-поверхности для hooks вообще). Здесь — только исходные принципы, актуальную версию см. Фазу 2.**
+**Исторический подход**: новая подкоманда `codex-install` (и `codex-uninstall`) на существующем бинаре. Детали сохранены в `03-phase2-installer.md`, но это решение отменено нормативным `00` в пользу native plugin/marketplace discovery.
 
 Исходные принципы (актуальны, детали — в Фазе 2):
 1. Путь бинаря в hooks.json — стабильный, неверсионированный (trust по хэшу command-строки).

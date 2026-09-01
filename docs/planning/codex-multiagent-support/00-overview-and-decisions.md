@@ -1,130 +1,530 @@
-# Мульти-агентный пивот + Codex support: полный контекст и обоснование решений
+# Multi-agent + Codex support: authoritative implementation contract
 
-## 0. Что произошло на этой ветке
+> [!IMPORTANT]
+> This is the only normative implementation plan in this directory. Documents `01` through `06`
+> preserve the investigation trail and are historical. If they conflict with this file, this file wins.
+> Do not copy historical installer, config, CLI, trust, Go-version, or release-gate decisions into code.
 
-`feat/codex-notify` начиналась как узкий проект «добавить уведомления для Codex CLI» — был написан 5-фазный план (`01-phase0-groundwork.md` … `05-phase4-docs-release.md`) и прогнан через ~30 раундов критики. На середине скоуп сменился: масштабировать сразу на много агентов (Claude/Codex/Cursor/OpenCode/CodeBuddy), не переписывая существующую логику дважды — см. `06-multiagent-pivot.md`. Всё это планирование до сих пор жило только в рабочей scratchpad-директории — никогда не коммитилось. Ветка содержала 0 коммитов относительно `main` до этого PR.
+The external Codex contract in this plan is pinned to `openai/codex` tag `rust-v0.152.0`: annotated
+tag object `7f6bee13af649d0da23ac0c2bf5c83f571fcd611`, commit
+`316795b3cf2a45e90d121d9f46499d4658b2645c`. Verified sources are
+`codex-rs/config/src/hook_config.rs`, `codex-rs/hooks/src/schema.rs`,
+`codex-rs/hooks/src/{lib.rs,declarations.rs,engine/discovery.rs}`,
+`codex-rs/plugin/src/{manifest.rs,plugin_id.rs}`,
+`codex-rs/core-plugins/src/{manifest.rs,marketplace.rs}`,
+`codex-rs/exec-server-protocol/src/protocol.rs`, and `codex-rs/login/src/auth/storage.rs`. Before
+implementation or release, re-check these locations against the target Codex version and record any
+schema delta.
 
-Это уже один раз аукнулось: в соседнем репозитории `plugin-kit-ai` в этом же цикле планирования был написан и отревьюен Codex hooks decode-код, который остался только в незакоммиченном git worktree — при следующей попытке его использовать выяснилось, что worktree физически удалён с диска, а сам код нигде не сохранился (проверено: все висячие коммиты, все локальные и remote-ветки, стеш — ничего релевантного). Код придётся писать заново.
+## 1. Scope and non-goals
 
-**Вывод**: прежде чем писать код, планирование фиксируется реальными коммитами и PR — чтобы работа была видна и защищена от повторной потери, и чтобы можно было получить фидбек по архитектуре до написания кода. Этот PR — только документы, ни одной строчки кода.
+This milestone keeps the existing Claude path behavior-compatible and adds Codex notifications
+through the same Go binary.
 
-## 1. Почему мульти-агентный пивот, а не узкий Codex-бот
+In scope:
 
-Прямое требование: масштабирование на много агентов с первого дня, не Codex как изолированный 2-событийный довесок. Опорная точка — форк `bolzzzz/agent-notifications-go`, который уже реализует ровно эту форму (один Go-бинарь, 5 продуктов — Claude/Codex/OpenCode/CodeBuddy/Cursor — с приоритетным product-detection слоем). Это не абстрактная идея, а изученный вглубь рабочий прецедент (см. `06-multiagent-pivot.md`), который де-рискует направление.
+- Codex `Stop` and `PermissionRequest` notification delivery.
+- Typed SDK decode for `Stop`, `PermissionRequest`, and `SubagentStop`. `SubagentStop` is decoded
+  losslessly for SDK completeness, but product notification UX remains disabled until separately
+  accepted.
+- Native Codex plugin/marketplace discovery, not mutation of the user's `~/.codex/hooks.json`.
+- One source-neutral product event contract and one existing notification pipeline.
+- Go 1.22 minimum, required by `plugin-kit-ai/sdk`.
 
-## 2. Архитектурная граница: почему decode → в SDK, а не весь пайплайн в продукте и не всё в SDK
+Not in scope:
 
-Clean Architecture, направление зависимостей — только внутрь:
+- Cursor, OpenCode, and CodeBuddy runtime support. Add one only after its own verified host contract
+  and accepted product scope; do not ship stub files or empty connectors now.
+- A cross-product `status`/`doctor` command.
+- Full parsing of Codex `rollout-*.jsonl` transcripts.
+- Legacy Codex `notify = [...]` installation or `config.toml` surgery in this milestone.
+- A new universal plugin governance or installer platform.
 
-| Кольцо | Содержимое | Репозиторий | Почему именно так |
-|---|---|---|---|
-| Entities/Use Cases | `Event`, classify, dedup, config-резолв, webhook-форматирование | `notification_plugin_go` | Это бизнес-правила ПРОДУКТА уведомлений — генерик SDK не должен знать, что такое «дедуп» или «cooldown» |
-| Decode конкретного хоста | Typed payload → структура для каждого агента | `plugin-kit-ai/sdk` | Ровно generic-задача «получить типизированное событие от N хостов» — то, для чего SDK существует, переиспользуемо ЛЮБЫМ потребителем SDK, не только нами |
-| Presenters/Frameworks | Desktop notify, click-to-focus, CLI, инсталлятор | `notification_plugin_go` | Платформо-специфичная доставка — не задача SDK |
+## 2. Repository boundary
 
-SRP-обоснование: три пакета — три разных повода для изменения. `hostdetect`/decode в SDK меняется, когда у агента меняется формат payload. Notify-логика в продукте меняется, когда меняется бизнес-правило уведомлений. Инсталлятор меняется, когда меняется способ доставки бинаря. Три разных релизных цикла — совмещать их в одном пакете значило бы плодить ненужные связи между несвязанными причинами изменений.
+Dependencies point inward toward product policy:
 
-**Альтернатива, которая была на столе и отклонена**: изначальный Phase 0 (`01-phase0-groundwork.md`) предполагал «hand-roll декодер внутри `notification_plugin_go`, не зависеть от SDK вообще» — чтобы не тащить чужой развивающийся SDK как жёсткую зависимость. Отменено: зависимость от `plugin-kit-ai/sdk` теперь настоящая, но потребляется во время разработки через гитигнорнутый `go.work` (`use (. ../plugin-kit-ai/sdk)`), а не через `replace`-директиву в `go.mod` — `replace` в раннем прототипировании этого же цикла подтверждённо ломает CI/релизную сборку. `go.work` CI не видит вообще, поэтому итоговый `go.mod` обязан резолвиться на настоящий тег SDK, когда фича готова к мержу — единственный момент, когда всё же нужен один реальный релиз на стороне SDK, не «постоянные» релизы на каждый чих.
+| Responsibility | Owner | Contract |
+|---|---|---|
+| Host payload decode and host signals | `plugin-kit-ai/sdk` | Platform DTOs only |
+| Source normalization, classification, dedup, config, webhook formatting | `notification_plugin_go` | Product `Event`/`EventSource` |
+| Desktop delivery, click-to-focus, CLI, plugin artifacts | `notification_plugin_go` | Framework/driver layer |
 
-## 3. Host-detection: где жить логике «кто вызвал хук» — 3 варианта, почему выбран `sdk/hostdetect`
+The SDK must never import or return the product's `Event`. It returns Codex/Claude DTOs; product-side
+adapters map those DTOs to the product contract. This keeps decode reusable and prevents an
+SDK-to-product dependency cycle.
 
-Исследование показало: у SDK `plugin-kit-ai` `Engine.Dispatch` держит **один** `Resolver` на весь `App` — архитектура рассчитана на «один плагин — одна нативная схема вызова для одного хоста», а не на авто-детект среди N хостов под общим argv-контрактом (наш реальный сценарий: один бинарь, `handle-hook <Event> [--product X]`, вызывается разными хостами). `platformmeta` не подходит вообще — это чисто статические метаданные для доков/скаффолдинга (`NativeRoot: "~/.codex/plugins/..."` как строка для документации), без единого байта рантайм-логики.
+The uncommitted Codex hooks SDK work mentioned in the historical documents was not recoverable.
+Implementation starts from the verified schemas, not from an assumed local branch or worktree.
 
-Три варианта, оценённых по 10-балльной шкале (надёжность/уверенность):
+## 3. `sdk/hostdetect`
 
-- **(A) `internal/product` внутри `notification_plugin_go`**, по образцу bolzzzz — 8/8, рекомендованный вариант. Обоснование: ни один текущий потребитель SDK не имеет паттерна «один бинарь на N хостов», сам bolzzzz тоже держит это в продукте, а не в общей библиотеке.
-- **(B) Новый публичный пакет `sdk/hostdetect`** в SDK, пир к `sdk/codex`/`sdk/claude`/`sdk/platformmeta` — 6/7. Минус: единственный потребитель этого пакета — мы, что раздувает публичную поверхность SDK без второго подтверждённого use case.
-- **(C) Встроить в сам `Engine`/`Resolver`** (composable resolver) — 4/5. Технически самое «SDK-native» решение вдолгую, но меняет core dispatch semantics, затрагивает всех текущих потребителей SDK, высокий риск регресса.
+The selected location remains a public `sdk/hostdetect` package, but the MVP exposes only real
+Claude and Codex signals.
 
-**Выбран (B)** — сознательный выбор в пользу размещения в SDK, несмотря на рекомендацию (A).
+```go
+type Platform string
 
-Согласованный дизайн `plugin-kit-ai/sdk/hostdetect/`:
-- Файлы: `hostdetect_claude.go` / `hostdetect_codex.go` / `hostdetect_cursor.go` / `hostdetect_codebuddy.go` / `hostdetect_opencode.go` (каждый — свой `Signal`, расширение = новый файл, не правка существующих — OCP), `signals.go` (`var DefaultRegistry []Signal`, приоритет как у bolzzzz: codebuddy → cursor → codex → claude-default), `detect.go`, `doc.go`.
-- API: `type Platform string` (значения `"claude"/"codex"/"cursor"/"codebuddy"/"opencode"` — совпадают с планируемым флагом `--product`, drop-in); `type Env interface { LookupEnv(string) (string, bool) }`; `type Signal struct { Platform Platform; EnvMarkers []string; PayloadSniff func(raw map[string]any) bool }`; `var DefaultRegistry []Signal`; `func Detect(override string, env Env, payload []byte) Platform`.
-- `PayloadSniff` намеренно лёгкий — только верхнеуровневые JSON-ключи, НЕ типизированный decode, чтобы избежать риска циклического импорта `sdk/hostdetect ↔ sdk/codex`/`sdk/claude`, если те когда-нибудь захотят самостоятельно регистрироваться.
-- В этом заходе реально заполнены только `claude`/`codex` сигналы; `cursor`/`codebuddy`/`opencode` — файлы-заглушки с TODO, форма пакета готова, содержимое — отдельный заход.
+const (
+    PlatformUnknown Platform = ""
+    PlatformClaude  Platform = "claude"
+    PlatformCodex   Platform = "codex"
+)
 
-## 4. Коллизия имён событий
+type Env interface {
+    LookupEnv(string) (string, bool)
+}
 
-Прочитан напрямую сгенерированный `sdk/internal/descriptors/gen/resolvers_gen.go`: это **один плоский резолвер на все платформы разом** — `Stop`/`SubagentStop`/`PermissionRequest` уже заняты `Platform:"claude"`. Если добавить Codex-дескрипторы с теми же голыми именами — они будут навсегда затенены записями Claude, а хендлер, зарегистрированный через `app.Codex().OnStop(...)`, молча продиспатчится в Claude-декодер или упадёт с «no handler registered for claude/Stop».
+type Signal struct {
+    Platform      Platform
+    EnvMarkers   []string
+    PayloadSniff func(map[string]any) bool
+}
 
-У SDK уже есть готовый прецедент решения именно этой проблемы — Gemini использует префиксованные имена вызова (`GeminiSessionStart`, `GeminiAfterTool`, см. `events_gemini_session.go`), при этом `Event` в дескрипторе остаётся чистым (`"SessionStart"`). Существующий legacy Codex `notify` не коллизирует (голое имя `"notify"` уникально во всём резолвере) — трогать его не нужно.
+type Registry []Signal
 
-**Действие**: новые Codex-дескрипторы обязаны использовать `Invocation.Name: "CodexStop"`, `"CodexSubagentStop"`, `"CodexPermissionRequest"` — не голые имена событий. Это уже принятый в SDK паттерн, просто ранее не применённый к Codex.
+func DefaultRegistry() Registry
+func Detect(registry Registry, override string, env Env, payload []byte) (Platform, error)
+```
 
-## 5. Утерянный код — честный отчёт
+Invariants:
 
-Искали «почти готовый, отревьюенный SDK-код» новой Codex hooks-системы (Stop/PermissionRequest и т.д.) везде в `plugin-kit-ai`:
-- `git fsck --dangling` → 24 висячих коммита, **все** про `agentplugins` (client lifecycle management для Claude/Cline/Gemini/Windsurf/OpenCode-плагинов в разных IDE — отдельная, не относящаяся к делу подсистема) или про bump зависимостей в `landing/`. Ни один не про Codex hooks.
-- Все локальные и remote-ветки — единственная многообещающая зацепка, ветка `feat/sdk-codex-lifecycle-hooks` с воркитри `/private/tmp/pkai-codex-lifecycle-hooks`, оказалась ложным следом: сама директория воркитри физически не существует на диске, а `git diff main...feat/sdk-codex-lifecycle-hooks` (94 файла, ~12800 строк) целиком про ту же `agentplugins`-подсистему, ни строчки Codex hooks decode.
-- `git stash list` — одна запись, не относится.
+- A valid explicit override wins. An unknown override is an error, not an arbitrary `Platform`.
+- `DefaultRegistry()` returns a fresh slice. Do not expose mutable package-global registry state.
+- Detection fails closed with `PlatformUnknown`; it does not silently interpret an unknown host as
+  Claude.
+- Payload sniffing inspects bounded top-level JSON only and does not import platform decoder
+  packages.
+- Existing Claude hooks remain identifiable through the legacy `handle-hook <ClaudeEvent>` command
+  and `CLAUDE_PLUGIN_ROOT`. Codex uses the same public event names with an explicit
+  `--product codex`; only the internal SDK invocation names are prefixed.
 
-**Вывод**: код безвозвратно утерян, писать decode для новой Codex hooks-системы придётся с нуля. Не блокер — все нужные факты уже эмпирически подтверждены живым тестом против реального Codex CLI v0.152.0 (точный wire-формат Stop-события, поля, trust-модель). Просто экономии времени не будет.
+Tests cover explicit override, invalid override, env markers, bounded payload sniffing, ambiguous
+signals, unknown input, and registry isolation.
 
-Реальное текущее состояние `sdk/codex`: только СТАРЫЙ legacy `notify`-путь (единственное событие `Notify`, argv JSON, `type=agent-turn-complete`). Новой hooks-системы (11 событий, stdin JSON) там нет вообще ни в каком виде.
+## 4. Codex trust and plugin identity
 
-## 6. Почему инсталлятор для Codex — через нативный marketplace, а не hand-merge hooks.json
+Codex persists a plugin hook state key derived from:
 
-Прочитаны напрямую исходники `openai/codex` (`codex-rs/hooks/src/declarations.rs`/`config_rules.rs`): trust-ключ плагин-хука — `plugin_id:relative_path`, **не** command-строка. Доверие переживает обновления плагина, пока не меняются `plugin_id` и относительный путь к hooks-файлу, даже если абсолютный путь к бинарю или логика обёртки меняются между релизами. `PLUGIN_ROOT` резолвится агентом нативно для plugin-bundled хуков (в отличие от Claude Code, который экспортирует только `CLAUDE_PLUGIN_ROOT`).
+```text
+<marketplace-plugin-name>@<marketplace-name>:<relative-hooks-path>:<snake_case-event>:<group-index>:<handler-index>
+```
 
-**Практическое следствие**: для Codex не нужна тяжёлая машинерия из исходного Phase 2 (content-hash TOCTOU-guard, «frozen argv навсегда», pointer-file-костыль для PLUGIN_ROOT) — она остаётся нужна ПОЗЖЕ для Cursor/OpenCode (у Cursor нет marketplace вообще, только сырой `~/.cursor/hooks.json`; у OpenCode — только ручное размещение TS-файла плагина), но не для Codex сейчас.
+That stable key is not the trust decision by itself. Handler position belongs to the state key, not
+the hash. Codex first selects the platform-effective command (`commandWindows` on Windows when set,
+otherwise `command`), then hashes the normalized event, matcher, and single-handler config with that
+effective command, timeout, async, status message, and additional-context limit. It does not hash both
+command variants at once. The saved `trusted_hash` must equal the current platform hash; otherwise
+the hook is `Modified` and requires review again.
 
-## 7. Осознанные сужения скоупа этого захода
+Therefore keep all of these stable after the first release unless a migration with explicit
+re-trust is accepted:
 
-- **Cursor/OpenCode/CodeBuddy — не в этом заходе.** Архитектура (файл-на-платформу в `hostdetect`, decode-пакет-на-платформу в SDK) уже оставляет для них место (OCP) — расширение не потребует правки существующего кода, просто новый заход.
-- **Транскрипт Codex не парсится полностью.** `internal/analyzer`+`pkg/jsonl` заточены под JSONL-схему Claude Code (role/content/tool-use паттерны); у Codex другой формат (`rollout-*.jsonl`). Codex сам отдаёт готовый `last_assistant_message` прямо в payload Stop/SubagentStop — этого достаточно для MVP. Берём этот текст как есть + маленькая новая эвристика классификации статуса, отдельная от полного Claude-анализатора. Богатый Codex-native анализ — отдельный follow-up.
-- **`PermissionRequest` вместо полного Notification-паритета.** Ближайший аналог Claude's `Notification` для «нужно внимание пользователя» — но подтверждено живым тестом: НЕ срабатывает под `bypassPermissions`/`dontAsk`/`--ask-for-approval never`. Фиксируем как известное ограничение.
-- **`status`/`doctor` кросс-продуктовая команда — не в этом заходе.** Подтверждённо не существует нигде как референс (проверено по всему командному списку форка bolzzzz) — полностью самостоятельная разработка, откладывается.
+- marketplace plugin entry name and marketplace name;
+- relative hooks path;
+- event/group/handler ordering;
+- matcher and command strings, including argv;
+- timeout, async, and other hashed hook metadata.
 
----
+`PLUGIN_ROOT` is expanded after the normalized config identity is built. Marketplace cache
+relocation and changes to the contents of a wrapper/binary are safe when the configured
+`${PLUGIN_ROOT}/...` command string remains unchanged. Changing that configured path is not safe.
 
-## Дорожная карта реализации Codex-кода (не в этом PR — только план, код появится отдельным PR)
+### Manifest contract
 
-### Stage 1 — SDK: `sdk/hostdetect`
-Дизайн — см. раздел 3. Тесты: override всегда побеждает, совпадение по env, совпадение по payload без env, дефолт на claude, порядок приоритета.
+`plugin_id` is not a Codex manifest field. The Codex-specific manifest must be a valid manifest,
+declare the custom hooks file, and keep its version synchronized with the existing plugin and
+marketplace metadata:
 
-### Stage 2 — SDK: Codex hooks decode/encode
-Не трогать `sdk/codex/notify.go`/`sdk/internal/platforms/codex/notify.go` (legacy остаётся как есть).
-- `sdk/internal/platforms/codex/{types.go,stop.go,subagentstop.go,permissionrequest.go}` — DTO с полями из проверенного payload (`session_id, turn_id, transcript_path, cwd, hook_event_name, model, permission_mode, stop_hook_active, last_assistant_message`, + `tool_name`/`tool_input` для PermissionRequest), по образцу `sdk/internal/platforms/claude/stop.go`. Ack пустой (Codex notification-хуки — пустой stdout + exit 0).
-- `sdk/codex/{stop.go,subagentstop.go,permissionrequest.go}` — публичные обёртки по образцу `codex/notify.go`.
-- Правка `sdk/internal/descriptors/defs/events_codex.go`: 3 новых `EventDescriptor` в `codexEvents()` — `Invocation.Name: "CodexStop"/"CodexSubagentStop"/"CodexPermissionRequest"` (раздел 4), `Carrier: runtime.CarrierStdinJSON`, `Contract.Maturity: runtime.MaturityBeta`, `Registrar.MethodName: OnStop/OnSubagentStop/OnPermissionRequest`.
-- Перегенерировать: `go run ./cmd/plugin-kit-ai-gen` из корня `plugin-kit-ai`, затем `go test ./...` (включая `generator.TestGeneratedArtifactsUpToDate`).
-- Обновить `sdk/README.md`/`sdk/STABILITY.md`.
-- Тесты: decode-юниты на верифицированный payload + отсутствующие поля + size-guard; App-level интеграционные тесты; **регресс-тест на коллизию** — `gen.ResolveInvocation([]string{"x","Stop"}, env)` должен остаться `Platform:"claude"` после добавления Codex-записей.
+```json
+{
+  "name": "claude-notifications-go",
+  "version": "<release-version>",
+  "hooks": "./hooks/hooks-codex.json"
+}
+```
 
-### Stage 3 — notification_plugin_go: адаптер к SDK (`internal/codexsource/`)
-Единственный пакет продукта, импортирующий SDK (изоляция зависимости, DIP): собирает `pluginkitai.App` на одно обращение, регистрирует хендлер на `app.Codex()`, гоняет `RunContext`, возвращает типизированный decoded-event.
+The actual plugin identity is `claude-notifications-go@claude-notifications-go`, derived from the
+matching `plugins[].name` entry and top-level marketplace `name`, not directly from manifest `name`.
+The Codex manifest name must still match the selected plugin entry. Marketplace plugin name,
+marketplace name, and manifest name are therefore frozen compatibility fields.
 
-### Stage 4 — рефакторинг `HookData` → `Event`/`EventSource` (самый рискованный шаг)
-Механическое извлечение без изменения поведения Claude-пути:
-- `internal/hooks/event.go` (новый): `Event`, `EventSource` интерфейс.
-- `internal/hooks/claude_source.go`: переносит существующий `HookData`-декодинг без изменения логики.
-- `internal/hooks/codex_source.go`: дергает Stage 3, мапит в `Event`, `Message = LastAssistantMessage`.
-- `hooks.go`: `Handler` получает `source EventSource`. **`NewHandler(pluginRoot string)` не меняет сигнатуру/поведение** — все существующие вызовы в тестах остаются нетронутыми. Новый `NewHandlerWithSource(pluginRoot, product string, source EventSource)` для composition root. Хелперы переименовываются с `*HookData` на `*Event` — механически, набор полей идентичен.
-- `internal/analyzer`: новая `ClassifyLastMessage(text string) Status` — явно проще полного transcript-walk, задокументирована как MVP-упрощение для Codex.
-- **Регресс-гейт**: весь существующий `internal/hooks/*_test.go` проходит без единой правки — доказательство, что Claude-путь не изменился.
+### First-release hook identity
 
-### Stage 5 — конфиг по продуктам
-`internal/config/config.go`: `GetStableConfigDirFor(product)` (`"codex"` → `~/.codex/claude-notifications-go`, default → сегодняшний путь без изменений), `LoadFromPluginRootForProduct(pluginRoot, product)` (legacy-миграция — только для `"claude"`). Существующие `GetStableConfigDir()`/`LoadFromPluginRoot()` остаются тонкими обёртками — точный путь для текущих Claude-пользователей не меняется ни на символ. `internal/config`/`internal/hooks` принимают простую строку `product`, не импортируют `sdk/hostdetect` напрямую — только `main.go` (композиционный корень) знает про SDK.
+The first-release `hooks/hooks-codex.json` is exactly this two-handler contract; `SubagentStop`
+remains SDK-only and is intentionally absent:
 
-### Stage 6 — связка в `main.go`
-`--product claude|codex` флаг, `io.ReadAll(stdin)` заранее (нужно и для `hostdetect.Detect`, и для передачи в `EventSource`), `hostdetect.Detect(productFlag, env, rawBytes)`, `getPluginRoot()` + фолбэк на `PLUGIN_ROOT` (нативный Codex-экспорт), выбор `EventSource` по платформе, `hooks.NewHandlerWithSource(...)`.
+```json
+{
+  "description": "Desktop notifications for Codex Stop and PermissionRequest events.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${PLUGIN_ROOT}/bin/hook-wrapper.sh\" handle-hook Stop --product codex",
+            "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\hook-wrapper.cmd\" handle-hook Stop --product codex",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${PLUGIN_ROOT}/bin/hook-wrapper.sh\" handle-hook PermissionRequest --product codex",
+            "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\hook-wrapper.cmd\" handle-hook PermissionRequest --product codex",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
-### Stage 7 — инсталлер-артефакты для Codex
-`.codex-plugin/plugin.json` (`plugin_id: "claude-notifications-go"`, сохранить навсегда — trust keyed по `plugin_id:relative_path`), `hooks/hooks-codex.json` (отдельное имя файла, не `hooks/hooks.json`, чтобы загрузчик Claude Code его не подхватил). **Открыто**: точная JSON-схема этих файлов не проверена живым тестом (только payload-формат проверен). **Открыто**: bootstrap-путь для Codex-only пользователя без Claude Code не определён — сегодня единственный путь установки бинаря идёт через Claude Code slash-команду.
+There is one matcher group and one handler per event, with matcher, `statusMessage`, and
+`additionalContextLimit` omitted. The launcher paths are `bin/hook-wrapper.sh` and
+`bin/hook-wrapper.cmd`; both accept the exact argv shown above. This is the candidate identity until
+the disposable macOS/Linux/Windows proof passes. It may be corrected before the first public Codex
+release; after that release, changing any hashed field, group/handler order, launcher path, or argv
+requires an explicit re-trust migration. A golden test serializes the normalized identity for both
+handlers on Unix and Windows separately and detects drift in either effective command.
 
-### Stage 8 — Go 1.22 + релиз SDK (в конце)
-`go.mod` `1.21.5→1.22`, обновить матрицы `.github/workflows/ci-{ubuntu,windows,macos}.yml`. Обновление `require github.com/777genius/plugin-kit-ai/sdk` на настоящий тег — только после мержа и тега Stage 2 в `plugin-kit-ai`.
+Before implementation proceeds past the plugin-artifact stage, a disposable Codex home must prove:
 
-### Верификация (для Stage 1-8, когда до них дойдёт)
-- Юнит-тесты обеих сторон (decode, App-level, регресс на коллизию имён; весь текущий `internal/hooks`/`internal/config` — без изменений).
-- Песочница: изолированный `CODEX_HOME` (только `auth.json` скопирован, боевые `~/.codex/config.toml`/`hooks.json` не трогаются), реальная Codex-сессия, песочница уничтожается после.
-- Ручной smoke: `echo '<эталонный Stop-payload>' | ./claude-notifications handle-hook CodexStop --product codex` с `PLUGIN_ROOT`, проверка текста уведомления.
-- Полный прогон существующего тест-сьюта продукта — обязан остаться зелёным без правок в самих тестах Claude-пути.
+1. the manifest loads;
+2. `hooks/hooks-codex.json` is discovered;
+3. `${PLUGIN_ROOT}` expands to the installed plugin root;
+4. the hook is initially untrusted, becomes trusted through `/hooks`, and stays trusted after a
+   plugin cache relocation with unchanged handler config;
+5. an intentional command change becomes `Modified` and is surfaced as a migration.
 
-### Явные нерешённые риски
-1. Точная JSON-схема `.codex-plugin/plugin.json`/hooks-конфига не проверена живым тестом.
-2. Проводит ли `codex plugin add` через обязательный `/hooks`-trust-review автоматически — не проверено (влияет на UX онбординга, не на работоспособность).
-3. Bootstrap-путь для Codex-only пользователя не определён.
-4. Плоский платформо-безразличный namespace резолвера SDK — структурное ограничение, повторится для Cursor/OpenCode/CodeBuddy; префиксация (Gemini-стиль) работает, но стоит поднять как архитектурный вопрос на стороне SDK отдельно.
-5. Codex получает заведомо более тонкую классификацию статуса, чем Claude — осознанное сужение, не полный паритет с первого дня.
+## 5. SDK Codex event contract
+
+Keep the existing legacy `sdk/codex/Notify` API unchanged. Add prefixed invocation names to avoid
+the current flat-resolver collision with Claude:
+
+| Invocation | SDK event | Carrier |
+|---|---|---|
+| `CodexStop` | `Stop` | stdin JSON |
+| `CodexSubagentStop` | `SubagentStop` | stdin JSON |
+| `CodexPermissionRequest` | `PermissionRequest` | stdin JSON |
+
+Required DTO coverage:
+
+- Common: `session_id`, `turn_id`, nullable `transcript_path`, `cwd`, `hook_event_name`, `model`,
+  `permission_mode`.
+- Stop: `stop_hook_active`, nullable `last_assistant_message`.
+- SubagentStop: all Stop fields plus `agent_id`, `agent_type`, nullable
+  `agent_transcript_path`.
+- PermissionRequest: `tool_name`, arbitrary `tool_input`, optional `agent_id` and `agent_type`.
+
+Decoder rules:
+
+- The SDK's 1 MiB payload limit remains the single wire limit and is exported as
+  `pluginkitai.MaxPayloadBytes`; the product must not duplicate the magic number.
+- Empty or malformed payloads return typed errors.
+- UTF-8/non-ASCII input is covered, including the known Windows risk.
+- Observation handlers encode empty stdout on success.
+- A regression test proves raw `Stop` still resolves to Claude while `CodexStop` resolves to Codex.
+- Generated artifacts and the public stability/support documentation are updated together.
+
+## 6. Product runtime contract
+
+### 6.1 Source-neutral event
+
+The product owns the normalized input contract:
+
+```go
+type EventKind string
+
+const (
+    EventStop              EventKind = "stop"
+    EventSubagentStop      EventKind = "subagent_stop"
+    EventPermissionRequest EventKind = "permission_request"
+    // Existing Claude-only kinds remain represented without lossy mapping.
+)
+
+type Event struct {
+    Product             string
+    Kind                EventKind
+    PayloadEventName    string
+    Raw                 json.RawMessage
+    SessionID           string
+    TurnID              string
+    CWD                 string
+    TranscriptPath      string
+    Message             string
+    LastAssistantMessage string
+    ToolName            string
+    ToolUseID           string
+    ToolInput           json.RawMessage
+    Model               string
+    PermissionMode      string
+    TeamName            string
+    TeammateName        string
+    AgentID             string
+    AgentType           string
+    AgentTranscriptPath string
+    ParentSessionID     string
+    ParentToolUseID     string
+    StopHookActive      bool
+}
+
+type EventSource interface {
+    Decode(context.Context, string, io.Reader) (Event, error)
+}
+```
+
+`Status` is derived product policy and is not a decoder field.
+
+Mapping invariants:
+
+- `ClaudeSource` preserves every current `HookData` field and current raw-event behavior.
+- The legacy Claude entrypoint is never converted to `io.ReadAll`. `ClaudeSource` keeps BOM skipping,
+  decodes exactly the first JSON value from the reader without waiting for EOF, stores that value in
+  `Raw`, and ignores trailing data exactly as the current decoder does.
+- `Kind` comes from the validated outer argv; `PayloadEventName` is diagnostic and never selects a
+  route. A mismatch is logged but cannot redirect execution.
+- `Raw` preserves unknown future fields and the difference between absent and `null`; it must be
+  treated as sensitive and never logged wholesale.
+- `CodexSource` maps public `Stop` to internal SDK invocation `CodexStop`, then to `EventStop`.
+- Codex Stop classification uses `last_assistant_message`; it never parses Codex rollout JSONL with
+  the Claude analyzer.
+- Codex `Stop`/`SubagentStop` with `stop_hook_active=true` does not emit a notification, preventing
+  recursive/continuation duplicates.
+- Claude Stop continues to analyze `TranscriptPath` exactly as before.
+- PermissionRequest adds `StatusPermissionRequest = "permission_request"` across analyzer status,
+  config defaults/validation, summary body, notifier urgency, and webhook formatting. It is
+  time-sensitive and uses the tool identity in the body.
+- `ToolInput` stays raw for typed consumers but is never logged or displayed wholesale; any body
+  projection uses an allowlist plus redaction and truncation.
+- If SubagentStop product delivery is enabled later, dedup includes product, session, turn, and
+  agent identity so parallel subagents cannot collapse into one notification.
+- Claude continues to pass the original byte-for-byte `sessionID` and original case-sensitive hook
+  event to the existing state/dedup managers, preserving all pre-upgrade filenames and cooldown
+  state. Codex uses filename-safe SHA-256 identities over length-prefixed fields: product+session for
+  session state, and product+session+turn+agent/tool identity for event dedup. Never concatenate raw
+  ids with `:` or path separators.
+
+`NewHandler(pluginRoot string)` keeps its signature and Claude behavior. Add an explicit
+source-injected constructor for the composition root; existing Claude tests must pass unchanged.
+
+### 6.2 Exact SDK adapter wiring
+
+The existing no-flag Claude invocation remains the Claude route and keeps its current input
+semantics. The explicit Codex route reads stdin once with a 1 MiB + 1 byte bounded read before host
+detection, maps the public event to the prefixed SDK invocation, and constructs the SDK with
+synthetic argv and in-memory IO:
+
+```go
+app := pluginkitai.New(pluginkitai.Config{
+    Args: []string{argv0, sdkInvocation}, // e.g. CodexStop
+    IO:   newBufferedSDKIO(rawPayload),   // ReadStdin returns the saved bytes
+    Env:  env,
+})
+```
+
+The IO adapter returns a copy of the saved payload and captures SDK stdout/stderr; it never forwards
+them directly to the host. The registered callback stores the typed DTO and maps it to `Event`. A
+non-zero SDK result, missing
+callback result, decode failure, or panic is logged to `notification-debug.log`, then the outer
+observation hook returns exit 0 with empty stdout and stderr so notification failures cannot block
+Codex.
+
+Any existing permission-guidance `systemMessage` output must use an injected sink: the Claude route
+keeps its current stdout behavior, while the Codex observation route uses `io.Discard`. No current
+`fmt.Printf` path may leak into Codex stdout.
+
+An integration test must execute the exact public form:
+
+```text
+<binary> handle-hook Stop --product codex
+```
+
+with stdin JSON, and prove the outer parser rejected duplicate/unknown flags, the SDK received
+synthetic `[binary, CodexStop]`, consumed the payload once, invoked the Codex callback once, emitted
+no process output, and produced the normalized event. Malformed, oversized, panic, and SDK-error
+cases still return outer exit 0 with empty process stdout/stderr and never call the notifier.
+Once `--product codex` is recognized, unsupported events, duplicate/unknown flags, missing values,
+decode errors, and initialization failures all use that same fail-open process contract and are
+file-logged only. Ordinary non-Codex human CLI usage errors keep the existing non-zero/stderr UX.
+
+## 7. Configuration and resources
+
+For this milestone, keep the existing canonical config file for every product:
+
+```text
+~/.claude/claude-notifications-go/config.json
+```
+
+Do not add `~/.codex/claude-notifications-go/config.json`; two writable sources would create
+split-brain precedence and migration problems. Codex-only installation creates the existing stable
+directory when needed. Shared notification settings apply to both products. A product-specific
+override section is a future additive change only after a real differing setting is required.
+
+`getPluginRootForProduct()` preserves today's Claude precedence (`CLAUDE_PLUGIN_ROOT`, then current
+fallbacks). The Codex route prefers native `PLUGIN_ROOT`, then uses `CLAUDE_PLUGIN_ROOT` only as a
+compatibility fallback. Resource paths and sounds resolve from that explicit root; no mutable
+pointer-file installer protocol is introduced for Codex.
+
+## 8. Dependency-safe implementation stages
+
+1. **SDK host detection**: implement only Claude/Codex signals and the immutable registry API.
+2. **SDK Codex events**: DTOs, wrappers, descriptors, generation, collision tests, docs.
+3. **SDK release**: merge/tag a real `sdk` version. No local `replace` reaches product CI.
+4. **Product Go 1.22 floor**: update `go.mod` and all OS CI matrices before importing the SDK.
+5. **Product event boundary**: add lossless `Event`/`EventSource`, preserve Claude behavior.
+6. **Codex adapter and CLI wiring**: bounded read, host detection, synthetic SDK args/IO, normalized
+   event routing, output containment.
+7. **Codex plugin artifacts**: valid manifest, stable marketplace identity, stable hook config, and
+   platform launchers. Windows is not declared supported until `command_windows`/launcher behavior
+   is proven in a disposable Windows environment.
+8. **Tests and release docs**: focused unit/integration/E2E, README limitations, troubleshooting,
+   changelog, and release gate.
+
+Deliver these as dependency-safe PRs near the repository's review budget. Each PR starts from main
+or its declared stacked predecessor, passes focused gates, and is independently revertible. Do not
+combine the SDK, product refactor, and cross-platform installer into one mega-PR.
+
+## 9. Hermetic verification
+
+### 9.1 Unit and integration tests
+
+- SDK: host detection, all DTO fields, `limit-1`/`limit`/`limit+1`, multibyte UTF-8, reader error,
+  resolver collision, and empty response.
+- Product: Claude regression suite unchanged; Codex mapping/classification; exact outer CLI wiring;
+  dedup product/turn/agent identity; config remains single-source. Claude compatibility fixtures
+  cover BOM, trailing JSON/data, a reader that supplies one complete value without EOF, and unchanged
+  legacy state/dedup filenames across upgrade.
+- Manifest: parse the real `.codex-plugin/plugin.json`, resolve the custom hooks path, assert version
+  equality across `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` metadata and plugin
+  entry, `.codex-plugin/plugin.json`, and the Go binary version, and freeze the normalized handler
+  config in a golden test.
+- Release-selector test: changes to any Codex-owned path must activate the Codex release gate.
+
+### 9.2 Disposable Codex E2E
+
+Never run hook/install/runtime tests against the user's real project, real `HOME`, or real Codex
+configuration. The harness builds a fail-closed environment from an allowlist instead of inheriting
+the user's shell environment. Every automated/live E2E uses a newly created test project and:
+
+- a temporary `HOME`;
+- `USERPROFILE`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME`, `XDG_DATA_HOME`, `APPDATA`,
+  `LOCALAPPDATA`, `TMPDIR`, `TEMP`, and `TMP` redirected to dedicated directories under the same
+  sandbox (with the platform-irrelevant variables harmlessly set there too);
+- a temporary `CODEX_HOME` inside that home;
+- only the minimum auth seed needed for one explicitly planned Codex invocation; the source seed is
+  mounted/read read-only, while its sandbox `auth.json` copy is writable mode `0600` on POSIX and
+  protected by a sandbox-user-only ACL on Windows so token refresh cannot touch the real profile;
+- `cli_auth_credentials_store = "file"` pinned in the exact-version sandbox config, with keyring and
+  secrets-store modes rejected and a platform assertion that no keychain API is accessed;
+- no copied `config.toml`, hooks state, history, transcripts, or user plugin cache;
+- injected desktop and webhook sinks that record locally and cannot contact real destinations;
+- process/runner-level default-deny egress with a narrowly audited allowlist for the one explicitly
+  planned Codex provider connection; marketplace/cache inputs are local-only, update checks,
+  telemetry, MCP, Git network access, proxies, and inherited network credentials are disabled;
+- a synthetic notification message and a disposable plugin marketplace/cache;
+- one bounded attempt per scenario, tracked by a durable control-plane ledger outside the disposable
+  runner, keyed by repository + candidate SHA + scenario;
+- a post-run assertion that no file was written outside the sandbox roots.
+
+Before launch, materialize a clean plugin bundle from the exact candidate commit inside the sandbox;
+the native marketplace source and `${PLUGIN_ROOT}` must point only to that copy, never this checkout
+or another real project. Materialize the built exact-head binary inside the bundle. Resolve every
+symlink and reject outside-root targets, reject hardlinks to files outside the materialized tree, and
+reject hooks/launchers whose resolved targets escape the bundle. Canonicalize the complete bundle
+tree, test project, every home/config/cache/temp path,
+plugin cache, config path, log, socket, state file, and recording sink and assert that each is a
+descendant of the sandbox root. Clear inherited `CLAUDE_CONFIG_DIR`, `CLAUDE_PLUGIN_ROOT`,
+`PLUGIN_ROOT`, webhook URLs, notification credentials, and product-specific config overrides, then
+inject only the sandbox values required by the scenario. Any unresolved or outside-root path aborts
+before Codex starts.
+Run live E2E only on a runner where the egress policy is enforceable; otherwise run the offline
+fixtures and report the live gate as not proven. After the run, the network recorder must show zero
+non-provider connections. Delete the writable auth copy, destroy the ephemeral workspace/runner, and
+assert that auth contents never appear in logs or retained artifacts. The phase ledger transitions
+`not_started -> provider_started -> completed|uncertain` using atomic compare-and-set, and commits
+`provider_started` before the request. A new workflow run id cannot claim the same SHA/scenario again.
+A failed pre-provider phase may be retried; after `provider_started`, automatic, manual, and workflow
+retries are forbidden until provider effects/spend are inspected. An uncertain result stops the gate
+rather than rerunning it; only a documented owner resolution with proof that no provider effect
+occurred may clear the attempt key.
+
+Required scenarios:
+
+1. plugin add/discovery and valid manifest;
+2. initial `/hooks` trust and trusted execution;
+3. Stop decode to normalized event and captured notification sink;
+4. PermissionRequest through an interactive test mode when it can be forced deterministically;
+5. cache relocation with unchanged trust hash;
+6. intentional handler-config mutation becomes `Modified`;
+7. malformed/oversized/non-ASCII payload behavior;
+8. uninstall/removal performed by the native plugin manager without touching unrelated config;
+   upstream-retained `hooks.state` for this plugin is accepted and documented, reinstalling the same
+   identity/hash remains trusted, while a changed handler becomes `Modified`; unrelated state/cache
+   canaries remain byte- or semantic-identical;
+9. macOS/Linux launchers and a separately proven Windows launcher before claiming Windows support.
+
+Manual GUI smoke for sound/click-to-focus is separate, explicit, and uses only the synthetic test
+session, a unique test-only bundle id, and a disposable OS user/VM. Production bundle ids are
+forbidden. Automated tests do not send real desktop notifications or register production identities.
+
+## 10. Release gate
+
+The Codex gate is required when the diff touches any of:
+
+- `go.mod`, `go.sum`, or the Go-version matrix in `.github/workflows/ci-*.yml`;
+- `internal/codexsource/**`, `internal/hooks/**`, or host-detection/CLI wiring in
+  `cmd/claude-notifications/**`;
+- `.codex-plugin/**`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
+  `hooks/hooks-codex.json`, `config/config.json`, `setup.sh`, `bin/hook-wrapper.sh`,
+  `bin/hook-wrapper.cmd`, `bin/install.sh`, or `bin/bootstrap.sh`;
+- shared product behavior under `internal/analyzer/**`, `internal/audio/**`, `internal/config/**`,
+  `internal/daemon/**`, `internal/dedup/**`, `internal/errorhandler/**`, `internal/hooks/**`,
+  `internal/logging/**`, `internal/notifier/**`, `internal/platform/**`, `internal/sessionname/**`,
+  `internal/sounds/**`, `internal/state/**`, `internal/summary/**`, `internal/webhook/**`, or
+  `internal/winfocus/**`;
+- delivery assets under `sounds/**`, `swift-notifier/**`, or `claude_icon.png`;
+- `.github/workflows/release.yml` or the selector helper/tests themselves.
+
+Implement the selector as a tested script/helper, not a prose-only grep. A protected pre-tag
+`workflow_dispatch` accepts only a full commit SHA from this repository and proves that it equals the
+head of the allowed protected release branch, descends from the previous reachable release tag, and
+still equals that branch head immediately before tag creation. It runs exact-head CI and any selected
+Codex gate, then stores Codex version, sandbox identity, scenarios, and result in an immutable
+out-of-tree check/attestation keyed to that SHA. The pre-tag workflow verifies the attestation and
+creates only the tag; humans do not push tags directly. A post-run evidence commit is invalid because
+it changes the head. The existing tag-triggered workflow must verify that tag target and attested SHA
+are identical before it alone builds assets and creates the GitHub Release. Unrelated releases may
+skip live Codex E2E only when the tested selector proves no relevant behavior changed.
+
+A synchronized version-only release bump may skip live Codex E2E only when a semantic parser proves
+that, among Codex-owned trigger paths, the only behavioral-file changes are all five required version
+occurrences (ordinary changelog/docs updates remain allowed): the Go binary `const version`,
+`.codex-plugin/plugin.json.version`, `.claude-plugin/plugin.json.version`,
+`.claude-plugin/marketplace.json.metadata.version`, and the matching marketplace plugin's `version`.
+All five must be identical. Any other code, manifest, or marketplace delta triggers the normal
+selector. This carve-out has positive, negative, missing-occurrence, and mixed-change fixtures.
+
+The pre-tag workflow compares the exact candidate commit with the previous reachable release tag and
+fetches full history (`fetch-depth: 0`). Positive/negative fixture coverage includes every ownership
+path above and the first release with no previous tag. The SDK repository owns a separate release
+gate; the product gate does not prove SDK E2E.
+
+## 11. Residual risks that remain explicit
+
+1. Codex-only bootstrap UX and the exact marketplace command must be proven with the target Codex
+   version before public installation docs are finalized.
+2. PermissionRequest cannot fire when Codex never asks for approval; bypass/never modes therefore
+   cannot provide permission notifications.
+3. Windows launcher/trust behavior is unsupported until the disposable Windows scenario passes.
+4. Codex status classification is intentionally thinner than Claude transcript analysis.
+5. Codex v0.152.0 exposes 12 hook events; this milestone delivers 2/12 (`Stop`,
+   `PermissionRequest`) and the SDK decodes 3/12 (those two plus `SubagentStop`).

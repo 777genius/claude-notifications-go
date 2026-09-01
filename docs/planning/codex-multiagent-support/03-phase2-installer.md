@@ -1,6 +1,11 @@
 # Фаза 2: Инсталлятор (codex-install / codex-uninstall)
 
-Реализация решения 0.5 (фаза 0). Эта версия уже включает правки после 3 критиков фазы 2 (p2-critic-lock-detect, p2-critic-merge-safety, p2-critic-legacy-ux) И критичный аддендум после ресёрча фазы 3 (p3-critic-research) — итоговый, актуальный документ.
+> [!WARNING]
+> **ИСТОРИЧЕСКИЙ ДОКУМЕНТ. НЕ РЕАЛИЗОВЫВАТЬ БУКВАЛЬНО.** Manual merge в
+> `~/.codex/hooks.json`, изменение `config.toml`, frozen CLI ниже и pointer-file installer отменены.
+> Нормативный native plugin/marketplace контракт находится в `00-overview-and-decisions.md`.
+
+Сохраняет исследование отменённого installer-подхода и замечания его критиков.
 
 Примечание по нумерации: "фаза 2 — delivery wiring" по факту полностью покрыта решениями 1.5-1.7 Фазы 1 — самостоятельной фазы не требует. Эта фаза — про то, как код Фазы 1 попадает на диск пользователя и в `~/.codex/hooks.json`/`config.toml`.
 
