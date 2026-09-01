@@ -88,3 +88,8 @@ build/
 .augment/rules/byterover-rules.md
 
 .build/
+
+# Local Go workspace for cross-repo dev against plugin-kit-ai (never committed,
+# CI never sees it — real dependency resolution still goes through go.mod).
+go.work
+go.work.sum
