@@ -133,6 +133,31 @@ If the binary auto-update didn't work (e.g. no internet at the time), run `/clau
 | Plan Ready | 📋 | Plan ready for approval | PreToolUse hook (ExitPlanMode) |
 | Session Limit Reached | ⏱️ | Session limit reached | Stop/SubagentStop hooks (state machine detects "Session limit reached" text in last 3 assistant messages) |
 | API Error | 🔴 | Authentication expired, rate limit, server error, connection error | Stop/SubagentStop hooks (state machine detects via `isApiErrorMessage` flag + `error` field from JSONL) |
+| Permission Request | 🔐 | Codex is waiting for tool approval | Codex `PermissionRequest` hook (Codex only) |
+
+## Codex CLI Support (beta)
+
+The same binary can notify for OpenAI Codex CLI sessions. The Codex integration ships as a
+native Codex plugin: `.codex-plugin/plugin.json` declares `hooks/hooks-codex.json`, which runs
+`bin/codex-hook-wrapper.sh` (or `.cmd` on Windows) with `--product codex`.
+
+What works today:
+
+- **Stop** - a turn finishes; the status comes from the final assistant message (a trailing
+  question mark maps to Question, otherwise Task Complete). The Codex rollout transcript is not
+  parsed.
+- **PermissionRequest** - Codex is waiting for your approval of a tool call; delivered as the
+  time-sensitive Permission Request status. Only the tool name is shown, never the tool input.
+
+Known limitations:
+
+- PermissionRequest cannot fire when Codex never asks for approval (`bypassPermissions`,
+  `--ask-for-approval never`, headless `codex exec`).
+- Codex `SubagentStop` is decoded but not delivered yet.
+- Windows support for the Codex route is not declared until the Windows launcher is proven.
+- Codex hooks require a one-time trust review (`/hooks` inside Codex) for non-plugin installs.
+
+Both products share one config file (`~/.claude/claude-notifications-go/config.json`).
 
 ## Platform Support
 

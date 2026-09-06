@@ -39,6 +39,7 @@ const (
 	StatusSessionLimitReached Status = "session_limit_reached"
 	StatusAPIError            Status = "api_error"
 	StatusAPIErrorOverloaded  Status = "api_error_overloaded"
+	StatusPermissionRequest   Status = "permission_request"
 	StatusUnknown             Status = "unknown"
 )
 

@@ -233,6 +233,10 @@ func buildDefaultConfig(pluginRoot string) *Config {
 				Title: "🔴 API Error",
 				Sound: filepath.Join(pluginRoot, "sounds", "error.mp3"),
 			},
+			"permission_request": {
+				Title: "🔐 Permission Request",
+				Sound: filepath.Join(pluginRoot, "sounds", "question.mp3"),
+			},
 		},
 	}
 }
@@ -365,21 +369,33 @@ func GetStableConfigPath() (string, error) {
 // Corrupted config files are non-fatal: a warning is printed to stderr and
 // logged, then the next source in the chain is tried.
 func LoadFromPluginRoot(pluginRoot string) (*Config, error) {
+	return loadFromPluginRoot(pluginRoot, func(msg string) {
+		fmt.Fprintln(os.Stderr, msg)
+		logging.Warn("%s", msg)
+	})
+}
+
+// LoadFromPluginRootQuiet behaves like LoadFromPluginRoot but keeps warnings
+// in the file log only. Observation hook routes (Codex) must never write to
+// the process stderr.
+func LoadFromPluginRootQuiet(pluginRoot string) (*Config, error) {
+	return loadFromPluginRoot(pluginRoot, func(msg string) {
+		logging.Warn("%s", msg)
+	})
+}
+
+func loadFromPluginRoot(pluginRoot string, warn func(string)) (*Config, error) {
 	// 1. Try stable path
 	stablePath, stableErr := GetStableConfigPath()
 	if stableErr != nil {
-		msg := fmt.Sprintf("warning: cannot resolve stable config path: %v, using legacy path only", stableErr)
-		fmt.Fprintln(os.Stderr, msg)
-		logging.Warn("%s", msg)
+		warn(fmt.Sprintf("warning: cannot resolve stable config path: %v, using legacy path only", stableErr))
 	}
 	if stableErr == nil {
 		if platform.FileExists(stablePath) {
 			cfg, err := load(stablePath, pluginRoot)
 			if err != nil {
 				// Corrupted stable config — warn and fall through to old path
-				msg := fmt.Sprintf("warning: failed to load config from %s: %v, trying legacy path", stablePath, err)
-				fmt.Fprintln(os.Stderr, msg)
-				logging.Warn("%s", msg)
+				warn(fmt.Sprintf("warning: failed to load config from %s: %v, trying legacy path", stablePath, err))
 			} else {
 				return cfg, nil
 			}
@@ -392,18 +408,14 @@ func LoadFromPluginRoot(pluginRoot string) (*Config, error) {
 		cfg, err := load(oldPath, pluginRoot)
 		if err != nil {
 			// Corrupted old config — warn, return defaults (non-fatal)
-			msg := fmt.Sprintf("warning: corrupted config at %s, using defaults", oldPath)
-			fmt.Fprintln(os.Stderr, msg)
-			logging.Warn("%s", msg)
+			warn(fmt.Sprintf("warning: corrupted config at %s, using defaults", oldPath))
 			return defaultConfig(pluginRoot), nil
 		}
 
 		// Migrate to stable path (best-effort)
 		if stableErr == nil && stablePath != "" {
 			if migErr := migrateConfig(oldPath, stablePath); migErr != nil {
-				msg := fmt.Sprintf("warning: config migration failed: %v", migErr)
-				fmt.Fprintln(os.Stderr, msg)
-				logging.Warn("%s", msg)
+				warn(fmt.Sprintf("warning: config migration failed: %v", migErr))
 			}
 		}
 
@@ -571,6 +583,7 @@ func (c *Config) Validate() error {
 		"session_limit_reached": true,
 		"api_error":             true,
 		"api_error_overloaded":  true,
+		"permission_request":    true,
 	}
 	for i, f := range c.Notifications.SuppressFilters {
 		if !f.HasConditions() {

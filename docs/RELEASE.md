@@ -4,19 +4,28 @@ Step-by-step guide for publishing a new version.
 
 ## 1. Bump version
 
-Update the version string in **3 files** (4 occurrences total):
+Update the version string in **4 files** (5 occurrences total):
 
 | File | Location | Count |
 |------|----------|-------|
 | `cmd/claude-notifications/main.go` | `const version = "X.Y.Z"` | 1 |
 | `.claude-plugin/plugin.json` | `"version": "X.Y.Z"` | 1 |
 | `.claude-plugin/marketplace.json` | `"version": "X.Y.Z"` | 2 |
+| `.codex-plugin/plugin.json` | `"version": "X.Y.Z"` | 1 |
 
 Quick check — all occurrences should match:
 
 ```bash
-grep -rn '1\.[0-9]\+\.[0-9]\+' cmd/claude-notifications/main.go .claude-plugin/plugin.json .claude-plugin/marketplace.json
+grep -rn '1\.[0-9]\+\.[0-9]\+' cmd/claude-notifications/main.go .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json
 ```
+
+`TestCodexManifestContract` in `cmd/claude-notifications` fails the build when any
+of the five occurrences drift apart.
+
+Codex note: `CN_CODEX_MIN_VERSION` in `bin/codex-hook-wrapper.sh` must equal the
+version of the FIRST release that ships Codex support and must never change after
+that release. If the first Codex release number changes during planning, update
+that constant in the same release.
 
 ## 2. Update CHANGELOG.md
 
