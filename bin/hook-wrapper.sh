@@ -160,7 +160,11 @@ else
     CACHED_VER=""
     [ -f "$VERSION_CACHE" ] && IFS= read -r CACHED_VER < "$VERSION_CACHE" 2>/dev/null
 
-    if [ -n "$PLG_VER" ] && [ "$CACHED_VER" = "$PLG_VER" ]; then
+    # The version cache is shared across plugin roots (keyed by version only),
+    # so the Codex route always queries the real binary: a cache hit earned by
+    # the Claude root must not let the old-binary guard trust a stale binary
+    # sitting in the Codex root.
+    if [ "${CN_PRODUCT:-claude}" = "claude" ] && [ -n "$PLG_VER" ] && [ "$CACHED_VER" = "$PLG_VER" ]; then
         # Cache hit — skip binary version check
         BIN_VER="$PLG_VER"
     else

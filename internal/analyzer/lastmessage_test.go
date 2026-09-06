@@ -16,6 +16,9 @@ func TestClassifyLastMessage(t *testing.T) {
 		{name: "question mark inside", text: "Fixed the what? handling in the parser", want: StatusTaskComplete},
 		{name: "multibyte", text: "Готово ✅", want: StatusTaskComplete},
 		{name: "multibyte question", text: "Продолжать?", want: StatusQuestion},
+		{name: "fullwidth question", text: "続行しますか？", want: StatusQuestion},
+		{name: "arabic question", text: "هل أكمل؟", want: StatusQuestion},
+		{name: "semicolon is not a question", text: "Added the missing semicolon;", want: StatusTaskComplete},
 	}
 	for _, tc := range cases {
 		if got := ClassifyLastMessage(tc.text); got != tc.want {

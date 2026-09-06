@@ -15,8 +15,13 @@ func ClassifyLastMessage(text string) Status {
 	if trimmed == "" {
 		return StatusTaskComplete
 	}
-	if strings.HasSuffix(trimmed, "?") {
-		return StatusQuestion
+	// Question marks across scripts: ASCII, fullwidth (CJK), and Arabic.
+	// The Greek question mark shares its codepoint with the semicolon and
+	// would misclassify ordinary text, so it stays out.
+	for _, suffix := range []string{"?", "？", "؟"} {
+		if strings.HasSuffix(trimmed, suffix) {
+			return StatusQuestion
+		}
 	}
 	return StatusTaskComplete
 }

@@ -140,11 +140,73 @@ func TestCodexCLIContainment(t *testing.T) {
 		{name: "duplicate flag", stdin: cliStopPayload, args: []string{"handle-hook", "Stop", "--product", "codex", "--product", "codex"}},
 		{name: "unknown flag", stdin: cliStopPayload, args: []string{"handle-hook", "Stop", "--product", "codex", "--verbose"}},
 		{name: "missing value", stdin: cliStopPayload, args: []string{"handle-hook", "Stop", "--product"}},
+		{name: "missing event name", stdin: cliStopPayload, args: []string{"handle-hook", "--product", "codex"}},
 	}
 	for _, tc := range cases {
 		res := runCLI(t, env, tc.stdin, tc.args...)
 		assertContained(t, tc.name, res)
 	}
+}
+
+// TestCodexCLIContainmentFailureInjections drives the codex route through the
+// remaining containment matrix: config-load warnings and logger init failure
+// must never reach the process output.
+func TestCodexCLIContainmentFailureInjections(t *testing.T) {
+	t.Run("corrupted stable config", func(t *testing.T) {
+		home := t.TempDir()
+		pluginRoot := t.TempDir()
+
+		// Corrupt the stable config so the quiet loader takes its warning
+		// path, and provide a valid legacy config (delivery disabled) so the
+		// run cannot emit a real desktop notification.
+		cfgDir := filepath.Join(home, ".claude", "claude-notifications-go")
+		if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte("{corrupted"), 0o644); err != nil {
+			t.Fatalf("write corrupted config: %v", err)
+		}
+		legacyDir := filepath.Join(pluginRoot, "config")
+		if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+			t.Fatalf("mkdir legacy: %v", err)
+		}
+		legacy := `{"notifications":{"desktop":{"enabled":false},"webhook":{"enabled":false}}}`
+		if err := os.WriteFile(filepath.Join(legacyDir, "config.json"), []byte(legacy), 0o644); err != nil {
+			t.Fatalf("write legacy config: %v", err)
+		}
+
+		env := []string{
+			"HOME=" + home,
+			"USERPROFILE=" + home,
+			"PLUGIN_ROOT=" + pluginRoot,
+			"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"),
+			"PATH=" + os.Getenv("PATH"),
+			"TMPDIR=" + t.TempDir(),
+		}
+		res := runCLI(t, env, cliStopPayload, "handle-hook", "Stop", "--product", "codex")
+		assertContained(t, "corrupted stable config", res)
+	})
+
+	t.Run("logger init failure", func(t *testing.T) {
+		home := t.TempDir()
+		// PLUGIN_ROOT pointing at a regular file makes log-file creation
+		// fail on every platform.
+		notADir := filepath.Join(t.TempDir(), "not-a-dir")
+		if err := os.WriteFile(notADir, []byte("x"), 0o644); err != nil {
+			t.Fatalf("write file: %v", err)
+		}
+
+		env := []string{
+			"HOME=" + home,
+			"USERPROFILE=" + home,
+			"PLUGIN_ROOT=" + notADir,
+			"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"),
+			"PATH=" + os.Getenv("PATH"),
+			"TMPDIR=" + t.TempDir(),
+		}
+		res := runCLI(t, env, cliStopPayload, "handle-hook", "Stop", "--product", "codex")
+		assertContained(t, "logger init failure", res)
+	})
 }
 
 // TestCodexCLIDeliversWebhook is the positive end-to-end check through the

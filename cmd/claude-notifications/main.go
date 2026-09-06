@@ -213,6 +213,14 @@ func newExecHook(exePath, hookName string) hookCommand {
 // parser is strict and any anomaly follows the fail-open observation
 // contract: file-log only, empty output, exit 0.
 func runHandleHook(args []string) {
+	// A --product flag in place of the event name means the configured
+	// command lost its event argument; that is a codex-shaped invocation,
+	// so it follows the fail-open observation contract, not the loud UX.
+	if isProductFlagToken(args[0]) {
+		codexFailOpen(fmt.Sprintf("missing hook event name before %q", args[0]))
+		return
+	}
+
 	hookEvent := args[0]
 	rest := args[1:]
 
@@ -244,9 +252,13 @@ func runHandleHook(args []string) {
 	}
 }
 
+func isProductFlagToken(arg string) bool {
+	return arg == "--product" || strings.HasPrefix(arg, "--product=")
+}
+
 func hasProductFlag(args []string) bool {
 	for _, a := range args {
-		if a == "--product" || strings.HasPrefix(a, "--product=") {
+		if isProductFlagToken(a) {
 			return true
 		}
 	}
@@ -294,6 +306,10 @@ func parseProductArgs(args []string) (string, error) {
 func codexRouteRequested(argv []string) bool {
 	if len(argv) < 3 || argv[1] != "handle-hook" {
 		return false
+	}
+	// Event name replaced by the flag: fail-open containment route.
+	if isProductFlagToken(argv[2]) {
+		return true
 	}
 	rest := argv[3:]
 	if !hasProductFlag(rest) {

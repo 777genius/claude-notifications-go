@@ -121,9 +121,16 @@ func (osEnv) LookupEnv(key string) (string, bool) { return os.LookupEnv(key) }
 // in-memory IO and returns the typed host DTO. Any SDK failure is an error;
 // the caller owns the fail-open observation contract.
 func Decode(ctx context.Context, publicEvent string, payload []byte) (Decoded, error) {
+	decoded, _, err := decodeWithIO(ctx, publicEvent, payload)
+	return decoded, err
+}
+
+// decodeWithIO exposes the IO adapter to tests so they can assert the SDK
+// consumed the payload exactly once and produced no process output.
+func decodeWithIO(ctx context.Context, publicEvent string, payload []byte) (Decoded, *bufferedIO, error) {
 	invocation, ok := InvocationForEvent(publicEvent)
 	if !ok {
-		return Decoded{}, fmt.Errorf("unsupported codex event %q", publicEvent)
+		return Decoded{}, nil, fmt.Errorf("unsupported codex event %q", publicEvent)
 	}
 
 	io := &bufferedIO{payload: payload}
@@ -187,12 +194,12 @@ func Decode(ctx context.Context, publicEvent string, payload []byte) (Decoded, e
 	})
 
 	if code := app.RunContext(ctx); code != 0 {
-		return Decoded{}, fmt.Errorf("sdk dispatch for %s failed: exit %d, stderr: %q", invocation, code, io.stderr.String())
+		return Decoded{}, io, fmt.Errorf("sdk dispatch for %s failed: exit %d, stderr: %q", invocation, code, io.stderr.String())
 	}
 	if out.Stop == nil && out.SubagentStop == nil && out.PermissionRequest == nil {
-		return Decoded{}, fmt.Errorf("sdk dispatch for %s produced no callback result", invocation)
+		return Decoded{}, io, fmt.Errorf("sdk dispatch for %s produced no callback result", invocation)
 	}
-	return out, nil
+	return out, io, nil
 }
 
 // cloneRaw defensively copies raw JSON so SDK-owned buffers cannot mutate the

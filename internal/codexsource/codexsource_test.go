@@ -62,6 +62,24 @@ func TestDecodeSubagentStopThroughSDK(t *testing.T) {
 	}
 }
 
+// TestDecodeConsumesPayloadOnceWithNoOutput proves the SDK read the saved
+// payload exactly once and wrote nothing that could leak to the host process.
+func TestDecodeConsumesPayloadOnceWithNoOutput(t *testing.T) {
+	decoded, io, err := decodeWithIO(context.Background(), "Stop", []byte(realStopPayload))
+	if err != nil {
+		t.Fatalf("decodeWithIO() error = %v", err)
+	}
+	if decoded.Stop == nil {
+		t.Fatal("Stop DTO missing")
+	}
+	if io.reads != 1 {
+		t.Fatalf("payload consumed %d times, want exactly 1", io.reads)
+	}
+	if io.stdout.Len() != 0 || io.stderr.Len() != 0 {
+		t.Fatalf("SDK wrote output: stdout=%q stderr=%q", io.stdout.String(), io.stderr.String())
+	}
+}
+
 func TestDecodeUnsupportedEvent(t *testing.T) {
 	_, err := Decode(context.Background(), "PreToolUse", []byte(realStopPayload))
 	if err == nil || !strings.Contains(err.Error(), "unsupported codex event") {
