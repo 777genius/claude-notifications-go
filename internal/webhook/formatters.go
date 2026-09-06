@@ -239,6 +239,8 @@ func getColorForStatus(status analyzer.Status) string {
 		return "#ffc107" // Yellow/Orange
 	case analyzer.StatusPlanReady:
 		return "#007bff" // Blue
+	case analyzer.StatusPermissionRequest:
+		return "#fd7e14" // Orange
 	default:
 		return "#6c757d" // Gray
 	}
@@ -255,6 +257,8 @@ func getDiscordColorInt(status analyzer.Status) int {
 		return 0xffc107 // Yellow
 	case analyzer.StatusPlanReady:
 		return 0x007bff // Blue
+	case analyzer.StatusPermissionRequest:
+		return 0xfd7e14 // Orange
 	default:
 		return 0x6c757d // Gray
 	}
@@ -271,6 +275,8 @@ func getEmojiForStatus(status analyzer.Status) string {
 		return "❓"
 	case analyzer.StatusPlanReady:
 		return "📋"
+	case analyzer.StatusPermissionRequest:
+		return "🔐"
 	default:
 		return "ℹ️"
 	}
@@ -327,6 +333,8 @@ func getLarkColorTemplate(status analyzer.Status) string {
 		return "red"
 	case analyzer.StatusPlanReady:
 		return "blue"
+	case analyzer.StatusPermissionRequest:
+		return "orange"
 	default:
 		return "grey"
 	}

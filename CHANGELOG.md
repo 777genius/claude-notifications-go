@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Codex CLI support (initial)** - the same Go binary now handles OpenAI Codex CLI hooks: `Stop` (turn completion, classified from the final assistant message) and `PermissionRequest` (new `permission_request` status with sound, webhook colors, and Focus Mode break-through). Ships as a native Codex plugin (`.codex-plugin/plugin.json` + `hooks/hooks-codex.json`) with dedicated launchers `bin/codex-hook-wrapper.sh`/`.cmd`. Codex `SubagentStop` is decoded but not delivered yet. Known limitations: `PermissionRequest` cannot fire when Codex never asks for approval (bypass/never modes), and Windows support for the Codex route is not declared until proven.
+- **`permission_request` notification status** - config defaults, validation, shipped `config/config.json` entry, webhook formatting, and time-sensitive desktop delivery.
+
+### Changed
+- **Minimum Go version is now 1.22** (was 1.21), required by the `plugin-kit-ai/sdk` dependency that provides typed Codex hook decoding and host detection.
+- **Internal event pipeline is now source-neutral** - hook handling routes through a typed product event contract (`Event`/`EventSource`); the Claude path behavior is unchanged and covered by the existing regression suite.
+
 ## [1.41.0] - 2026-08-31
 
 ### Added
