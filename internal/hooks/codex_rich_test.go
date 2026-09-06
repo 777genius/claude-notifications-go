@@ -151,6 +151,37 @@ func TestCodexFlowSubagentStopOptIn(t *testing.T) {
 	}
 }
 
+// TestCodexFlowParallelSubagentsDoNotCollapse guards doc 00 §6.1: parallel
+// subagents finishing with an identical final message must both notify.
+func TestCodexFlowParallelSubagentsDoNotCollapse(t *testing.T) {
+	session := uniqueCodexSession(t)
+	noSuppress := false
+	makeDecoded := func(agentID string) codexsource.Decoded {
+		return codexsource.Decoded{
+			SubagentStop: &codexsource.SubagentStopData{
+				Stop:    *codexStopData(session, "turn-1", "Done.", false),
+				AgentID: agentID,
+			},
+		}
+	}
+
+	handler, mockNotif, _ := newCodexTestHandler(t, makeDecoded("agent-a"))
+	handler.cfg.Notifications.SuppressForSubagents = &noSuppress
+	handler.cfg.Notifications.NotifyOnSubagentStop = true
+	if err := handler.HandleHook("SubagentStop", strings.NewReader(`{}`)); err != nil {
+		t.Fatalf("first HandleHook() error = %v", err)
+	}
+
+	handler.source = CodexSource{DecodeFn: stubCodexDecode(makeDecoded("agent-b"))}
+	if err := handler.HandleHook("SubagentStop", strings.NewReader(`{}`)); err != nil {
+		t.Fatalf("second HandleHook() error = %v", err)
+	}
+
+	if got := mockNotif.callCount(); got != 2 {
+		t.Fatalf("parallel subagents with identical message delivered %d notifications, want 2", got)
+	}
+}
+
 func TestCodexFlowStopErrorHeuristic(t *testing.T) {
 	handler, mockNotif, _ := newCodexTestHandler(t, codexsource.Decoded{
 		Stop: codexStopData(uniqueCodexSession(t), "turn-1", "Rate limit reached, please retry later.", false),

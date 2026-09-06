@@ -221,7 +221,11 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 	keys := h.eventKeys(ev)
 
-	if h.cfg.Notifications.Desktop.ClickToFocus && (ev.Kind() == EventPreToolUse || ev.Kind() == EventNotification) {
+	// Claude-only: the Ghostty capture persists session state under the RAW
+	// session id, and Codex state must only ever use hashed identities
+	// (doc 00 §6.1). Codex click-to-focus is not a declared feature.
+	if h.cfg.Notifications.Desktop.ClickToFocus && ev.Product == ProductClaude &&
+		(ev.Kind() == EventPreToolUse || ev.Kind() == EventNotification) {
 		notifier.MaybeCaptureGhosttyTerminalID(
 			h.cfg.Notifications.Desktop.TerminalBundleID,
 			ev.Session.SessionID,
@@ -518,14 +522,18 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	defer releaseContentLock()
 
 	// Check for duplicate message content (3 minutes = 180 seconds window).
-	// Interactive prompts are exempt: for permission_request the body is
-	// deterministic ("Codex requests permission: <tool>"), and a Codex
-	// question re-asked verbatim in a later turn is still a REAL prompt the
-	// user must see — the session is blocked on them either way. Turn-level
-	// duplicates of the event itself are already bounded by the
-	// turn+tool(+call)-scoped dedup lock.
+	// Exempt cases where the session-wide window contradicts the contract's
+	// event-scoped dedup identity (doc 00 §6.1):
+	// - permission_request: deterministic body, a later prompt for the same
+	//   tool is a REAL prompt the user must see;
+	// - Codex questions: re-asked verbatim in a later turn is still a real
+	//   blocking prompt;
+	// - Codex SubagentStop: parallel subagents finishing with an identical
+	//   final message must not collapse into one notification.
+	// Turn-level duplicates of the event itself stay bounded by the
+	// turn+tool/agent(+call)-scoped dedup lock.
 	skipContentDedup := status == analyzer.StatusPermissionRequest ||
-		(ev.Product == ProductCodex && ev.Kind() == EventPreToolUse)
+		(ev.Product == ProductCodex && (ev.Kind() == EventPreToolUse || ev.Kind() == EventSubagentStop))
 	if !skipContentDedup {
 		isDuplicate, err := h.stateMgr.IsDuplicateMessage(keys.stateKey, message, 180)
 		if err != nil {

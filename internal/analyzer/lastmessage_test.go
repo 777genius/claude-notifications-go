@@ -29,6 +29,11 @@ func TestClassifyLastMessage(t *testing.T) {
 		{name: "error takes precedence over question", text: "Rate limit reached — retry?", want: StatusAPIErrorOverloaded},
 		{name: "long summary mentioning rate limit stays complete", text: strings.Repeat("Implemented the retry middleware. ", 12) + "It now backs off when the upstream reports rate limit responses.", want: StatusTaskComplete},
 		{name: "plain word error is not enough", text: "Fixed the error in the parser.", want: StatusTaskComplete},
+		{name: "short summary about rate limit stays complete", text: "Fixed the rate limit bug.", want: StatusTaskComplete},
+		{name: "short summary about session limit stays complete", text: "Raised the session limit to 50.", want: StatusTaskComplete},
+		// >300 bytes but <300 runes: byte counting would wrongly skip the
+		// error heuristic for non-ASCII scripts.
+		{name: "cyrillic error within rune budget", text: strings.Repeat("Запрос отклонён провайдером. ", 8) + "Rate limit reached, please retry.", want: StatusAPIErrorOverloaded},
 	}
 	for _, tc := range cases {
 		if got := ClassifyLastMessage(tc.text); got != tc.want {
