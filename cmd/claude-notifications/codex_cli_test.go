@@ -2,6 +2,10 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 var (
@@ -139,6 +144,57 @@ func TestCodexCLIContainment(t *testing.T) {
 	for _, tc := range cases {
 		res := runCLI(t, env, tc.stdin, tc.args...)
 		assertContained(t, tc.name, res)
+	}
+}
+
+// TestCodexCLIDeliversWebhook is the positive end-to-end check through the
+// real binary: a valid Codex Stop payload must reach an actual delivery
+// channel (a local webhook sink), not just exit cleanly.
+func TestCodexCLIDeliversWebhook(t *testing.T) {
+	received := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		select {
+		case received <- body:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	home := t.TempDir()
+	pluginRoot := t.TempDir()
+	cfgDir := filepath.Join(home, ".claude", "claude-notifications-go")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfg := fmt.Sprintf(`{"notifications":{"desktop":{"enabled":false},"webhook":{"enabled":true,"preset":"slack","url":%q}}}`, srv.URL)
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	env := []string{
+		"HOME=" + home,
+		"USERPROFILE=" + home,
+		"PLUGIN_ROOT=" + pluginRoot,
+		"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"),
+		"PATH=" + os.Getenv("PATH"),
+		"TMPDIR=" + t.TempDir(),
+	}
+
+	marker := fmt.Sprintf("webhook-e2e-%d", time.Now().UnixNano())
+	payload := fmt.Sprintf(`{"session_id":"%s","turn_id":"turn-1","transcript_path":"/tmp/rollout.jsonl","cwd":"/tmp/proj","hook_event_name":"Stop","model":"gpt-5.6-sol","permission_mode":"bypassPermissions","stop_hook_active":false,"last_assistant_message":"Delivered %s."}`, marker, marker)
+
+	res := runCLI(t, env, payload, "handle-hook", "Stop", "--product", "codex")
+	assertContained(t, "webhook delivery", res)
+
+	select {
+	case body := <-received:
+		if !strings.Contains(string(body), marker) {
+			t.Fatalf("webhook body %q does not contain marker %q", body, marker)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("webhook sink received nothing within 10s")
 	}
 }
 
