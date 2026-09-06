@@ -468,13 +468,20 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	}
 	defer releaseContentLock()
 
-	// Check for duplicate message content (3 minutes = 180 seconds window)
-	isDuplicate, err := h.stateMgr.IsDuplicateMessage(keys.stateKey, message, 180)
-	if err != nil {
-		logging.Warn("Failed to check duplicate message: %v", err)
-	} else if isDuplicate {
-		logging.Debug("Duplicate message content detected within 3 minutes, skipping")
-		return nil
+	// Check for duplicate message content (3 minutes = 180 seconds window).
+	// permission_request is exempt: its body is deterministic ("Codex requests
+	// permission: <tool>"), so the session-wide window would silently swallow
+	// a REAL approval prompt for the same tool in a later turn, and the user
+	// would not know the session is blocked. Turn-level duplicates of the
+	// event itself are already bounded by the turn+tool-scoped dedup lock.
+	if status != analyzer.StatusPermissionRequest {
+		isDuplicate, err := h.stateMgr.IsDuplicateMessage(keys.stateKey, message, 180)
+		if err != nil {
+			logging.Warn("Failed to check duplicate message: %v", err)
+		} else if isDuplicate {
+			logging.Debug("Duplicate message content detected within 3 minutes, skipping")
+			return nil
+		}
 	}
 
 	// Release the cross-hook content lock before any delivery work. Desktop

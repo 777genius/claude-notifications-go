@@ -3,8 +3,11 @@ package hooks
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/777genius/claude-notifications/internal/analyzer"
 	"github.com/777genius/claude-notifications/internal/codexsource"
@@ -26,10 +29,34 @@ func codexTestConfig() *config.Config {
 
 func newCodexTestHandler(t *testing.T, decoded codexsource.Decoded) (*Handler, *mockNotifier, *mockWebhook) {
 	t.Helper()
+
+	// Codex identities hash into claude-*-codex-* filenames that the shared
+	// newTestHandler cleanup patterns do not match; sweep them so repeated
+	// runs on the same machine never inherit dedup/cooldown state.
+	tempDir := os.TempDir()
+	for _, pattern := range []string{
+		"claude-session-state-codex-*.json",
+		"claude-notification-codex-*.lock",
+		"claude-content-lock-codex-*.lock",
+	} {
+		matches, _ := filepath.Glob(filepath.Join(tempDir, pattern))
+		for _, f := range matches {
+			_ = os.Remove(f)
+		}
+	}
+
 	handler, mockNotif, mockWH := newTestHandler(t, codexTestConfig())
 	handler.product = ProductCodex
 	handler.source = CodexSource{DecodeFn: stubCodexDecode(decoded)}
 	return handler, mockNotif, mockWH
+}
+
+// uniqueCodexSession returns a session id unique per test invocation so
+// hashed state files can never collide across runs within the 180-second
+// duplicate window.
+func uniqueCodexSession(t *testing.T) string {
+	t.Helper()
+	return fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano())
 }
 
 func codexStopData(session, turn, message string, continuation bool) *codexsource.StopData {
@@ -48,7 +75,7 @@ func codexStopData(session, turn, message string, continuation bool) *codexsourc
 
 func TestCodexFlowStopNotifies(t *testing.T) {
 	handler, mockNotif, _ := newCodexTestHandler(t, codexsource.Decoded{
-		Stop: codexStopData("codex-flow-stop-1", "turn-1", "All tests pass.", false),
+		Stop: codexStopData(uniqueCodexSession(t), "turn-1", "All tests pass.", false),
 	})
 
 	if err := handler.HandleHook("Stop", strings.NewReader(`{}`)); err != nil {
@@ -69,7 +96,7 @@ func TestCodexFlowStopNotifies(t *testing.T) {
 
 func TestCodexFlowStopQuestion(t *testing.T) {
 	handler, mockNotif, _ := newCodexTestHandler(t, codexsource.Decoded{
-		Stop: codexStopData("codex-flow-question-1", "turn-1", "Should I continue?", false),
+		Stop: codexStopData(uniqueCodexSession(t), "turn-1", "Should I continue?", false),
 	})
 
 	if err := handler.HandleHook("Stop", strings.NewReader(`{}`)); err != nil {
@@ -87,7 +114,7 @@ func TestCodexFlowStopQuestion(t *testing.T) {
 
 func TestCodexFlowContinuationSuppressed(t *testing.T) {
 	handler, mockNotif, mockWH := newCodexTestHandler(t, codexsource.Decoded{
-		Stop: codexStopData("codex-flow-cont-1", "turn-1", "OK", true),
+		Stop: codexStopData(uniqueCodexSession(t), "turn-1", "OK", true),
 	})
 
 	if err := handler.HandleHook("Stop", strings.NewReader(`{}`)); err != nil {
@@ -102,7 +129,7 @@ func TestCodexFlowContinuationSuppressed(t *testing.T) {
 func TestCodexFlowSubagentStopSkipped(t *testing.T) {
 	handler, mockNotif, mockWH := newCodexTestHandler(t, codexsource.Decoded{
 		SubagentStop: &codexsource.SubagentStopData{
-			Stop:    *codexStopData("codex-flow-sub-1", "turn-1", "done", false),
+			Stop:    *codexStopData(uniqueCodexSession(t), "turn-1", "done", false),
 			AgentID: "a1",
 		},
 	})
@@ -119,7 +146,7 @@ func TestCodexFlowSubagentStopSkipped(t *testing.T) {
 func TestCodexFlowPermissionRequest(t *testing.T) {
 	handler, mockNotif, _ := newCodexTestHandler(t, codexsource.Decoded{
 		PermissionRequest: &codexsource.PermissionRequestData{
-			SessionID:     "codex-flow-perm-1",
+			SessionID:     uniqueCodexSession(t),
 			TurnID:        "turn-1",
 			CWD:           "/proj",
 			HookEventName: "PermissionRequest",
@@ -150,8 +177,39 @@ func TestCodexFlowPermissionRequest(t *testing.T) {
 	}
 }
 
+// TestCodexFlowPermissionRequestRepeatsAcrossTurns guards the contract that
+// event dedup is turn-scoped: the same tool asking for approval again in a
+// LATER turn must notify again even though the body text is identical.
+func TestCodexFlowPermissionRequestRepeatsAcrossTurns(t *testing.T) {
+	session := uniqueCodexSession(t)
+	permData := func(turn string) *codexsource.PermissionRequestData {
+		return &codexsource.PermissionRequestData{
+			SessionID:     session,
+			TurnID:        turn,
+			CWD:           "/proj",
+			HookEventName: "PermissionRequest",
+			ToolName:      "shell",
+			ToolInput:     []byte(`{}`),
+		}
+	}
+
+	handler, mockNotif, _ := newCodexTestHandler(t, codexsource.Decoded{PermissionRequest: permData("turn-1")})
+	if err := handler.HandleHook("PermissionRequest", strings.NewReader(`{}`)); err != nil {
+		t.Fatalf("first HandleHook() error = %v", err)
+	}
+
+	handler.source = CodexSource{DecodeFn: stubCodexDecode(codexsource.Decoded{PermissionRequest: permData("turn-2")})}
+	if err := handler.HandleHook("PermissionRequest", strings.NewReader(`{}`)); err != nil {
+		t.Fatalf("second HandleHook() error = %v", err)
+	}
+
+	if got := mockNotif.callCount(); got != 2 {
+		t.Fatalf("permission request across two turns delivered %d notifications, want 2", got)
+	}
+}
+
 func TestCodexFlowTurnScopedDedup(t *testing.T) {
-	session := "codex-flow-dedup-1"
+	session := uniqueCodexSession(t)
 
 	// Same turn twice: the second run must be deduplicated.
 	handler, mockNotif, _ := newCodexTestHandler(t, codexsource.Decoded{
