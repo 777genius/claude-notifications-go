@@ -95,9 +95,32 @@ Invariants:
   Claude.
 - Payload sniffing inspects bounded top-level JSON only and does not import platform decoder
   packages.
-- Existing Claude hooks remain identifiable through the legacy `handle-hook <ClaudeEvent>` command
-  and `CLAUDE_PLUGIN_ROOT`. Codex uses the same public event names with an explicit
+- Existing Claude hooks remain identifiable through the legacy `handle-hook <ClaudeEvent>`
+  invocation shape (no `--product` flag). Codex uses the same public event names with an explicit
   `--product codex`; only the internal SDK invocation names are prefixed.
+- `CLAUDE_PLUGIN_ROOT` must never be used as a Claude marker: Codex natively exports both
+  `PLUGIN_ROOT` and `CLAUDE_PLUGIN_ROOT` to plugin-bundled hooks for compatibility, so the
+  variable does not discriminate between hosts.
+
+`DefaultRegistry()` composition (MVP):
+
+- Codex signal: payload sniff on the presence of a top-level `turn_id` key — present in every
+  verified Codex hook payload and absent from all Claude hook payloads. No env marker is registered
+  for Codex: the only verified Codex-exported variables (`PLUGIN_ROOT`, `CLAUDE_PLUGIN_ROOT`) are
+  generic or intentionally mirrored, so none discriminates reliably.
+- Claude signal: payload sniff on a top-level `hook_event_name` without `turn_id`. Claude is never
+  a silent default; without a match, detection returns `PlatformUnknown`.
+
+Runtime routing decision table (MVP):
+
+| Invocation | Route |
+|---|---|
+| `handle-hook <Event>` (no flag) | Legacy Claude route, byte-for-byte current behavior; `Detect` is not consulted at runtime. |
+| `handle-hook <Event> --product codex` | Codex route; `Detect` validates the explicit override. |
+| `handle-hook <Event> --product <unknown>` | Fail-open observation contract: file-log, exit 0, empty output. |
+
+The env and payload tiers of `Detect` ship fully unit-tested but are not wired as the runtime
+selector in this milestone; they exist so future hosts can be added without changing this contract.
 
 Tests cover explicit override, invalid override, env markers, bounded payload sniffing, ambiguous
 signals, unknown input, and registry isolation.
@@ -163,8 +186,8 @@ remains SDK-only and is intentionally absent:
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${PLUGIN_ROOT}/bin/hook-wrapper.sh\" handle-hook Stop --product codex",
-            "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\hook-wrapper.cmd\" handle-hook Stop --product codex",
+            "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook Stop --product codex",
+            "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook Stop --product codex",
             "timeout": 30,
             "async": true
           }
@@ -176,8 +199,8 @@ remains SDK-only and is intentionally absent:
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${PLUGIN_ROOT}/bin/hook-wrapper.sh\" handle-hook PermissionRequest --product codex",
-            "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\hook-wrapper.cmd\" handle-hook PermissionRequest --product codex",
+            "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook PermissionRequest --product codex",
+            "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook PermissionRequest --product codex",
             "timeout": 30,
             "async": true
           }
@@ -189,12 +212,52 @@ remains SDK-only and is intentionally absent:
 ```
 
 There is one matcher group and one handler per event, with matcher, `statusMessage`, and
-`additionalContextLimit` omitted. The launcher paths are `bin/hook-wrapper.sh` and
-`bin/hook-wrapper.cmd`; both accept the exact argv shown above. This is the candidate identity until
+`additionalContextLimit` omitted. The launcher paths are the dedicated `bin/codex-hook-wrapper.sh`
+and `bin/codex-hook-wrapper.cmd`; both accept the exact argv shown above. They are separate files
+from the Claude `bin/hook-wrapper.sh` so that Codex-route behavior can differ without touching the
+shipped Claude contract. This is the candidate identity until
 the disposable macOS/Linux/Windows proof passes. It may be corrected before the first public Codex
 release; after that release, changing any hashed field, group/handler order, launcher path, or argv
 requires an explicit re-trust migration. A golden test serializes the normalized identity for both
 handlers on Unix and Windows separately and detects drift in either effective command.
+
+### `sh` prefix decision
+
+The frozen Codex command keeps the explicit `sh` interpreter prefix. This mirrors the shipped
+Claude `hooks/hooks.json` (`"command": "sh"` with the wrapper path in `args`), which is the variant
+proven in production today. Rationale: marketplace installs copy the plugin bundle into a cache,
+and executable-bit preservation across that copy (and across archive-based distribution) is not
+verified on any platform; `sh <script>` removes that entire failure class, while direct script
+execution would depend on it. Because the command string is part of the frozen trust identity,
+the defensive form must be chosen before the first release; switching later would force a re-trust
+migration for every user. This is a deliberate, Codex-only deviation from the repository rule
+"do not prefix hook commands with `sh`": that rule governs the Claude `hooks/hooks.json` shape and
+is not extended to the Codex identity, where robustness of the frozen string wins.
+
+### Launcher behavior contract
+
+The launcher file contents are not part of the trust hash (only the configured command string is),
+so launcher internals may evolve freely between releases. Required behavior:
+
+- `bin/codex-hook-wrapper.sh` sets `CN_PRODUCT=codex` and delegates to the shared wrapper logic
+  (the initial implementation may simply export the variable and `exec` the shared script).
+  `bin/codex-hook-wrapper.cmd` is an independent minimal Windows launcher with the same contract;
+  it ships alongside but Windows remains undeclared until proven (section 8, stage 7).
+- The shared wrapper must skip every Claude-specific side effect whenever `CN_PRODUCT` is not
+  `claude` (unset defaults to `claude`). In particular it must never create or rewrite the pointer
+  file `~/.claude/claude-notifications-go/plugin-root`. Today's `bin/hook-wrapper.sh`
+  unconditionally rewrites that pointer whenever the current plugin root differs; with Claude and
+  Codex plugin caches coexisting, alternating hook runs would ping-pong the pointer and corrupt the
+  fallback consumed by old-version Claude shims (`bin/bootstrap.sh`). A regression test proves a
+  Codex-route launch performs zero writes under `~/.claude/`.
+- The Codex launcher resolves the plugin root from native `PLUGIN_ROOT`, falling back to the
+  script's own location; it does not depend on `CLAUDE_PLUGIN_ROOT`.
+- Old-binary guard: pre-Codex binaries dispatch `handle-hook` on `os.Args[2]` alone and silently
+  ignore the trailing `--product codex`, so an outdated downloaded binary would misroute a Codex
+  payload into the Claude decoder. Before exec, the Codex launcher compares the binary version with
+  the first Codex-capable release version; if older, it runs the installer once, and if the binary
+  is still older afterward it exits 0 with empty output (file-log only). A pre-Codex binary is
+  never executed with a Codex payload.
 
 Before implementation proceeds past the plugin-artifact stage, a disposable Codex home must prove:
 
@@ -227,8 +290,10 @@ Required DTO coverage:
 
 Decoder rules:
 
-- The SDK's 1 MiB payload limit remains the single wire limit and is exported as
-  `pluginkitai.MaxPayloadBytes`; the product must not duplicate the magic number.
+- The SDK's 1 MiB payload limit remains the single wire limit. Today it exists only as an internal
+  constant (`sdk/internal/runtime/payloads.go`); Stage 2 must add the public export
+  `pluginkitai.MaxPayloadBytes` referencing that constant so the product never duplicates the
+  magic number.
 - Empty or malformed payloads return typed errors.
 - UTF-8/non-ASCII input is covered, including the known Windows risk.
 - Observation handlers encode empty stdout on success.
@@ -242,69 +307,150 @@ Decoder rules:
 The product owns the normalized input contract:
 
 ```go
+type Product string
+
+const (
+    ProductClaude Product = "claude"
+    ProductCodex  Product = "codex"
+)
+
 type EventKind string
 
 const (
+    EventUnknown           EventKind = ""
+    EventPreToolUse        EventKind = "pre_tool_use"
+    EventNotification      EventKind = "notification"
     EventStop              EventKind = "stop"
     EventSubagentStop      EventKind = "subagent_stop"
     EventPermissionRequest EventKind = "permission_request"
-    // Existing Claude-only kinds remain represented without lossy mapping.
+    EventTeammateIdle      EventKind = "teammate_idle"
 )
 
+type SessionContext struct {
+    SessionID      string
+    TurnID         string
+    CWD            string
+    TranscriptPath string
+    Model          string
+    PermissionMode string
+}
+
+type AgentContext struct {
+    ID              string
+    Type            string
+    TranscriptPath  string
+    ParentSessionID string
+    ParentToolUseID string
+}
+
+// Event is the product-owned envelope. Host DTO types never cross this boundary.
 type Event struct {
-    Product             string
-    Kind                EventKind
-    PayloadEventName    string
-    Raw                 json.RawMessage
-    SessionID           string
-    TurnID              string
-    CWD                 string
-    TranscriptPath      string
-    Message             string
-    LastAssistantMessage string
-    ToolName            string
-    ToolUseID           string
-    ToolInput           json.RawMessage
-    Model               string
-    PermissionMode      string
-    TeamName            string
-    TeammateName        string
-    AgentID             string
-    AgentType           string
-    AgentTranscriptPath string
-    ParentSessionID     string
-    ParentToolUseID     string
-    StopHookActive      bool
+    Product          Product
+    PayloadEventName string          // diagnostic only; never selects the route
+    Session          SessionContext
+    Payload          EventPayload
+    Raw              json.RawMessage // sensitive, retained for forward compatibility
+}
+
+func (e Event) Kind() EventKind {
+    if e.Payload == nil {
+        return EventUnknown
+    }
+    return e.Payload.eventKind()
+}
+
+// The unexported method seals the payload family inside the product package.
+type EventPayload interface {
+    eventKind() EventKind
+}
+
+type StopPayload struct {
+    AssistantMessage string
+    Continuation     bool
+}
+
+type SubagentStopPayload struct {
+    Stop  StopPayload
+    Agent *AgentContext // required for Codex, absent for legacy Claude payloads
+}
+
+type PermissionRequestPayload struct {
+    ToolName  string
+    ToolInput json.RawMessage
+    Agent     *AgentContext // optional on the Codex wire
+}
+
+type PreToolUsePayload struct {
+    ToolName  string
+    ToolInput json.RawMessage
+}
+
+type NotificationPayload struct{}
+
+type TeammateIdlePayload struct {
+    TeamName     string
+    TeammateName string
 }
 
 type EventSource interface {
     Decode(context.Context, string, io.Reader) (Event, error)
 }
+
+func ValidateEvent(Event) error
+
+func (StopPayload) eventKind() EventKind              { return EventStop }
+func (SubagentStopPayload) eventKind() EventKind      { return EventSubagentStop }
+func (PermissionRequestPayload) eventKind() EventKind { return EventPermissionRequest }
+func (PreToolUsePayload) eventKind() EventKind        { return EventPreToolUse }
+func (NotificationPayload) eventKind() EventKind      { return EventNotification }
+func (TeammateIdlePayload) eventKind() EventKind      { return EventTeammateIdle }
 ```
 
 `Status` is derived product policy and is not a decoder field.
 
+This envelope + sealed typed payload design is the selected MVP contract. Do not replace it with a
+flat struct containing every host/event field, `map[string]any`, or SDK DTO unions. Common session
+identity stays in `SessionContext`; fields meaningful only for one event stay in that event's payload.
+Adding a host does not change the product contract unless it introduces a genuinely new product event
+kind. Adding a new product event requires one payload type and one explicit policy-router case.
+
 Mapping invariants:
 
-- `ClaudeSource` preserves every current `HookData` field and current raw-event behavior.
+- The validated outer argv selects the concrete payload type; `Kind()` derives from that sealed type,
+  so a stored kind cannot disagree with its payload. `PayloadEventName` remains diagnostic and cannot
+  redirect execution. Every source calls the single product-owned `ValidateEvent` immediately after
+  mapping; it checks the known product, non-nil payload, required session fields, and required Codex
+  subagent identity before policy or side effects run.
+- `ClaudeSource` maps every current event without loss: `PreToolUsePayload`, `NotificationPayload`,
+  `StopPayload`, `SubagentStopPayload`, and `TeammateIdlePayload`. Team fields exist only in
+  `TeammateIdlePayload`; tool fields exist only in tool/permission payloads.
 - The legacy Claude entrypoint is never converted to `io.ReadAll`. `ClaudeSource` keeps BOM skipping,
   decodes exactly the first JSON value from the reader without waiting for EOF, stores that value in
   `Raw`, and ignores trailing data exactly as the current decoder does.
-- `Kind` comes from the validated outer argv; `PayloadEventName` is diagnostic and never selects a
-  route. A mismatch is logged but cannot redirect execution.
 - `Raw` preserves unknown future fields and the difference between absent and `null`; it must be
-  treated as sensitive and never logged wholesale.
-- `CodexSource` maps public `Stop` to internal SDK invocation `CodexStop`, then to `EventStop`.
-- Codex Stop classification uses `last_assistant_message`; it never parses Codex rollout JSONL with
-  the Claude analyzer.
-- Codex `Stop`/`SubagentStop` with `stop_hook_active=true` does not emit a notification, preventing
-  recursive/continuation duplicates.
+  defensively copied, treated as sensitive, and never logged wholesale. Nested `ToolInput` is also
+  copied so SDK buffers cannot mutate the normalized event after decode.
+- `CodexSource` maps public `Stop` to internal SDK invocation `CodexStop`, then to `StopPayload`;
+  `PermissionRequest` maps to `PermissionRequestPayload`; decoded `SubagentStop` maps to
+  `SubagentStopPayload` but remains outside product delivery scope.
+- Wire names do not leak into product policy: Codex `last_assistant_message` maps to
+  `StopPayload.AssistantMessage`, and `stop_hook_active` maps to `StopPayload.Continuation`.
+- One product policy router type-switches over the sealed payload family and derives status/body/
+  dedup inputs. Sources only decode/map; SDK adapters never classify or notify. Unknown payloads fail
+  closed with an internal error rather than falling into task-complete behavior.
+- Codex Stop classification uses `StopPayload.AssistantMessage`; it never parses Codex rollout JSONL
+  with the Claude analyzer.
+- Codex `Stop`/`SubagentStop` with `StopPayload.Continuation=true` does not emit a notification,
+  preventing recursive/continuation duplicates.
 - Claude Stop continues to analyze `TranscriptPath` exactly as before.
 - PermissionRequest adds `StatusPermissionRequest = "permission_request"` across analyzer status,
   config defaults/validation, summary body, notifier urgency, and webhook formatting. It is
-  time-sensitive and uses the tool identity in the body.
-- `ToolInput` stays raw for typed consumers but is never logged or displayed wholesale; any body
-  projection uses an allowlist plus redaction and truncation.
+  time-sensitive and uses the tool identity in the body. The touchpoint list additionally includes
+  the status enumerations in `cmd/list-sounds/main.go` (and its test), state handling in
+  `internal/state/state.go`, and the shipped `config/config.json` defaults plus its sound mapping;
+  a status present in the analyzer but missing from any of these surfaces is a release blocker.
+- `PermissionRequestPayload.ToolInput` stays raw for typed consumers but is never logged or displayed
+  wholesale; any body projection uses an allowlist plus redaction and truncation.
 - If SubagentStop product delivery is enabled later, dedup includes product, session, turn, and
   agent identity so parallel subagents cannot collapse into one notification.
 - Claude continues to pass the original byte-for-byte `sessionID` and original case-sensitive hook
@@ -315,6 +461,12 @@ Mapping invariants:
 
 `NewHandler(pluginRoot string)` keeps its signature and Claude behavior. Add an explicit
 source-injected constructor for the composition root; existing Claude tests must pass unchanged.
+
+Package layout: the contract above lives in `internal/hooks` (`event.go`, with `claude_source.go`
+and `codex_source.go` implementing `EventSource`). The SDK-facing adapter lives in
+`internal/codexsource`, the single product package importing `plugin-kit-ai/sdk`, matching the
+release-gate paths in section 10. `internal/hooks` never imports the SDK; `codex_source.go`
+depends on `internal/codexsource` through a narrow DTO-returning interface.
 
 ### 6.2 Exact SDK adapter wiring
 
@@ -341,6 +493,22 @@ Codex.
 Any existing permission-guidance `systemMessage` output must use an injected sink: the Claude route
 keeps its current stdout behavior, while the Codex observation route uses `io.Discard`. No current
 `fmt.Printf` path may leak into Codex stdout.
+
+Known output/exit leaks the Codex route must contain (verified against the v1.41.0 sources):
+
+- `cmd/claude-notifications/main.go` calls `errorhandler.Init` with console output enabled
+  process-wide; on the Codex route handled errors must go to the file log only (re-initialize or
+  scope the configuration before any fallible work).
+- `internal/config/config.go` `LoadFromPluginRoot` writes four warnings directly to `os.Stderr`
+  (stable-path resolution failure, corrupted stable config, corrupted legacy config, migration
+  failure). The Codex route loads config through a quiet variant or an injected warning sink that
+  file-logs instead.
+- `handleHook` exits with status 1 through `HandleCriticalError` on logger initialization, handler
+  construction, and hook handling failures; on the Codex route each of these becomes file-log plus
+  exit 0.
+
+A containment test drives the Codex route through each failure injection above and asserts empty
+stdout, empty stderr, and exit 0.
 
 An integration test must execute the exact public form:
 
@@ -372,7 +540,10 @@ override section is a future additive change only after a real differing setting
 `getPluginRootForProduct()` preserves today's Claude precedence (`CLAUDE_PLUGIN_ROOT`, then current
 fallbacks). The Codex route prefers native `PLUGIN_ROOT`, then uses `CLAUDE_PLUGIN_ROOT` only as a
 compatibility fallback. Resource paths and sounds resolve from that explicit root; no mutable
-pointer-file installer protocol is introduced for Codex.
+pointer-file installer protocol is introduced for Codex. The existing pointer file
+`~/.claude/claude-notifications-go/plugin-root` stays a Claude-only mechanism consumed by
+old-version shims; the Codex route never reads or writes it (see the launcher behavior contract in
+section 4).
 
 ## 8. Dependency-safe implementation stages
 
@@ -380,12 +551,14 @@ pointer-file installer protocol is introduced for Codex.
 2. **SDK Codex events**: DTOs, wrappers, descriptors, generation, collision tests, docs.
 3. **SDK release**: merge/tag a real `sdk` version. No local `replace` reaches product CI.
 4. **Product Go 1.22 floor**: update `go.mod` and all OS CI matrices before importing the SDK.
-5. **Product event boundary**: add lossless `Event`/`EventSource`, preserve Claude behavior.
+5. **Product event boundary**: add the envelope, sealed typed payloads, and `EventSource`; preserve
+   Claude behavior before adding Codex routing.
 6. **Codex adapter and CLI wiring**: bounded read, host detection, synthetic SDK args/IO, normalized
    event routing, output containment.
 7. **Codex plugin artifacts**: valid manifest, stable marketplace identity, stable hook config, and
-   platform launchers. Windows is not declared supported until `command_windows`/launcher behavior
-   is proven in a disposable Windows environment.
+   the platform launchers `bin/codex-hook-wrapper.sh`/`bin/codex-hook-wrapper.cmd`. Windows is not
+   declared supported until `commandWindows`/launcher behavior is proven in a disposable Windows
+   environment.
 8. **Tests and release docs**: focused unit/integration/E2E, README limitations, troubleshooting,
    changelog, and release gate.
 
@@ -399,10 +572,15 @@ combine the SDK, product refactor, and cross-platform installer into one mega-PR
 
 - SDK: host detection, all DTO fields, `limit-1`/`limit`/`limit+1`, multibyte UTF-8, reader error,
   resolver collision, and empty response.
-- Product: Claude regression suite unchanged; Codex mapping/classification; exact outer CLI wiring;
-  dedup product/turn/agent identity; config remains single-source. Claude compatibility fixtures
-  cover BOM, trailing JSON/data, a reader that supplies one complete value without EOF, and unchanged
-  legacy state/dedup filenames across upgrade.
+- Product: table tests prove every supported outer event maps to exactly one concrete payload and
+  `Kind()` cannot diverge; `Kind()` is safe for nil payloads, and product validation rejects
+  nil/unknown payloads and missing required Codex subagent identity; the policy router has an explicit
+  case for every sealed payload. Claude
+  regression suite remains unchanged; Codex mapping/classification and exact outer CLI wiring are
+  covered; dedup uses product/turn/agent identity and config remains single-source. Claude
+  compatibility fixtures cover BOM, trailing JSON/data, a reader that supplies one complete value
+  without EOF, all current `HookData` fields, and unchanged legacy state/dedup filenames across
+  upgrade.
 - Manifest: parse the real `.codex-plugin/plugin.json`, resolve the custom hooks path, assert version
   equality across `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` metadata and plugin
   entry, `.codex-plugin/plugin.json`, and the Go binary version, and freeze the normalized handler
@@ -413,7 +591,21 @@ combine the SDK, product refactor, and cross-platform installer into one mega-PR
 
 Never run hook/install/runtime tests against the user's real project, real `HOME`, or real Codex
 configuration. The harness builds a fail-closed environment from an allowlist instead of inheriting
-the user's shell environment. Every automated/live E2E uses a newly created test project and:
+the user's shell environment.
+
+The controls in this section split into two tiers. **Minimum required** (blocks the first Codex
+release): temporary `HOME`/`CODEX_HOME` and redirected platform directories, the minimal read-only
+auth seed with a writable sandbox copy, no copied user config/state, injected local-only desktop
+and webhook sinks, a disposable marketplace/cache bundle materialized from the exact candidate
+commit, cleared inherited plugin/config environment variables, the required scenario list, and the
+post-run assertion that no file was written outside the sandbox roots. **Hardened** (tracked
+follow-up, not a first-release blocker): the durable control-plane ledger with compare-and-set
+phase transitions, runner-level default-deny egress enforcement with network recording,
+symlink/hardlink escape scanning of the full bundle tree, and the keychain-API assertions. Where a
+hardened control is not yet available, run the offline fixtures, perform the live steps manually in
+a disposable environment, and record the gap in the release notes.
+
+Every automated/live E2E uses a newly created test project and:
 
 - a temporary `HOME`;
 - `USERPROFILE`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME`, `XDG_DATA_HOME`, `APPDATA`,
@@ -485,7 +677,8 @@ The Codex gate is required when the diff touches any of:
   `cmd/claude-notifications/**`;
 - `.codex-plugin/**`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
   `hooks/hooks-codex.json`, `config/config.json`, `setup.sh`, `bin/hook-wrapper.sh`,
-  `bin/hook-wrapper.cmd`, `bin/install.sh`, or `bin/bootstrap.sh`;
+  `bin/hook-wrapper.cmd`, `bin/codex-hook-wrapper.sh`, `bin/codex-hook-wrapper.cmd`,
+  `bin/install.sh`, or `bin/bootstrap.sh`;
 - shared product behavior under `internal/analyzer/**`, `internal/audio/**`, `internal/config/**`,
   `internal/daemon/**`, `internal/dedup/**`, `internal/errorhandler/**`, `internal/hooks/**`,
   `internal/logging/**`, `internal/notifier/**`, `internal/platform/**`, `internal/sessionname/**`,
@@ -517,6 +710,12 @@ The pre-tag workflow compares the exact candidate commit with the previous reach
 fetches full history (`fetch-depth: 0`). Positive/negative fixture coverage includes every ownership
 path above and the first release with no previous tag. The SDK repository owns a separate release
 gate; the product gate does not prove SDK E2E.
+
+Tier note: the tested selector and the five-occurrence version consistency check are minimum
+requirements for the first Codex release. The immutable attestation/pre-tag `workflow_dispatch`
+flow is the target state; until it exists, the release owner may execute the same checks manually
+with the evidence linked from the release PR, and that substitution must be recorded in the release
+notes.
 
 ## 11. Residual risks that remain explicit
 
