@@ -243,8 +243,9 @@ be dead configuration. An opted-out run costs one async process that exits at th
 }
 ```
 
-There is one matcher group and one handler per event, with matcher, `statusMessage`, and
-`additionalContextLimit` omitted. The launcher paths are the dedicated `bin/codex-hook-wrapper.sh`
+There is one matcher group and one handler per event. The only matcher is
+`^request_user_input$` on `PreToolUse`; every other matcher plus `statusMessage` and
+`additionalContextLimit` are omitted. The launcher paths are the dedicated `bin/codex-hook-wrapper.sh`
 and `bin/codex-hook-wrapper.cmd`; both accept the exact argv shown above. They are separate files
 from the Claude `bin/hook-wrapper.sh` so that Codex-route behavior can differ without touching the
 shipped Claude contract. This is the candidate identity until
