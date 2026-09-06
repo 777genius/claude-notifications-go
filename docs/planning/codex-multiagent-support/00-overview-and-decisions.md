@@ -24,9 +24,12 @@ through the same Go binary.
 In scope:
 
 - Codex `Stop` and `PermissionRequest` notification delivery.
-- Typed SDK decode for `Stop`, `PermissionRequest`, and `SubagentStop`. `SubagentStop` is decoded
-  losslessly for SDK completeness, but product notification UX remains disabled until separately
-  accepted.
+- **Stage 1 richer notifications (accepted 2026-09-07)**: `PreToolUse` question delivery for the
+  `request_user_input` tool (question text via allowlist projection), opt-in `SubagentStop`
+  delivery behind `notifyOnSubagentStop` + `suppressForSubagents:false`, and error statuses from a
+  bounded failure-phrase heuristic over the final assistant message. Classification sits behind
+  the `CodexTurnEnricher` port so an app-server-backed analyzer can be injected later.
+- Typed SDK decode for `Stop`, `PermissionRequest`, `SubagentStop`, and `PreToolUse`.
 - Native Codex plugin/marketplace discovery, not mutation of the user's `~/.codex/hooks.json`.
 - One source-neutral product event contract and one existing notification pipeline.
 - Go 1.22 minimum, required by `plugin-kit-ai/sdk`.
@@ -174,13 +177,29 @@ marketplace name, and manifest name are therefore frozen compatibility fields.
 
 ### First-release hook identity
 
-The first-release `hooks/hooks-codex.json` is exactly this two-handler contract; `SubagentStop`
-remains SDK-only and is intentionally absent:
+The first-release `hooks/hooks-codex.json` is exactly this four-handler contract. The
+`SubagentStop` hook must be declared here even though delivery is config-gated (default off):
+without the entry the host never invokes the binary and the `notifyOnSubagentStop` opt-in would
+be dead configuration. An opted-out run costs one async process that exits at the config check.
 
 ```json
 {
-  "description": "Desktop notifications for Codex Stop and PermissionRequest events.",
+  "description": "Desktop notifications for Codex Stop, PermissionRequest, and question events.",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^request_user_input$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook PreToolUse --product codex",
+            "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook PreToolUse --product codex",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -188,6 +207,19 @@ remains SDK-only and is intentionally absent:
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook Stop --product codex",
             "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook Stop --product codex",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook SubagentStop --product codex",
+            "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook SubagentStop --product codex",
             "timeout": 30,
             "async": true
           }
@@ -277,6 +309,7 @@ the current flat-resolver collision with Claude:
 |---|---|---|
 | `CodexStop` | `Stop` | stdin JSON |
 | `CodexSubagentStop` | `SubagentStop` | stdin JSON |
+| `CodexPreToolUse` | `PreToolUse` | stdin JSON |
 | `CodexPermissionRequest` | `PermissionRequest` | stdin JSON |
 
 Required DTO coverage:
@@ -287,6 +320,8 @@ Required DTO coverage:
 - SubagentStop: all Stop fields plus `agent_id`, `agent_type`, nullable
   `agent_transcript_path`.
 - PermissionRequest: `tool_name`, arbitrary `tool_input`, optional `agent_id` and `agent_type`.
+- PreToolUse: `tool_name`, arbitrary `tool_input`, `tool_use_id`, optional `agent_id` and
+  `agent_type` (verified against `PreToolUseCommandInput` in `codex-rs/hooks/src/schema.rs`).
 
 Decoder rules:
 
@@ -382,6 +417,7 @@ type PermissionRequestPayload struct {
 
 type PreToolUsePayload struct {
     ToolName  string
+    ToolUseID string // set on the Codex wire, empty for legacy Claude payloads
     ToolInput json.RawMessage
 }
 
@@ -431,8 +467,15 @@ Mapping invariants:
   defensively copied, treated as sensitive, and never logged wholesale. Nested `ToolInput` is also
   copied so SDK buffers cannot mutate the normalized event after decode.
 - `CodexSource` maps public `Stop` to internal SDK invocation `CodexStop`, then to `StopPayload`;
-  `PermissionRequest` maps to `PermissionRequestPayload`; decoded `SubagentStop` maps to
-  `SubagentStopPayload` but remains outside product delivery scope.
+  `PermissionRequest` maps to `PermissionRequestPayload`; `PreToolUse` maps to `PreToolUsePayload`;
+  `SubagentStop` maps to `SubagentStopPayload` and is delivered only behind the opt-in
+  (`notifyOnSubagentStop` with `suppressForSubagents:false`), mirroring the Claude semantics.
+- Codex classification goes through the `CodexTurnEnricher` port (Stage 1): the default adapter is
+  a pure payload heuristic (`ClassifyLastMessage` with a bounded failure-phrase error tier;
+  `request_user_input` question projection through a question/header allowlist — options, ids, and
+  secret fields never reach a notification body). Codex question prompts bypass the question
+  cooldown and content dedup: they have no Claude-style paired event, block the session until
+  answered, and their duplicates are bounded by the turn+tool+call-scoped dedup lock.
 - Wire names do not leak into product policy: Codex `last_assistant_message` maps to
   `StopPayload.AssistantMessage`, and `stop_hook_active` maps to `StopPayload.Continuation`.
 - One product policy router type-switches over the sealed payload family and derives status/body/
@@ -451,8 +494,9 @@ Mapping invariants:
   a status present in the analyzer but missing from any of these surfaces is a release blocker.
 - `PermissionRequestPayload.ToolInput` stays raw for typed consumers but is never logged or displayed
   wholesale; any body projection uses an allowlist plus redaction and truncation.
-- If SubagentStop product delivery is enabled later, dedup includes product, session, turn, and
-  agent identity so parallel subagents cannot collapse into one notification.
+- SubagentStop delivery dedup includes product, session, turn, and agent identity so parallel
+  subagents cannot collapse into one notification; PreToolUse dedup additionally includes the tool
+  name and `tool_use_id`.
 - Claude continues to pass the original byte-for-byte `sessionID` and original case-sensitive hook
   event to the existing state/dedup managers, preserving all pre-upgrade filenames and cooldown
   state. Codex uses filename-safe SHA-256 identities over length-prefixed fields: product+session for
@@ -725,5 +769,12 @@ notes.
    cannot provide permission notifications.
 3. Windows launcher/trust behavior is unsupported until the disposable Windows scenario passes.
 4. Codex status classification is intentionally thinner than Claude transcript analysis.
-5. Codex v0.152.0 exposes 12 hook events; this milestone delivers 2/12 (`Stop`,
-   `PermissionRequest`) and the SDK decodes 3/12 (those two plus `SubagentStop`).
+5. Codex v0.152.0 exposes 12 hook events; this milestone delivers 4/12 (`Stop`,
+   `PermissionRequest`, `PreToolUse` for the question tool, opt-in `SubagentStop`) and the SDK
+   decodes those same 4/12.
+6. The `request_user_input` PreToolUse hook is unproven live: the tool is mode-gated (Plan-mode
+   TUI) and the hook firing has not been observed in an interactive session. The matcher is
+   fail-safe (a never-firing hook costs nothing; a non-question tool is skipped by policy), but
+   the question feature is not "proven working" until a manual TUI experiment confirms it.
+7. Error statuses for Codex come from a text heuristic (short failure phrasings), not structured
+   error data: false negatives are expected and documented.
