@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.21', '1.26']
+        go: ['1.22', '1.26']
 
     steps:
       - name: Checkout code

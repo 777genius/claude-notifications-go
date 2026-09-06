@@ -88,3 +88,6 @@ build/
 .augment/rules/byterover-rules.md
 
 .build/
+# Local Go workspace for cross-repo development (never committed)
+go.work
+go.work.sum
