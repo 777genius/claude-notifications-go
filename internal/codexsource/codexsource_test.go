@@ -48,6 +48,24 @@ func TestDecodePermissionRequestThroughSDK(t *testing.T) {
 	}
 }
 
+func TestDecodePreToolUseThroughSDK(t *testing.T) {
+	payload := `{"session_id":"s","turn_id":"t","hook_event_name":"PreToolUse","tool_name":"request_user_input","tool_input":{"questions":[{"id":"q1","question":"Which one?"}]},"tool_use_id":"call-1"}`
+	decoded, err := Decode(context.Background(), "PreToolUse", []byte(payload))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if decoded.PreToolUse == nil {
+		t.Fatal("PreToolUse DTO missing")
+	}
+	d := decoded.PreToolUse
+	if d.ToolName != "request_user_input" || d.ToolUseID != "call-1" {
+		t.Fatalf("PreToolUseData = %+v", *d)
+	}
+	if string(d.ToolInput) != `{"questions":[{"id":"q1","question":"Which one?"}]}` {
+		t.Fatalf("ToolInput = %s", d.ToolInput)
+	}
+}
+
 func TestDecodeSubagentStopThroughSDK(t *testing.T) {
 	payload := `{"session_id":"s","turn_id":"t","hook_event_name":"SubagentStop","agent_id":"a1","agent_type":"worker","agent_transcript_path":"/at","last_assistant_message":"done"}`
 	decoded, err := Decode(context.Background(), "SubagentStop", []byte(payload))
@@ -81,7 +99,7 @@ func TestDecodeConsumesPayloadOnceWithNoOutput(t *testing.T) {
 }
 
 func TestDecodeUnsupportedEvent(t *testing.T) {
-	_, err := Decode(context.Background(), "PreToolUse", []byte(realStopPayload))
+	_, err := Decode(context.Background(), "SessionStart", []byte(realStopPayload))
 	if err == nil || !strings.Contains(err.Error(), "unsupported codex event") {
 		t.Fatalf("error = %v, want unsupported event", err)
 	}
@@ -102,6 +120,7 @@ func TestInvocationForEvent(t *testing.T) {
 	cases := map[string]string{
 		"Stop":              "CodexStop",
 		"SubagentStop":      "CodexSubagentStop",
+		"PreToolUse":        "CodexPreToolUse",
 		"PermissionRequest": "CodexPermissionRequest",
 	}
 	for event, want := range cases {

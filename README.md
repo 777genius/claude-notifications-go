@@ -143,17 +143,25 @@ native Codex plugin: `.codex-plugin/plugin.json` declares `hooks/hooks-codex.jso
 
 What works today:
 
-- **Stop** - a turn finishes; the status comes from the final assistant message (a trailing
-  question mark maps to Question, otherwise Task Complete). The Codex rollout transcript is not
-  parsed.
+- **Stop** - a turn finishes; the status comes from the final assistant message: short failure
+  reports map to the API Error / Session Limit statuses, a trailing question mark maps to
+  Question, otherwise Task Complete. The Codex rollout transcript is not parsed (it is an
+  internal, unstable format).
+- **Questions** - when Codex calls its `request_user_input` tool (Plan mode), you get a Question
+  notification with the actual question text (only the question/header text is shown; options,
+  ids, and secret fields never leave the payload).
 - **PermissionRequest** - Codex is waiting for your approval of a tool call; delivered as the
   time-sensitive Permission Request status. Only the tool name is shown, never the tool input.
+- **SubagentStop** (opt-in) - with `notifyOnSubagentStop: true` and `suppressForSubagents: false`,
+  subagent completions notify with the subagent's final message.
 
 Known limitations:
 
 - PermissionRequest cannot fire when Codex never asks for approval (`bypassPermissions`,
   `--ask-for-approval never`, headless `codex exec`).
-- Codex `SubagentStop` is decoded but not delivered yet.
+- The error statuses for Codex come from a text heuristic over the final message (short messages
+  with failure phrasing), not from structured error data - false negatives are possible.
+- The `request_user_input` question hook is limited to the modes where Codex exposes that tool.
 - Windows support for the Codex route is not declared until the Windows launcher is proven.
 - Codex hooks require a one-time trust review (`/hooks` inside Codex) for non-plugin installs.
 

@@ -74,6 +74,15 @@ func (s CodexSource) Decode(ctx context.Context, publicEvent string, input io.Re
 				TranscriptPath: d.AgentTranscriptPath,
 			},
 		}
+	case decoded.PreToolUse != nil:
+		d := decoded.PreToolUse
+		ev.PayloadEventName = d.HookEventName
+		ev.Session = codexSession(d.SessionID, d.TurnID, d.CWD, d.TranscriptPath, d.Model, d.PermissionMode)
+		ev.Payload = PreToolUsePayload{
+			ToolName:  d.ToolName,
+			ToolUseID: d.ToolUseID,
+			ToolInput: append(json.RawMessage(nil), d.ToolInput...),
+		}
 	case decoded.PermissionRequest != nil:
 		d := decoded.PermissionRequest
 		ev.PayloadEventName = d.HookEventName

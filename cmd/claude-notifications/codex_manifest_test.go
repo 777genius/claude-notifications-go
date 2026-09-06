@@ -134,10 +134,16 @@ func TestCodexHookIdentityGolden(t *testing.T) {
 	golden := map[string]struct {
 		command        string
 		commandWindows string
+		matcher        string
 	}{
 		"Stop": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook Stop --product codex`,
 			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook Stop --product codex`,
+		},
+		"PreToolUse": {
+			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook PreToolUse --product codex`,
+			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PreToolUse --product codex`,
+			matcher:        `^request_user_input$`,
 		},
 		"PermissionRequest": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook PermissionRequest --product codex`,
@@ -161,8 +167,8 @@ func TestCodexHookIdentityGolden(t *testing.T) {
 		}
 		g := groups[0]
 		hk := g.Hooks[0]
-		if g.Matcher != "" {
-			t.Errorf("%s: matcher must be omitted, got %q", event, g.Matcher)
+		if g.Matcher != want.matcher {
+			t.Errorf("%s: matcher = %q, want %q", event, g.Matcher, want.matcher)
 		}
 		if hk.Type != "command" {
 			t.Errorf("%s: type = %q", event, hk.Type)

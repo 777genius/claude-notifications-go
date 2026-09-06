@@ -82,6 +82,9 @@ type Handler struct {
 	pluginRoot   string
 	product      Product
 	source       EventSource
+	// codexEnricher is the DIP seam for Codex turn classification; nil
+	// selects the built-in payload heuristic. See CodexTurnEnricher.
+	codexEnricher CodexTurnEnricher
 }
 
 // NewHandler creates a new hook handler
@@ -133,6 +136,15 @@ func (h *Handler) eventSource() EventSource {
 		return h.source
 	}
 	return ClaudeSource{}
+}
+
+// turnEnricher returns the injected Codex enricher, defaulting to the pure
+// payload heuristic.
+func (h *Handler) turnEnricher() CodexTurnEnricher {
+	if h.codexEnricher != nil {
+		return h.codexEnricher
+	}
+	return heuristicEnricher{}
 }
 
 // eventKeys derives the state/dedup identities for the event.
@@ -236,9 +248,23 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	// PayloadEventName stays diagnostic and never routes.
 	var status analyzer.Status
 	var parsedMessages []jsonl.Message // reused by generateMessage to avoid double I/O
+	var insight *TurnInsight           // enriched Codex classification, when available
 
 	switch p := ev.Payload.(type) {
 	case PreToolUsePayload:
+		if ev.Product == ProductCodex {
+			// Codex interactive tools (request_user_input) map to question
+			// notifications with the question text projected via allowlist.
+			in := h.turnEnricher().EnrichPreToolUse(context.Background(), ev, p)
+			if in.Status == analyzer.StatusUnknown {
+				logging.Debug("Codex PreToolUse: tool %q is not notification-relevant, skipping", p.ToolName)
+				return nil
+			}
+			logging.Debug("Codex PreToolUse: tool=%s → status=%s", p.ToolName, in.Status)
+			status = in.Status
+			insight = &in
+			break
+		}
 		status = h.handlePreToolUse(ev, p)
 	case NotificationPayload:
 		// Notification hook fires when Claude needs user input (permission
@@ -253,7 +279,9 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 				logging.Debug("Codex Stop: continuation turn, suppressing")
 				return nil
 			}
-			status = analyzer.ClassifyLastMessage(p.AssistantMessage)
+			in := h.turnEnricher().EnrichStop(context.Background(), ev, p)
+			status = in.Status
+			insight = &in
 			defer h.cleanupOldLocks()
 			break
 		}
@@ -317,10 +345,26 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 		defer h.cleanupOldLocks()
 	case SubagentStopPayload:
 		if ev.Product == ProductCodex {
-			// Codex SubagentStop is decoded for SDK completeness but stays
-			// outside product delivery scope in this milestone.
-			logging.Debug("Codex SubagentStop decoded, product delivery not enabled, skipping")
-			return nil
+			// Codex SubagentStop delivery mirrors the Claude opt-in
+			// semantics: the global subagent suppression wins, then the
+			// explicit notifyOnSubagentStop flag must be set.
+			if h.cfg.ShouldSuppressForSubagents() {
+				logging.Debug("Codex SubagentStop: suppressing (config: suppressForSubagents)")
+				return nil
+			}
+			if !h.cfg.Notifications.NotifyOnSubagentStop {
+				logging.Debug("Codex SubagentStop: notifications disabled (config: notifyOnSubagentStop), skipping")
+				return nil
+			}
+			if p.Stop.Continuation {
+				logging.Debug("Codex SubagentStop: continuation turn, suppressing")
+				return nil
+			}
+			in := h.turnEnricher().EnrichStop(context.Background(), ev, p.Stop)
+			status = in.Status
+			insight = &in
+			defer h.cleanupOldLocks()
+			break
 		}
 
 		// A SubagentStop event always denotes a subagent (Task tool) finishing,
@@ -389,8 +433,13 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	logging.Debug("Lock acquired, proceeding with notification")
 	// Note: Lock is NOT released - it ages out naturally after 2s to prevent rapid duplicates
 
-	// Check cooldown for question status BEFORE updating notification time
-	if status == analyzer.StatusQuestion {
+	// Check cooldown for question status BEFORE updating notification time.
+	// The cooldown exists to collapse Claude's paired PreToolUse/Notification
+	// double-fire; a Codex question tool has no paired event and blocks the
+	// session until answered, so it bypasses the cooldown (its duplicates are
+	// bounded by the turn+call-scoped dedup lock).
+	codexQuestionPrompt := ev.Product == ProductCodex && ev.Kind() == EventPreToolUse
+	if status == analyzer.StatusQuestion && !codexQuestionPrompt {
 		logging.Debug("Checking question cooldown: cooldownSeconds=%d", h.cfg.GetSuppressQuestionAfterAnyNotificationSeconds())
 
 		// Load state to log its contents
@@ -442,7 +491,7 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 	// Generate message
 	bench.Start("message.generate")
-	body, actions := h.generateMessage(ev, status, parsedMessages)
+	body, actions := h.generateMessage(ev, status, parsedMessages, insight)
 	message := joinMessageParts(body, actions)
 	bench.Elapsed("message.generate")
 
@@ -469,12 +518,15 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	defer releaseContentLock()
 
 	// Check for duplicate message content (3 minutes = 180 seconds window).
-	// permission_request is exempt: its body is deterministic ("Codex requests
-	// permission: <tool>"), so the session-wide window would silently swallow
-	// a REAL approval prompt for the same tool in a later turn, and the user
-	// would not know the session is blocked. Turn-level duplicates of the
-	// event itself are already bounded by the turn+tool-scoped dedup lock.
-	if status != analyzer.StatusPermissionRequest {
+	// Interactive prompts are exempt: for permission_request the body is
+	// deterministic ("Codex requests permission: <tool>"), and a Codex
+	// question re-asked verbatim in a later turn is still a REAL prompt the
+	// user must see — the session is blocked on them either way. Turn-level
+	// duplicates of the event itself are already bounded by the
+	// turn+tool(+call)-scoped dedup lock.
+	skipContentDedup := status == analyzer.StatusPermissionRequest ||
+		(ev.Product == ProductCodex && ev.Kind() == EventPreToolUse)
+	if !skipContentDedup {
 		isDuplicate, err := h.stateMgr.IsDuplicateMessage(keys.stateKey, message, 180)
 		if err != nil {
 			logging.Warn("Failed to check duplicate message: %v", err)
@@ -625,10 +677,13 @@ func (h *Handler) handleStopEvent(ev Event) (analyzer.Status, []jsonl.Message, e
 
 // generateMessage generates a notification body and action summary.
 // If messages are provided (from handleStopEvent), uses them directly to avoid re-reading the transcript.
-func (h *Handler) generateMessage(ev Event, status analyzer.Status, messages []jsonl.Message) (body, actions string) {
+func (h *Handler) generateMessage(ev Event, status analyzer.Status, messages []jsonl.Message, insight *TurnInsight) (body, actions string) {
 	// Codex bodies come from payload fields, never from the Claude-format
 	// transcript parser: the Codex rollout JSONL is a different schema.
 	if ev.Product == ProductCodex {
+		if insight != nil && insight.Body != "" {
+			return insight.Body, ""
+		}
 		return h.generateCodexMessage(ev, status), ""
 	}
 
@@ -655,6 +710,10 @@ func (h *Handler) generateCodexMessage(ev Event, status analyzer.Status) string 
 	switch p := ev.Payload.(type) {
 	case StopPayload:
 		if text := strings.TrimSpace(p.AssistantMessage); text != "" {
+			return truncateRunes(summary.CleanMarkdown(text), 150)
+		}
+	case SubagentStopPayload:
+		if text := strings.TrimSpace(p.Stop.AssistantMessage); text != "" {
 			return truncateRunes(summary.CleanMarkdown(text), 150)
 		}
 	case PermissionRequestPayload:
