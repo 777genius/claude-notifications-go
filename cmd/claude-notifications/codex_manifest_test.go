@@ -145,6 +145,10 @@ func TestCodexHookIdentityGolden(t *testing.T) {
 			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PreToolUse --product codex`,
 			matcher:        `^request_user_input$`,
 		},
+		"SubagentStop": {
+			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook SubagentStop --product codex`,
+			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook SubagentStop --product codex`,
+		},
 		"PermissionRequest": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook PermissionRequest --product codex`,
 			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PermissionRequest --product codex`,
@@ -152,7 +156,7 @@ func TestCodexHookIdentityGolden(t *testing.T) {
 	}
 
 	if len(hf.Hooks) != len(golden) {
-		t.Fatalf("hooks-codex.json declares %d events, want %d (SubagentStop stays SDK-only)", len(hf.Hooks), len(golden))
+		t.Fatalf("hooks-codex.json declares %d events, want %d", len(hf.Hooks), len(golden))
 	}
 
 	for event, want := range golden {
