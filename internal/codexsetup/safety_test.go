@@ -38,6 +38,40 @@ func TestForeignEmptyAndMatcherPreserved(t *testing.T) {
 	}
 }
 
+// Lazy download and version refresh must remain available in the stable copy.
+func TestCopyPreservesUpdaterAssets(t *testing.T) {
+	src, dst := fakeBundle(t), t.TempDir()
+	files := map[string]string{
+		".claude-plugin/plugin.json":  `{"version":"1.42.0"}`,
+		".claude-plugin/private-note": "not a runtime asset",
+		"bin/install.sh":              "#!/bin/sh\nexit 0\n",
+		"bin/bootstrap.sh":            "not used by the Codex launcher",
+	}
+	for name, content := range files {
+		path := filepath.Join(src, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := copyBundle(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".claude-plugin/plugin.json", "bin/install.sh"} {
+		got, err := os.ReadFile(filepath.Join(dst, filepath.FromSlash(name)))
+		if err != nil || string(got) != files[name] {
+			t.Fatalf("runtime asset %s missing or altered: %v", name, err)
+		}
+	}
+	for _, name := range []string{".claude-plugin/private-note", "bin/bootstrap.sh"} {
+		if _, err := os.Stat(filepath.Join(dst, filepath.FromSlash(name))); !os.IsNotExist(err) {
+			t.Fatalf("unexpected asset %s: %v", name, err)
+		}
+	}
+}
+
 func TestCopyFailureLeavesLiveAssets(t *testing.T) {
 	src, dst := fakeBundle(t), t.TempDir()
 	if err := copyBundle(src, dst); err != nil {

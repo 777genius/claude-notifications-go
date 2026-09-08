@@ -477,7 +477,7 @@ func writeHooksFile(path string, content hooksFile, expected []byte, existed boo
 		return "", err
 	}
 
-	// Backups are timestamped. A fixed ".backup" name would be overwritten on
+	// Backups have unique names. A fixed ".backup" name would be overwritten on
 	// the second run with our own generated file, destroying the only copy of
 	// what the user originally had.
 	backup := ""
@@ -532,7 +532,7 @@ func writeHooksFile(path string, content hooksFile, expected []byte, existed boo
 // Only runtime assets belong in the installed bundle. User config and logs
 // at the installation root are never refreshed from the source.
 func runtimeEntry(name string) bool {
-	return name == "bin" || name == "sounds" || name == "config" || name == "claude_icon.png"
+	return name == "bin" || name == "sounds" || name == "config" || name == "claude_icon.png" || name == ".claude-plugin"
 }
 
 func validateInstallPath(path string) error {
@@ -719,6 +719,11 @@ func copyDir(src, dst string) error {
 		if filepath.Base(src) == "bin" && !runtimeBinary(entry.Name()) {
 			continue
 		}
+		// The shared launcher reads the release version from this manifest.
+		// Marketplace metadata and unrelated plugin files are not runtime inputs.
+		if filepath.Base(src) == ".claude-plugin" && entry.Name() != "plugin.json" {
+			continue
+		}
 		if err := copyPath(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
 			return err
 		}
@@ -774,7 +779,7 @@ func SortedEvents() []string {
 
 func runtimeBinary(name string) bool {
 	switch name {
-	case "terminal-notifier.app", "codex-hook-wrapper.sh", "codex-hook-wrapper.cmd", "hook-wrapper.sh", "bootstrap.sh", "claude-notifications", "ClaudeNotifier.app":
+	case "terminal-notifier.app", "codex-hook-wrapper.sh", "codex-hook-wrapper.cmd", "hook-wrapper.sh", "install.sh", "claude-notifications", "ClaudeNotifier.app":
 		return true
 	}
 	for _, platform := range []string{"linux", "darwin", "windows"} {
