@@ -186,8 +186,10 @@ func TestCodexHookIdentityGolden(t *testing.T) {
 		if hk.Timeout != 30 {
 			t.Errorf("%s: timeout = %d, want 30", event, hk.Timeout)
 		}
-		if !hk.Async {
-			t.Errorf("%s: async must be true", event)
+		// Synchronous by measurement: an async handler never runs under
+		// `codex exec`, which exits as soon as the turn ends.
+		if hk.Async {
+			t.Errorf("%s: async must stay false", event)
 		}
 		if hk.StatusMessage != "" || hk.AdditionalContextLimit != 0 {
 			t.Errorf("%s: statusMessage/additionalContextLimit must stay omitted", event)

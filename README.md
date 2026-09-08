@@ -135,23 +135,45 @@ If the binary auto-update didn't work (e.g. no internet at the time), run `/clau
 | API Error | 🔴 | Authentication expired, rate limit, server error, connection error | Stop/SubagentStop hooks (state machine detects via `isApiErrorMessage` flag + `error` field from JSONL) |
 | Permission Request | 🔐 | Codex is waiting for tool approval | Codex `PermissionRequest` hook (Codex only) |
 
-## Codex CLI Support (beta, setup not automated yet)
+## Codex CLI Support (beta)
 
-The same binary can notify for OpenAI Codex CLI sessions. The bundle ships a native Codex
-plugin manifest (`.codex-plugin/plugin.json` declaring `hooks/hooks-codex.json`, which runs
-`bin/codex-hook-wrapper.sh`, or `.cmd` on Windows, with `--product codex`).
+The same binary can notify for OpenAI Codex CLI sessions.
 
-> [!IMPORTANT]
-> **Installing the plugin alone does not enable notifications yet.** `codex plugin add` places
-> the bundle correctly, but current Codex releases (checked on v0.152.0 and v0.153.4) do not
-> load hooks declared by a plugin: the `plugin_hooks` feature is marked removed and cannot be
-> re-enabled. Hooks only run when they are registered in `$CODEX_HOME/hooks.json`
-> (`~/.codex/hooks.json` by default) and trusted once through `/hooks` inside Codex.
->
-> An installer that performs that registration against a stable launcher path is still being
-> designed, so treat Codex support as manual setup for now. Note that the trust hash covers the
-> command string: if you point it at the versioned plugin cache directory, every plugin update
-> will ask you to review the hook again.
+### Setup
+
+One command registers everything (macOS, Linux, and Windows — it is part of the Go binary, so
+there is nothing to install and no `jq` or shell-specific scripting involved):
+
+```bash
+claude-notifications setup-codex
+```
+
+It installs a self-contained copy of the plugin at `~/.codex/claude-notifications-go`, writes the
+hook entries into `~/.codex/hooks.json` (keeping any hooks you already have, with a `.backup`
+file), and prints the last step.
+
+Then start Codex, run `/hooks`, review the entries and trust them — Codex asks once.
+
+Useful flags: `--dry-run` shows what would change, `--print` outputs the JSON so you can merge it
+yourself, `--codex-home` and `--plugin-root` override the paths.
+
+After updating the plugin, run the command again to refresh the installed copy. The registration
+itself does not change, so Codex does not ask you to trust the hooks again.
+
+<details>
+<summary>Why a separate step is needed</summary>
+
+The bundle ships a native Codex plugin manifest (`.codex-plugin/plugin.json` declaring
+`hooks/hooks-codex.json`), and `codex plugin add` installs it correctly. However, current Codex
+releases do not run hooks declared by a plugin: the `plugin_hooks` feature is marked removed
+(verified on v0.152.0 and v0.153.4) and cannot be re-enabled. Hooks only execute when they are
+present in `$CODEX_HOME/hooks.json`, which is what `setup-codex` writes.
+
+Codex includes the command string in its trust hash, so the registration deliberately points at
+the stable `~/.codex/claude-notifications-go` copy rather than a versioned plugin cache
+directory — that is what keeps the trust valid across updates.
+
+</details>
 
 What works today:
 

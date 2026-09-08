@@ -9,8 +9,7 @@
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook PreToolUse --product codex",
             "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook PreToolUse --product codex",
-            "timeout": 30,
-            "async": true
+            "timeout": 30
           }
         ]
       }
@@ -22,8 +21,7 @@
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook Stop --product codex",
             "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook Stop --product codex",
-            "timeout": 30,
-            "async": true
+            "timeout": 30
           }
         ]
       }
@@ -35,8 +33,7 @@
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook SubagentStop --product codex",
             "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook SubagentStop --product codex",
-            "timeout": 30,
-            "async": true
+            "timeout": 30
           }
         ]
       }
@@ -48,8 +45,7 @@
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook PermissionRequest --product codex",
             "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook PermissionRequest --product codex",
-            "timeout": 30,
-            "async": true
+            "timeout": 30
           }
         ]
       }
