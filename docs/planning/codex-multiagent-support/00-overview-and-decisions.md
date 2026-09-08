@@ -301,6 +301,39 @@ Before implementation proceeds past the plugin-artifact stage, a disposable Code
    plugin cache relocation with unchanged handler config;
 5. an intentional command change becomes `Modified` and is surfaced as a migration.
 
+> [!CAUTION]
+> **Step 2 failed against real Codex (measured 2026-09-08). Plugin-declared hooks do not load.**
+>
+> A fully sandboxed run (`HOME` + `CODEX_HOME` overridden — `home_dir()` in
+> `codex-rs/core-plugins/src/marketplace.rs` reads `HOME`/`USERPROFILE`, so the real
+> `~/.agents` is untouched) established:
+>
+> - `codex plugin marketplace add` and `codex plugin add` both succeed. The plugin identity is
+>   exactly `claude-notifications-go@claude-notifications-go`, the bundle installs to
+>   `$CODEX_HOME/plugins/cache/<marketplace>/<plugin>/<version>/`, and `config.toml` records
+>   `[marketplaces.*]` plus `[plugins."…"] enabled = true`. A local marketplace root must
+>   contain `.agents/plugins/marketplace.json`.
+> - The hooks declared through `.codex-plugin/plugin.json` never fire. A live `codex exec` turn
+>   with `--dangerously-bypass-hook-trust` produced no hook invocation at all.
+> - Root cause: `Feature::PluginHooks` is `Stage::Removed, default_enabled: false` in
+>   `codex-rs/features/src/lib.rs` on both `rust-v0.152.0` and the latest `rust-v0.153.4`, and
+>   the feature-override parser silently ignores the key, so it cannot be enabled.
+> - Hooks registered the raw way in `$CODEX_HOME/hooks.json` DO fire, with delivery proven
+>   end-to-end through the same installed bundle.
+>
+> Consequences for this contract:
+>
+> - `codex plugin add` remains a valid distribution mechanism (it places the bundle and tracks
+>   versions) but is NOT sufficient for delivery. Registration in `$CODEX_HOME/hooks.json` is
+>   required.
+> - The favourable plugin trust key (`plugin_id:relative_path`, survives updates) does not apply.
+>   The raw-path trust hash covers the command string, so the configured command must point at a
+>   version-stable launcher path; otherwise every release forces a re-trust. The installer work
+>   this document previously declared unnecessary is required again, and its design must be
+>   settled before Codex support is advertised to users.
+> - `hooks/hooks-codex.json` stays in the bundle: it costs nothing, documents the intended
+>   handler contract, and becomes live if upstream restores the feature.
+
 ## 5. SDK Codex event contract
 
 Keep the existing legacy `sdk/codex/Notify` API unchanged. Add prefixed invocation names to avoid
@@ -764,8 +797,10 @@ notes.
 
 ## 11. Residual risks that remain explicit
 
-1. Codex-only bootstrap UX and the exact marketplace command must be proven with the target Codex
-   version before public installation docs are finalized.
+1. **Delivery blocker**: plugin-declared hooks do not load on current Codex (see the caution box
+   in section 4). Codex support cannot be advertised until hook registration in
+   `$CODEX_HOME/hooks.json` exists, driven from a version-stable launcher path so trust survives
+   releases. The marketplace commands themselves are proven; only the hook wiring is missing.
 2. PermissionRequest cannot fire when Codex never asks for approval; bypass/never modes therefore
    cannot provide permission notifications.
 3. Windows launcher/trust behavior is unsupported until the disposable Windows scenario passes.
