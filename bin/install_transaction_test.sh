@@ -4,7 +4,7 @@
 set -eo pipefail
 root=$(cd "$(dirname "$0")" && pwd)
 sandbox=$(mktemp -d)
-trap 'rm -rf "$sandbox"' EXIT
+trap 'result=$?; if [ "$result" != 0 ]; then echo "FAILED: ${scenario:-utility} (status $result)" >&2; [ ! -f "${case_dir:-}/output" ] || tail -n 25 "$case_dir/output" >&2; fi; rm -rf "$sandbox"' EXIT
 export HOME="$sandbox/home" XDG_DATA_HOME="$sandbox/home/data" TMPDIR="$sandbox"
 mkdir -p "$HOME"
 sed '/^main "\$@"$/d' "$root/install.sh" > "$sandbox/functions.sh"
@@ -39,6 +39,8 @@ for scenario in offline fresh_offline download checksum missing_checksum executa
         fi
         case "$scenario" in
             legacy_fallback|retained_legacy|failed_fallback)
+                # Git Bash recognizes shebang files as executable even after chmod -x.
+                printf broken > "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern"
                 chmod -x "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern"
                 if [ "$scenario" = retained_legacy ]; then
                     mkdir -p "$SCRIPT_DIR/terminal-notifier.app/Contents/MacOS"
@@ -173,7 +175,7 @@ done
     download_utility test "$utility" # usable existing file skips download
     for invalid in partial nonexecutable; do
         if [ "$invalid" = partial ]; then printf partial > "$utility";
-        else cp "$INSTALL_TARGET_DIR/expected" "$utility"; chmod -x "$utility"; fi
+        else head -c 100001 /dev/zero > "$utility"; chmod -x "$utility"; fi
         transfer=success
         download_utility test "$utility"
         utility_usable "$utility"
