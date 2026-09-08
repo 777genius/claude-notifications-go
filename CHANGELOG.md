@@ -8,13 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Codex CLI support (initial)** - the same Go binary now handles OpenAI Codex CLI hooks: `Stop` (turn completion, classified from the final assistant message) and `PermissionRequest` (new `permission_request` status with sound, webhook colors, and Focus Mode break-through). Ships as a native Codex plugin (`.codex-plugin/plugin.json` + `hooks/hooks-codex.json`) with dedicated launchers `bin/codex-hook-wrapper.sh`/`.cmd`. Codex `SubagentStop` is decoded but not delivered yet. Known limitations: `PermissionRequest` cannot fire when Codex never asks for approval (bypass/never modes), and Windows support for the Codex route is not declared until proven.
-- **`permission_request` notification status** - config defaults, validation, shipped `config/config.json` entry, webhook formatting, and time-sensitive desktop delivery.
-- **Richer Codex notifications** - real Question notifications with the question text when Codex calls `request_user_input` (PreToolUse hook with a tool matcher), opt-in SubagentStop delivery (`notifyOnSubagentStop` + `suppressForSubagents: false`), and error statuses (API error, rate limit, session limit) detected from short failure messages. Codex turn classification now sits behind a `CodexTurnEnricher` seam so a future app-server-backed analyzer can slot in without touching the pipeline.
+- **Codex CLI support (beta)** - register Stop, PermissionRequest, experimental question hooks, and opt-in SubagentStop with `setup-codex`. Review and trust the entries in Codex `/hooks` once. Claude Code is not required.
+- **Safe Codex setup and updates** - install a stable runtime copy, preserve unrelated hooks and existing settings, save backups, and retain hook trust when registration is unchanged.
+- **`permission_request` notification status** - sound, webhook formatting, and time-sensitive desktop delivery. Approval notifications require Codex to actually request approval.
+- **Richer Codex notifications** - classify short failure messages; optionally notify on subagent completion. Question-tool hook firing remains experimental and is not guaranteed in every mode.
 
 ### Changed
-- **Minimum Go version is now 1.22** (was 1.21), required by the `plugin-kit-ai/sdk` dependency that provides typed Codex hook decoding and host detection.
-- **Internal event pipeline is now source-neutral** - hook handling routes through a typed product event contract (`Event`/`EventSource`); the Claude path behavior is unchanged and covered by the existing regression suite.
+- **Minimum Go version is now 1.22** (was 1.21), required by the typed hook SDK.
+- **Source-neutral event pipeline** - Claude and Codex use separate decoders with a shared notification pipeline. Both products share the existing config file, so configured webhooks also receive Codex notifications.
+
+### Fixed
+- Keep Codex update stamps separate from Claude, preserve distinct concurrent Codex notifications, reject destructive destination symlinks, and skip Claude iTerm2 setup during Codex installation and updates.
 
 ## [1.41.0] - 2026-08-31
 

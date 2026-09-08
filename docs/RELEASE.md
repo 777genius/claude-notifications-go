@@ -14,9 +14,11 @@ later release that touches the hook pipeline.
    is the one failure the auto-updater cannot recover from.
 3. **Codex sandbox smoke.** With a throwaway `HOME` *and* `CODEX_HOME` (both are honored:
    Codex resolves the marketplace root from `HOME`/`USERPROFILE`, so the real `~/.agents` and
-   `~/.codex` stay untouched): register the plugin bundle as a local marketplace, run
-   `codex plugin add`, complete the `/hooks` trust review, and confirm a real turn produces a
-   notification. Destroy the sandbox afterwards.
+   `~/.codex` stay untouched): install the draft binary into its matching bundle, run
+   `setup-codex --plugin-root BUNDLE`, complete the `/hooks` trust review, and confirm a real
+   turn reaches a local recording sink. Test repeated setup and an existing Claude config.
+   Record desktop banner/sound checks separately from webhook delivery. Do not also register
+   the native plugin: duplicate registration can deliver twice. Destroy the sandbox afterwards.
 4. **Release notes must state**, in user-facing wording:
    - Codex support is **beta**;
    - the `permission_request` status requires this version or newer (older binaries reject it

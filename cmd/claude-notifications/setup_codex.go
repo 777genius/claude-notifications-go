@@ -18,8 +18,8 @@ type setupCodexOptions struct {
 
 // runSetupCodex registers this plugin's hooks with the Codex CLI.
 //
-// Codex ignores hooks declared by a plugin manifest, so the hooks have to be
-// written into the user's hooks.json. Doing it here rather than in shell
+// This explicit setup path writes user hooks independently of native plugin
+// discovery. Doing it here rather than in shell
 // scripts keeps one implementation for macOS, Linux, and Windows and avoids
 // depending on tools like jq that are not installed by default anywhere.
 func runSetupCodex(args []string) {

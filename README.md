@@ -151,7 +151,7 @@ terminal with Git and Bash (Git Bash on Windows), run:
 ```bash
 git clone --depth 1 https://github.com/777genius/claude-notifications-go.git
 cd claude-notifications-go
-bash bin/install.sh
+CN_PRODUCT=codex bash bin/install.sh
 ```
 
 This downloads the notification binary; it does not install Claude Code. Keep this source
@@ -183,7 +183,7 @@ yourself, `--codex-home` and `--plugin-root` override the paths.
 
 After updating the plugin, run the command again to refresh the installed copy. The registration
 itself does not change, so Codex does not ask you to trust the hooks again.
-For the Git checkout above, update with `git pull --ff-only`, run `bash bin/install.sh --force`,
+For the Git checkout above, update with `git pull --ff-only`, run `CN_PRODUCT=codex bash bin/install.sh --force`,
 then repeat the appropriate `setup-codex` command. Existing Claude plugin users can update
 their source bundle using the usual Claude plugin update process before repeating setup.
 
