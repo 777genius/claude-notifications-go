@@ -135,23 +135,77 @@ If the binary auto-update didn't work (e.g. no internet at the time), run `/clau
 | API Error | 🔴 | Authentication expired, rate limit, server error, connection error | Stop/SubagentStop hooks (state machine detects via `isApiErrorMessage` flag + `error` field from JSONL) |
 | Permission Request | 🔐 | Codex is waiting for tool approval | Codex `PermissionRequest` hook (Codex only) |
 
-## Codex CLI Support (beta, setup not automated yet)
+## Codex CLI Support (beta)
 
-The same binary can notify for OpenAI Codex CLI sessions. The bundle ships a native Codex
-plugin manifest (`.codex-plugin/plugin.json` declaring `hooks/hooks-codex.json`, which runs
-`bin/codex-hook-wrapper.sh`, or `.cmd` on Windows, with `--product codex`).
+The same binary can notify for OpenAI Codex CLI sessions.
 
-> [!IMPORTANT]
-> **Installing the plugin alone does not enable notifications yet.** `codex plugin add` places
-> the bundle correctly, but current Codex releases (checked on v0.152.0 and v0.153.4) do not
-> load hooks declared by a plugin: the `plugin_hooks` feature is marked removed and cannot be
-> re-enabled. Hooks only run when they are registered in `$CODEX_HOME/hooks.json`
-> (`~/.codex/hooks.json` by default) and trusted once through `/hooks` inside Codex.
->
-> An installer that performs that registration against a stable launcher path is still being
-> designed, so treat Codex support as manual setup for now. Note that the trust hash covers the
-> command string: if you point it at the versioned plugin cache directory, every plugin update
-> will ask you to review the hook again.
+### Setup
+
+The registration command is implemented in Go and does not require `jq`. You need a
+Codex-capable release (v1.42.0 or later) and its plugin bundle; an older binary cannot run
+`setup-codex`. The command is not automatically added to your `PATH` by the Claude plugin.
+
+For a Codex-only installation, download a bundle and its platform binary first. In a
+terminal with Git and Bash (Git Bash on Windows), run:
+
+```bash
+git clone --depth 1 https://github.com/777genius/claude-notifications-go.git
+cd claude-notifications-go
+CN_PRODUCT=codex bash bin/install.sh
+```
+
+This downloads the notification binary; it does not install Claude Code. Keep this source
+directory for updates. The Codex registration below installs a separate stable runtime copy.
+
+From an already downloaded plugin bundle, run the binary by its path:
+
+```bash
+./bin/claude-notifications setup-codex --plugin-root .
+```
+
+On Windows, run the downloaded `claude-notifications-windows-amd64.exe` in PowerShell:
+
+```powershell
+.\bin\claude-notifications-windows-amd64.exe setup-codex --plugin-root .
+```
+
+Run these commands in the bundle directory. If you have explicitly added the binary to
+`PATH`, `claude-notifications setup-codex --plugin-root <bundle-directory>` also works.
+
+It installs a self-contained copy of the plugin at `~/.codex/claude-notifications-go` and writes
+the hook entries into `~/.codex/hooks.json`. Existing foreign hook definitions and unknown fields are preserved,
+and every run saves a uniquely named backup of the previous file next to it.
+
+Then start Codex, run `/hooks`, review the entries and trust them — Codex asks once.
+
+Useful flags: `--dry-run` shows what would change, `--print` outputs the JSON so you can merge it
+yourself, `--codex-home` and `--plugin-root` override the paths.
+
+After updating the plugin, run the command again to refresh the installed copy. The registration
+itself does not change, so Codex does not ask you to trust the hooks again.
+For the Git checkout above, update with `git pull --ff-only`, run `CN_PRODUCT=codex bash bin/install.sh --force`,
+then repeat the appropriate `setup-codex` command. Existing Claude plugin users can update
+their source bundle using the usual Claude plugin update process before repeating setup.
+
+Claude Code installation and updates continue to use the [existing installation steps](#installation).
+Both products share settings at `~/.claude/claude-notifications-go/config.json`; installing
+Codex does not require installing Claude Code. Keep your existing settings file when updating.
+
+<details>
+<summary>Why a separate step is needed</summary>
+
+`setup-codex` registers user hooks explicitly, using a stable runtime directory independent
+of the plugin cache. This is the setup path covered by this project's installer tests.
+The bundle also includes a Codex plugin manifest. Codex versions can differ in plugin-hook
+loading; follow the [current Codex hooks documentation](https://learn.chatgpt.com/docs/hooks)
+for native plugin setup. Use one registration path to avoid duplicate hooks, and inspect
+`/hooks` after installation.
+
+Codex includes the command string in its trust hash, so the registration deliberately points at
+the stable `~/.codex/claude-notifications-go` copy rather than a versioned plugin cache
+directory — that is what keeps the trust valid across updates.
+
+</details>
 
 What works today:
 
@@ -159,9 +213,9 @@ What works today:
   reports map to the API Error / Session Limit statuses, a trailing question mark maps to
   Question, otherwise Task Complete. The Codex rollout transcript is not parsed (it is an
   internal, unstable format).
-- **Questions** - when Codex calls its `request_user_input` tool (Plan mode), you get a Question
-  notification with the actual question text (only the question/header text is shown; options,
-  ids, and secret fields never leave the payload).
+- **Question payloads (experimental)** - if Codex emits `PreToolUse` for `request_user_input`,
+  the plugin delivers the question/header text. Options, ids, and secret fields are excluded.
+  Live firing of this tool hook is not yet qualified; do not rely on it for every question.
 - **PermissionRequest** - Codex is waiting for your approval of a tool call; delivered as the
   time-sensitive Permission Request status. Only the tool name is shown, never the tool input.
 - **SubagentStop** (opt-in) - with `notifyOnSubagentStop: true` and `suppressForSubagents: false`,
@@ -175,7 +229,7 @@ Known limitations:
   with failure phrasing), not from structured error data - false negatives are possible.
 - The `request_user_input` question hook is limited to the modes where Codex exposes that tool.
 - Windows support for the Codex route is not declared until the Windows launcher is proven.
-- Codex hooks require a one-time trust review (`/hooks` inside Codex) for non-plugin installs.
+- Codex hooks require a trust review (`/hooks` inside Codex); changed definitions require review again.
 
 Both products share one config file (`~/.claude/claude-notifications-go/config.json`).
 

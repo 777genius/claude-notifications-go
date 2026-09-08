@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast v1.1.2
-	github.com/777genius/plugin-kit-ai/sdk v1.1.1-0.20260906231929-b7ad41559a54
+	github.com/777genius/plugin-kit-ai/sdk v1.1.1-0.20260908195702-6e6e6ac59f25
 	github.com/creack/pty v1.1.24
 	github.com/esiqveland/notify v0.13.3
 	github.com/gen2brain/beeep v0.11.1

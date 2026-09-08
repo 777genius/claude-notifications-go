@@ -314,7 +314,9 @@ acquire_lock() {
     fi
 
     # Set trap to release lock on exit
-    trap 'rm -rf "$LOCKFILE" 2>/dev/null' EXIT INT TERM
+    trap 'rm -rf "$LOCKFILE" 2>/dev/null' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     return 0
 }
 
@@ -593,17 +595,13 @@ check_github_availability() {
 # Check if binary already exists
 check_existing() {
     if [ "$FORCE_UPDATE" = true ]; then
-        echo -e "${BLUE}🔄 Force update requested, removing old files...${NC}"
-        rm -f "$BINARY_PATH" "$SOUND_PREVIEW_PATH" "$LIST_DEVICES_PATH" "$LIST_SOUNDS_PATH" "$FOCUS_HANDLER_PATH" 2>/dev/null
-        # Remove symlinks (Unix) and .bat wrappers (Windows)
-        rm -f "${SCRIPT_DIR}/claude-notifications" "${SCRIPT_DIR}/sound-preview" "${SCRIPT_DIR}/list-devices" "${SCRIPT_DIR}/list-sounds" 2>/dev/null
-        rm -f "${SCRIPT_DIR}/claude-notifications.bat" "${SCRIPT_DIR}/sound-preview.bat" "${SCRIPT_DIR}/list-devices.bat" "${SCRIPT_DIR}/list-sounds.bat" 2>/dev/null
-        # Remove macOS apps for clean reinstall
-        rm -rf "${SCRIPT_DIR}/terminal-notifier.app" "${SCRIPT_DIR}/ClaudeNotifier.app" "${SCRIPT_DIR}/ClaudeNotifications.app" 2>/dev/null
-        rm -f "${SCRIPT_DIR}/README.markdown" 2>/dev/null
+        echo -e "${BLUE}🔄 Force update requested; preserving live files until verified${NC}"
         return 1
     fi
     if [ -f "$BINARY_PATH" ]; then
+        if ! desktop_runtime_usable; then
+            return 1
+        fi
         if windows_native_hooks_update_required; then
             WINDOWS_NATIVE_HOOKS_NEED_UPDATE=true
             echo -e "${YELLOW}⚠ Existing Windows binary cannot generate exec-form hooks${NC}"
@@ -619,42 +617,49 @@ check_existing() {
 }
 
 # Download a utility binary (sound-preview, list-devices)
-download_utility() {
+utility_usable() {
+    [ -f "$1" ] && [ -x "$1" ] && [ "$(get_file_size "$1")" -gt 100000 ]
+}
+
+download_utility() (
     local util_name="$1"
     local util_path="$2"
     local url="${RELEASE_URL}/${util_name}"
+    local temp_path
 
-    # Skip if already exists
-    if [ -f "$util_path" ]; then
+    if [ "$FORCE_UPDATE" != true ] && utility_usable "$util_path"; then
         echo -e "${GREEN}✓${NC} ${util_name} already installed"
         return 0
     fi
 
+    # Keep the live utility intact until a complete replacement is ready.
+    temp_path=$(mktemp "${util_path}.download.XXXXXX") || return 1
+    trap 'rm -f "$temp_path"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     echo -e "${BLUE}📦 Downloading ${util_name}...${NC}"
 
+    local downloaded=false
     if command -v curl &> /dev/null; then
-        if curl -fsSL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CURL_TIMEOUT" "$url" -o "$util_path" 2>/dev/null; then
-            if [ -f "$util_path" ] && [ "$(get_file_size "$util_path")" -gt 100000 ]; then
-                chmod +x "$util_path" 2>/dev/null || true
-                echo -e "${GREEN}✓${NC} ${util_name} downloaded"
-                return 0
-            fi
+        if curl -fsSL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CURL_TIMEOUT" "$url" -o "$temp_path" 2>/dev/null; then
+            downloaded=true
         fi
     elif command -v wget &> /dev/null; then
-        if wget -q "$url" -O "$util_path" 2>/dev/null; then
-            if [ -f "$util_path" ] && [ "$(get_file_size "$util_path")" -gt 100000 ]; then
-                chmod +x "$util_path" 2>/dev/null || true
-                echo -e "${GREEN}✓${NC} ${util_name} downloaded"
-                return 0
-            fi
+        if wget -q "$url" -O "$temp_path" 2>/dev/null; then
+            downloaded=true
         fi
     fi
 
-    # Not critical - just warn
-    rm -f "$util_path" 2>/dev/null
+    # These sound tools do not implement --version; do not launch audio/device
+    # enumeration to validate an optional download.
+    if [ "$downloaded" = true ] && chmod +x "$temp_path" &&
+       utility_usable "$temp_path" && mv -f "$temp_path" "$util_path"; then
+        echo -e "${GREEN}✓${NC} ${util_name} downloaded"
+        return 0
+    fi
     echo -e "${YELLOW}⚠${NC} Could not download ${util_name} (optional utility)"
     return 1
-}
+)
 
 # Download utility binaries (sound-preview, list-devices)
 download_utilities() {
@@ -664,9 +669,8 @@ download_utilities() {
     download_utility "$SOUND_PREVIEW_NAME" "$SOUND_PREVIEW_PATH" || true
     download_utility "$LIST_DEVICES_NAME" "$LIST_DEVICES_PATH" || true
     download_utility "$LIST_SOUNDS_NAME" "$LIST_SOUNDS_PATH" || true
-    if [ -n "$FOCUS_HANDLER_NAME" ]; then
-        download_utility "$FOCUS_HANDLER_NAME" "$FOCUS_HANDLER_PATH" || true
-    fi
+    # The Windows focus handler was verified and promoted with the runtime.
+    # Never overwrite that required asset through the optional downloader.
 
     # Create symlinks for utilities (may fail if downloads failed - that's OK)
     create_utility_symlink "sound-preview" "$SOUND_PREVIEW_NAME" "$SOUND_PREVIEW_PATH" || true
@@ -864,6 +868,7 @@ download_binary() {
 # Verify checksum
 verify_checksum() {
     if [ ! -f "$CHECKSUMS_PATH" ]; then
+        [ "${REQUIRE_CHECKSUM:-false}" != true ] || return 1
         echo -e "${YELLOW}⚠ Skipping checksum verification (checksums.txt not available)${NC}"
         return 0
     fi
@@ -874,6 +879,7 @@ verify_checksum() {
     local expected_sum=$(grep "$BINARY_NAME" "$CHECKSUMS_PATH" 2>/dev/null | awk '{print $1}')
 
     if [ -z "$expected_sum" ]; then
+        [ "${REQUIRE_CHECKSUM:-false}" != true ] || return 1
         echo -e "${YELLOW}⚠ Checksum not found for ${BINARY_NAME} (skipping)${NC}"
         return 0
     fi
@@ -888,6 +894,7 @@ verify_checksum() {
     elif command -v sha256sum &> /dev/null; then
         actual_sum=$(sha256sum "$BINARY_PATH" 2>/dev/null | awk '{sub(/^\\/, "", $1); print $1}')
     else
+        [ "${REQUIRE_CHECKSUM:-false}" != true ] || return 1
         echo -e "${YELLOW}⚠ sha256sum not available (skipping checksum)${NC}"
         return 0
     fi
@@ -1056,7 +1063,8 @@ windows_native_hooks_update_required() {
 create_symlink() {
     # On Windows, create a .bat wrapper instead of symlink
     if [ "$PLATFORM" = "windows" ]; then
-        local bat_path="${SCRIPT_DIR}/claude-notifications.bat"
+        local final_bat_path="${SCRIPT_DIR}/claude-notifications.bat"
+        local bat_path="${final_bat_path}.tmp.$$"
 
         # Remove old .bat file if exists
         rm -f "$bat_path" 2>/dev/null || true
@@ -1072,7 +1080,7 @@ set SCRIPT_DIR=%~dp0
 "%SCRIPT_DIR%${BINARY_NAME}" %*
 EOF
 
-        if [ -f "$bat_path" ]; then
+        if mv -f "$bat_path" "$final_bat_path"; then
             echo -e "${GREEN}✓ Created wrapper${NC} claude-notifications.bat → ${BINARY_NAME}"
             return 0
         else
@@ -1082,19 +1090,21 @@ EOF
     fi
 
     # Unix: create symlink or copy
-    local symlink_path="${SCRIPT_DIR}/claude-notifications"
+    local final_symlink_path="${SCRIPT_DIR}/claude-notifications"
+    local symlink_path="${final_symlink_path}.tmp.$$"
 
     # Remove old symlink if exists
     rm -f "$symlink_path" 2>/dev/null || true
 
     # Create symlink pointing to platform-specific binary
-    if ln -s "$BINARY_NAME" "$symlink_path" 2>/dev/null; then
+    if ln -s "$BINARY_NAME" "$symlink_path" 2>/dev/null && mv -f "$symlink_path" "$final_symlink_path"; then
         echo -e "${GREEN}✓ Created symlink${NC} claude-notifications → ${BINARY_NAME}"
         return 0
     else
         # Fallback: copy if symlink fails (some systems don't support symlinks)
         if cp "$BINARY_PATH" "$symlink_path" 2>/dev/null; then
             chmod +x "$symlink_path" 2>/dev/null || true
+            mv -f "$symlink_path" "$final_symlink_path" || return 1
             echo -e "${GREEN}✓ Created copy${NC} claude-notifications (symlink not supported)"
             return 0
         fi
@@ -1384,6 +1394,8 @@ EXEC_EOF
 
 # Set up iTerm2 Python API venv for tmux -CC click-to-focus (macOS only)
 setup_iterm2_venv() {
+    # This venv belongs to Claude; Codex still uses the binary updater.
+    [ "${CN_PRODUCT:-claude}" = "claude" ] || return 0
     # Only relevant on macOS
     [ "$(uname -s)" = "Darwin" ] || return 0
 
@@ -1606,6 +1618,75 @@ EOF
     return 1
 }
 
+# Keep a working notifier across upgrades. Existing signed app bundles are not
+# removed just because --force was requested; missing/broken bundles are repaired.
+desktop_runtime_usable() {
+    case "$PLATFORM" in
+        darwin)
+            [ -x "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ] ||
+                [ -x "$SCRIPT_DIR/terminal-notifier.app/Contents/MacOS/terminal-notifier" ] ;;
+        windows) [ -x "$FOCUS_HANDLER_PATH" ] ;;
+        *) return 0 ;;
+    esac
+}
+
+stage_and_promote_runtime() (
+    local live_dir="$SCRIPT_DIR"
+    local live_binary="$BINARY_PATH"
+    local stage
+    stage=$(mktemp -d "$SCRIPT_DIR/.install-stage.XXXXXX") || exit 1
+    trap 'rm -rf "$stage"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    SCRIPT_DIR="$stage"
+    REQUIRE_CHECKSUM=true
+    detect_platform
+    download_and_verify_binary || exit 1
+    verify_executable || exit 1
+
+    if [ "$PLATFORM" = "darwin" ]; then
+        if ! [ -x "$live_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ] &&
+           ! [ -x "$live_dir/terminal-notifier.app/Contents/MacOS/terminal-notifier" ]; then
+            download_terminal_notifier_modern || download_terminal_notifier || exit 1
+            local app
+            for app in ClaudeNotifier.app terminal-notifier.app; do
+                case "$app" in
+                    ClaudeNotifier.app) [ -x "$stage/$app/Contents/MacOS/terminal-notifier-modern" ] || continue ;;
+                    terminal-notifier.app) [ -x "$stage/$app/Contents/MacOS/terminal-notifier" ] || continue ;;
+                esac
+                # Only an unusable bundle can be displaced here. A valid live
+                # notifier never has a rename gap, including during SIGKILL.
+                if [ -e "$live_dir/$app" ]; then
+                    mv "$live_dir/$app" "$stage/old-$app" || exit 1
+                fi
+                mv "$stage/$app" "$live_dir/$app" || exit 1
+            done
+        fi
+        # Runtime discovery prefers a present modern executable path, even if
+        # it cannot execute. Remove that shadow only after legacy is ready.
+        if ! [ -x "$live_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ] &&
+           [ -x "$live_dir/terminal-notifier.app/Contents/MacOS/terminal-notifier" ] &&
+           { [ -e "$live_dir/ClaudeNotifier.app" ] || [ -L "$live_dir/ClaudeNotifier.app" ]; }; then
+            mv "$live_dir/ClaudeNotifier.app" "$stage/unusable-ClaudeNotifier.app" || exit 1
+        fi
+    elif [ "$PLATFORM" = "windows" ]; then
+        # Click-to-focus is part of the runtime, not an optional sound utility.
+        local main_name="$BINARY_NAME" main_path="$BINARY_PATH"
+        BINARY_NAME="$FOCUS_HANDLER_NAME"
+        BINARY_PATH="$FOCUS_HANDLER_PATH"
+        download_and_verify_binary || exit 1
+        chmod +x "$BINARY_PATH" || exit 1
+        mv -f "$BINARY_PATH" "$live_dir/$BINARY_NAME" || exit 1
+        BINARY_NAME="$main_name"
+        BINARY_PATH="$main_path"
+    elif [ "$PLATFORM" = "linux" ]; then
+        install_linux_notification_desktop_entry || exit 1
+    fi
+
+    mv -f "$BINARY_PATH" "$live_binary" || exit 1
+)
+
 # Main installation flow
 main() {
     echo ""
@@ -1635,13 +1716,13 @@ main() {
     echo -e "${BLUE}Binary:${NC}   ${BINARY_NAME}"
     echo ""
 
-    # When force-updating, verify GitHub is reachable BEFORE deleting anything.
-    # Otherwise a network outage leaves the user with no binary at all.
+    # Offline forced updates must stop before any installation work.
     if [ "$FORCE_UPDATE" = true ]; then
-        if ! check_github_availability; then
+        if ! check_github_availability || [ "$OFFLINE_MODE" = true ]; then
             echo ""
             echo -e "${YELLOW}⚠ Keeping existing installation (GitHub unreachable)${NC}"
-            return 0
+            [ -f "$BINARY_PATH" ] && return 0
+            return 1
         fi
     fi
 
@@ -1656,7 +1737,6 @@ main() {
 
         # On macOS, also check ClaudeNotifier (preferred) or legacy terminal-notifier
         if [ "$PLATFORM" = "darwin" ]; then
-            download_terminal_notifier_modern || download_terminal_notifier
             # Icon app is optional - don't fail if icon not found
             create_claude_notifications_app || true
             # Set up iTerm2 Python API venv for tmux -CC click-to-focus
@@ -1717,57 +1797,19 @@ main() {
 
     pin_release_urls
 
-    # Download and verify the main binary.
-    if ! download_and_verify_binary; then
-        cleanup
-        echo ""
-        echo -e "${RED}========================================${NC}"
-        echo -e "${RED} Installation Failed${NC}"
-        echo -e "${RED}========================================${NC}"
-        echo ""
-        echo -e "${YELLOW}Additional troubleshooting:${NC}"
-        echo -e "  1. Wait a few minutes if release is building"
-        echo -e "  2. Check: https://github.com/${REPO}/releases"
-        echo -e "  3. Manual download: https://github.com/${REPO}/releases/latest"
-        if [ "$PLATFORM" = "windows" ]; then
-            echo -e "  4. Check proxy / TLS inspection settings in Git Bash or your corporate network"
-        fi
-        echo ""
+    # All destructive verification operates only on the private staging directory.
+    # Publish the main version last, after required desktop dependencies are usable.
+    if ! stage_and_promote_runtime; then
+        echo -e "${RED}✗ Installation failed; existing runtime preserved${NC}" >&2
         exit 1
     fi
 
-    # Verify binary actually executes
-    if ! verify_executable; then
-        cleanup
-        echo ""
-        echo -e "${RED}========================================${NC}"
-        echo -e "${RED} Binary Execution Failed${NC}"
-        echo -e "${RED}========================================${NC}"
-        echo ""
-        echo -e "${YELLOW}Possible causes:${NC}"
-        echo -e "  - Wrong architecture (try on different machine)"
-        echo -e "  - Missing system libraries"
-        echo -e "  - Corrupted download"
-        echo ""
-        exit 1
-    fi
-
-    # Make executable (already done in verify_executable, but ensure)
-    make_executable
-
-    # Create symlink for hooks to use
     create_symlink
     configure_windows_native_hooks
-
-    # Download utility binaries (sound-preview, list-devices)
     download_utilities
 
-    # On macOS, download ClaudeNotifier (preferred) or legacy terminal-notifier
     if [ "$PLATFORM" = "darwin" ]; then
-        download_terminal_notifier_modern || download_terminal_notifier
-        # Icon app is optional - don't fail if icon not found
         create_claude_notifications_app || true
-        # Set up iTerm2 Python API venv for tmux -CC click-to-focus
         setup_iterm2_venv || true
     fi
 

@@ -178,8 +178,10 @@ if [ "$PLATFORM" = "windows" ]; then
     else
         echo -e "${YELLOW}SKIP${NC}: Wrapper script test (install.sh not run yet)"
     fi
-else
+elif [ -e "${SCRIPT_DIR}/claude-notifications" ]; then
     assert_file_exists "${SCRIPT_DIR}/claude-notifications" "Wrapper script should exist"
+else
+    echo -e "${YELLOW}SKIP${NC}: Generated wrapper (install.sh not run yet)"
 fi
 echo ""
 
@@ -234,6 +236,19 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 echo ""
+
+# Discover the disposable product-isolation regression in the existing CI entrypoint.
+if bash "$SCRIPT_DIR/codex-hook-wrapper_test.sh"; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+if bash "$SCRIPT_DIR/install_transaction_test.sh"; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 # Summary
 echo "========================================="

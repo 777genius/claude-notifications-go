@@ -144,6 +144,10 @@ run_install() {
 # === Main Logic ===
 
 STAMP_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/claude-notifications-go"
+# Keep every Codex stamp write out of the legacy Claude cache.
+if [ "${CN_PRODUCT:-claude}" = "codex" ]; then
+    STAMP_DIR="$STAMP_DIR/codex"
+fi
 VERSION_CACHE="$STAMP_DIR/verified-version"
 
 NEED_INSTALL=0

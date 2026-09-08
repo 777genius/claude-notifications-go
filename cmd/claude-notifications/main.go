@@ -81,6 +81,8 @@ func main() {
 		runDaemon()
 	case "windows-hooks":
 		runWindowsHooks(os.Args[2:])
+	case "setup-codex":
+		runSetupCodex(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Printf("claude-notifications v%s\n", version)
 	case "help", "--help", "-h":
@@ -753,6 +755,8 @@ func printUsage() {
 	fmt.Println("                          (internal, Windows; invoked by the toast protocol handler)")
 	fmt.Println("  windows-hooks           Print exec-form hook JSON for Windows settings")
 	fmt.Println("                          Does not modify ~/.claude/settings.json")
+	fmt.Println("  setup-codex             Register Codex CLI hooks (macOS, Linux, Windows)")
+	fmt.Println("                          [--print] [--dry-run] [--codex-home <dir>] [--plugin-root <dir>]")
 	fmt.Println("  version                 Show version information")
 	fmt.Println("  help                    Show this help message")
 	fmt.Println()

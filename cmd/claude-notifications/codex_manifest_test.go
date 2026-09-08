@@ -138,20 +138,20 @@ func TestCodexHookIdentityGolden(t *testing.T) {
 	}{
 		"Stop": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook Stop --product codex`,
-			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook Stop --product codex`,
+			commandWindows: `cmd.exe /d /v:off /s /c ""${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook Stop --product codex"`,
 		},
 		"PreToolUse": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook PreToolUse --product codex`,
-			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PreToolUse --product codex`,
+			commandWindows: `cmd.exe /d /v:off /s /c ""${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PreToolUse --product codex"`,
 			matcher:        `^request_user_input$`,
 		},
 		"SubagentStop": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook SubagentStop --product codex`,
-			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook SubagentStop --product codex`,
+			commandWindows: `cmd.exe /d /v:off /s /c ""${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook SubagentStop --product codex"`,
 		},
 		"PermissionRequest": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook PermissionRequest --product codex`,
-			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PermissionRequest --product codex`,
+			commandWindows: `cmd.exe /d /v:off /s /c ""${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PermissionRequest --product codex"`,
 		},
 	}
 
@@ -186,8 +186,10 @@ func TestCodexHookIdentityGolden(t *testing.T) {
 		if hk.Timeout != 30 {
 			t.Errorf("%s: timeout = %d, want 30", event, hk.Timeout)
 		}
-		if !hk.Async {
-			t.Errorf("%s: async must be true", event)
+		// Synchronous by measurement: an async handler never runs under
+		// `codex exec`, which exits as soon as the turn ends.
+		if hk.Async {
+			t.Errorf("%s: async must stay false", event)
 		}
 		if hk.StatusMessage != "" || hk.AdditionalContextLimit != 0 {
 			t.Errorf("%s: statusMessage/additionalContextLimit must stay omitted", event)
