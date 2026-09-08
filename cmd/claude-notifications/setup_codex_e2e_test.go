@@ -75,11 +75,15 @@ func newSetupE2E(t *testing.T) setupE2E {
 }
 func (f setupE2E) run(t *testing.T, input, binary string, args ...string) (string, error) {
 	t.Helper()
+	return f.runAt(t, f.root, input, binary, args...)
+}
+func (f setupE2E) runAt(t *testing.T, dir, input, binary string, args ...string) (string, error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, binary, args...)
 	configureE2EShell(c, binary, args)
-	c.Dir = f.root
+	c.Dir = dir
 	c.Env = f.env
 	c.Stdin = strings.NewReader(input)
 	c.WaitDelay = 2 * time.Second
@@ -88,6 +92,30 @@ func (f setupE2E) run(t *testing.T, input, binary string, args ...string) (strin
 		t.Fatalf("process timeout: %v", args)
 	}
 	return string(out), err
+}
+
+func TestSetupCodexE2EDocumentedRelativeBundle(t *testing.T) {
+	bin := buildCLIBinary(t)
+	f := newSetupE2E(t)
+	before := e2eSnapshot(t, f.root)
+	out, err := f.runAt(t, f.bundle, "", bin, "setup-codex", "--plugin-root", ".", "--dry-run")
+	if err != nil || !strings.Contains(out, "dry run") {
+		t.Fatalf("documented dry run: %v %s", err, out)
+	}
+	if !reflect.DeepEqual(before, e2eSnapshot(t, f.root)) {
+		t.Fatal("dry run changed sandbox")
+	}
+	for i := 0; i < 2; i++ {
+		out, err = f.runAt(t, f.bundle, "", bin, "setup-codex", "--plugin-root", ".")
+		if err != nil || !strings.Contains(out, "Codex notifications registered") {
+			t.Fatalf("documented setup run %d: %v %s", i, err, out)
+		}
+	}
+	hooks := e2eRead(t, filepath.Join(f.home, ".codex", "hooks.json"))
+	if !strings.Contains(string(hooks), "codex-hook-wrapper") {
+		t.Fatal("documented setup did not register hooks")
+	}
+	e2eRead(t, filepath.Join(f.home, ".codex", "claude-notifications-go", "bin", "codex-hook-wrapper.sh"))
 }
 func e2eSnapshot(t *testing.T, root string) map[string]string {
 	t.Helper()

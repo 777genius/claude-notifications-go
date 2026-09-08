@@ -281,9 +281,12 @@ func Run(opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	pluginRoot := filepath.Clean(opts.PluginRoot)
-	if pluginRoot == "" || pluginRoot == "." {
+	if opts.PluginRoot == "" {
 		return Result{}, fmt.Errorf("plugin root is required")
+	}
+	pluginRoot, err := filepath.Abs(opts.PluginRoot)
+	if err != nil {
+		return Result{}, fmt.Errorf("resolve plugin root: %w", err)
 	}
 	if _, err := os.Stat(filepath.Join(pluginRoot, "bin", "codex-hook-wrapper.sh")); err != nil {
 		return Result{}, fmt.Errorf("plugin root %q does not look like a claude-notifications bundle: %w", pluginRoot, err)
