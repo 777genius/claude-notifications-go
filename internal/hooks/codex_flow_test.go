@@ -336,10 +336,13 @@ func TestClaudePermissionRetainsHeldContentLockBehavior(t *testing.T) {
 	if err := h.dedupMgr.ReleaseContentLock(session); err != nil {
 		t.Fatal(err)
 	}
+	// Claude intentionally retains its event lock for two seconds even when
+	// content locking suppresses delivery. Use a fresh session for the control.
+	payload = strings.ReplaceAll(payload, session, "test-free-claude-permission")
 	if err := h.HandleHook("Notification", strings.NewReader(payload)); err != nil {
 		t.Fatal(err)
 	}
 	if notifier.callCount() != 1 {
-		t.Fatal("Claude permission must deliver after the lock is released")
+		t.Fatal("a fresh Claude permission must deliver without a held content lock")
 	}
 }

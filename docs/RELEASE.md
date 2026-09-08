@@ -9,8 +9,8 @@ later release that touches the hook pipeline.
 
 1. **Assets before the bump.** Follow the release-branch order in steps 4-5: tag and publish
    assets first, land the bump on `main` last. Rationale in the callout under step 4.
-2. **Canary the published binary** (step 5): `version` must print the new version, and a real
-   Claude `Stop` payload must produce a notification. A binary that cannot report its version
+2. **Canary the draft binary** (step 5): `version` must print the new version, and synthetic
+   Claude and Codex `Stop` payloads must reach local recording sinks. A binary that cannot report its version
    is the one failure the auto-updater cannot recover from.
 3. **Codex sandbox smoke.** With a throwaway `HOME` *and* `CODEX_HOME` (both are honored:
    Codex resolves the marketplace root from `HOME`/`USERPROFILE`, so the real `~/.agents` and

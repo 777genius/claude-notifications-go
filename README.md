@@ -213,9 +213,9 @@ What works today:
   reports map to the API Error / Session Limit statuses, a trailing question mark maps to
   Question, otherwise Task Complete. The Codex rollout transcript is not parsed (it is an
   internal, unstable format).
-- **Questions** - when Codex calls its `request_user_input` tool (Plan mode), you get a Question
-  notification with the actual question text (only the question/header text is shown; options,
-  ids, and secret fields never leave the payload).
+- **Question payloads (experimental)** - if Codex emits `PreToolUse` for `request_user_input`,
+  the plugin delivers the question/header text. Options, ids, and secret fields are excluded.
+  Live firing of this tool hook is not yet qualified; do not rely on it for every question.
 - **PermissionRequest** - Codex is waiting for your approval of a tool call; delivered as the
   time-sensitive Permission Request status. Only the tool name is shown, never the tool input.
 - **SubagentStop** (opt-in) - with `notifyOnSubagentStop: true` and `suppressForSubagents: false`,
@@ -229,7 +229,7 @@ Known limitations:
   with failure phrasing), not from structured error data - false negatives are possible.
 - The `request_user_input` question hook is limited to the modes where Codex exposes that tool.
 - Windows support for the Codex route is not declared until the Windows launcher is proven.
-- Codex hooks require a one-time trust review (`/hooks` inside Codex) for non-plugin installs.
+- Codex hooks require a trust review (`/hooks` inside Codex); changed definitions require review again.
 
 Both products share one config file (`~/.claude/claude-notifications-go/config.json`).
 
