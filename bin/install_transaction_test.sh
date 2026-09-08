@@ -1,6 +1,7 @@
 #!/bin/bash
 # Focused runtime promotion regressions. No network, builds, or real profiles.
-set -euo pipefail
+# Match installer nounset behavior: Bash 3.2 treats empty arrays as unset.
+set -eo pipefail
 root=$(cd "$(dirname "$0")" && pwd)
 sandbox=$(mktemp -d)
 trap 'rm -rf "$sandbox"' EXIT
@@ -73,7 +74,7 @@ for scenario in offline fresh_offline download checksum missing_checksum executa
                 return $?
             fi
             cp "$SCRIPT_DIR/payload" "$BINARY_PATH"
-            if [ "$scenario" = interrupt ]; then kill -TERM "$BASHPID"; fi
+            if [ "$scenario" = interrupt ]; then kill -TERM "$(sh -c 'echo "$PPID"')"; fi
         }
         download_terminal_notifier_modern() {
             [ "$scenario" = fresh_success ] || return 1
@@ -91,7 +92,7 @@ for scenario in offline fresh_offline download checksum missing_checksum executa
             # Optional downloads cannot start until the live runtime is complete.
             desktop_runtime_usable
             "$BINARY_PATH" --version | grep -q new-version
-            [ "$scenario" != optional_interrupt ] || kill -TERM "$BASHPID"
+            [ "$scenario" != optional_interrupt ] || kill -TERM "$(sh -c 'echo "$PPID"')"
         }
         create_claude_notifications_app() { :; }
         setup_iterm2_venv() { :; }
