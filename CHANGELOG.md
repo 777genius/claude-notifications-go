@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.42.0] - 2026-09-09
+
 ### Added
 - **Codex CLI support (beta)** - register Stop, PermissionRequest, experimental question hooks, and opt-in SubagentStop with `setup-codex`. Review and trust the entries in Codex `/hooks` once. Claude Code is not required.
 - **Safe Codex setup and updates** - install a stable runtime copy, preserve unrelated hooks and existing settings, save backups, and retain hook trust when registration is unchanged.
