@@ -3,7 +3,7 @@ package hooks
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -80,6 +80,8 @@ type Handler struct {
 	notifierSvc  notifierInterface
 	webhookSvc   webhookInterface
 	pluginRoot   string
+	product      Product
+	source       EventSource
 }
 
 // NewHandler creates a new hook handler
@@ -90,6 +92,22 @@ func NewHandler(pluginRoot string) (*Handler, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
+	return newHandlerWithConfig(pluginRoot, cfg, ProductClaude, nil)
+}
+
+// NewHandlerWithSource creates a handler for the composition root with an
+// explicit product and event source. Unlike NewHandler, config warnings go to
+// the file log only: observation routes must not write to stderr.
+func NewHandlerWithSource(pluginRoot string, product Product, source EventSource) (*Handler, error) {
+	cfg, err := config.LoadFromPluginRootQuiet(pluginRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	return newHandlerWithConfig(pluginRoot, cfg, product, source)
+}
+
+func newHandlerWithConfig(pluginRoot string, cfg *config.Config, product Product, source EventSource) (*Handler, error) {
 	// Validate config
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -103,7 +121,37 @@ func NewHandler(pluginRoot string) (*Handler, error) {
 		notifierSvc:  notifier.New(cfg),
 		webhookSvc:   webhook.New(cfg),
 		pluginRoot:   pluginRoot,
+		product:      product,
+		source:       source,
 	}, nil
+}
+
+// eventSource returns the injected source, defaulting to the legacy Claude
+// decoder so zero-value handlers (tests, NewHandler) keep today's behavior.
+func (h *Handler) eventSource() EventSource {
+	if h.source != nil {
+		return h.source
+	}
+	return ClaudeSource{}
+}
+
+// eventKeys derives the state/dedup identities for the event.
+func (h *Handler) eventKeys(ev Event) eventKeys {
+	if ev.Product == ProductCodex {
+		return codexKeys(ev)
+	}
+	return claudeKeys(ev.Session.SessionID)
+}
+
+// eventToolName extracts the tool identity for diagnostics.
+func eventToolName(ev Event) string {
+	switch p := ev.Payload.(type) {
+	case PreToolUsePayload:
+		return p.ToolName
+	case PermissionRequestPayload:
+		return p.ToolName
+	}
+	return ""
 }
 
 // HandleHook handles a hook event
@@ -148,34 +196,30 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	logging.SetPrefix(fmt.Sprintf("PID:%d", os.Getpid()))
 	logging.Debug("=== Hook triggered: %s ===", hookEvent)
 
-	// Parse hook data
+	// Decode via the event source (legacy Claude decoder by default)
 	bench.Start("stdin.parse")
-	var hookData HookData
-	if err := json.NewDecoder(skipUTF8BOM(input)).Decode(&hookData); err != nil {
-		return fmt.Errorf("failed to parse hook data: %w", err)
+	ev, err := h.eventSource().Decode(context.Background(), hookEvent, input)
+	if err != nil {
+		return err
 	}
 	bench.Elapsed("stdin.parse")
 
 	logging.Debug("Hook data: session=%s, transcript=%s, tool=%s",
-		hookData.SessionID, hookData.TranscriptPath, hookData.ToolName)
+		ev.Session.SessionID, ev.Session.TranscriptPath, eventToolName(ev))
 
-	// Validate session ID
-	if hookData.SessionID == "" {
-		hookData.SessionID = "unknown"
-		logging.Warn("Session ID is empty, using 'unknown'")
-	}
+	keys := h.eventKeys(ev)
 
-	if h.cfg.Notifications.Desktop.ClickToFocus && (hookEvent == "PreToolUse" || hookEvent == "Notification") {
+	if h.cfg.Notifications.Desktop.ClickToFocus && (ev.Kind() == EventPreToolUse || ev.Kind() == EventNotification) {
 		notifier.MaybeCaptureGhosttyTerminalID(
 			h.cfg.Notifications.Desktop.TerminalBundleID,
-			hookData.SessionID,
-			hookData.CWD,
+			ev.Session.SessionID,
+			ev.Session.CWD,
 		)
 	}
 
 	// Phase 1: Early duplicate check (per hook event type)
 	bench.Start("dedup.early_check")
-	if h.dedupMgr.CheckEarlyDuplicate(hookData.SessionID, hookEvent) {
+	if h.dedupMgr.CheckEarlyDuplicate(keys.lockKey, hookEvent) {
 		bench.Elapsed("dedup.early_check")
 		logging.Debug("Early duplicate detected, skipping")
 		return nil
@@ -188,34 +232,45 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 		return nil
 	}
 
-	// Determine status based on hook type
+	// Policy router: the sealed payload type selects the branch.
+	// PayloadEventName stays diagnostic and never routes.
 	var status analyzer.Status
 	var parsedMessages []jsonl.Message // reused by generateMessage to avoid double I/O
-	var err error
 
-	switch hookEvent {
-	case "PreToolUse":
-		status = h.handlePreToolUse(&hookData)
-	case "Notification":
-		// Check session state first (60s TTL) to suppress duplicates after PreToolUse
-		status, err = h.handleNotificationEvent(&hookData)
-		if err != nil {
-			return err
+	switch p := ev.Payload.(type) {
+	case PreToolUsePayload:
+		status = h.handlePreToolUse(ev, p)
+	case NotificationPayload:
+		// Notification hook fires when Claude needs user input (permission
+		// dialogs, questions), so it always maps to question status.
+		logging.Debug("Notification event received → question status")
+		status = analyzer.StatusQuestion
+	case StopPayload:
+		if ev.Product == ProductCodex {
+			// Codex continuation turns (stop_hook_active) never notify,
+			// preventing recursive/continuation duplicates.
+			if p.Continuation {
+				logging.Debug("Codex Stop: continuation turn, suppressing")
+				return nil
+			}
+			status = analyzer.ClassifyLastMessage(p.AssistantMessage)
+			defer h.cleanupOldLocks()
+			break
 		}
-	case "Stop":
+
 		// A Stop event is the MAIN agent finishing, so suppress only when its
 		// transcript_path actually points at a subagent/teammate transcript
 		// (.../subagents/...). Note: on current Claude Code the Stop hook receives
 		// the parent session transcript, so this rarely matches — kept as a
 		// forward-compatible guard for transcripts that are routed differently.
-		if h.cfg.ShouldSuppressForSubagents() && isSubagentTranscript(hookData.TranscriptPath) {
-			logging.Debug("Stop: subagent transcript detected (%s), suppressing (config: suppressForSubagents)", hookData.TranscriptPath)
+		if h.cfg.ShouldSuppressForSubagents() && isSubagentTranscript(ev.Session.TranscriptPath) {
+			logging.Debug("Stop: subagent transcript detected (%s), suppressing (config: suppressForSubagents)", ev.Session.TranscriptPath)
 			return nil
 		}
 
 		// Team mode: check if this session is a team lead and suppress if needed
 		if h.cfg.GetTeamMode() == "wait-all" {
-			if teamInfo := h.teamStateMgr.DetectTeamLead(hookData.SessionID); teamInfo != nil {
+			if teamInfo := h.teamStateMgr.DetectTeamLead(ev.Session.SessionID); teamInfo != nil {
 				logging.Debug("Stop: team lead detected for team %q (members: %d), checking team state",
 					teamInfo.TeamName, len(teamInfo.Members))
 
@@ -243,7 +298,7 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 				}
 			}
 		} else if h.cfg.GetTeamMode() == "never" {
-			if teamInfo := h.teamStateMgr.DetectTeamLead(hookData.SessionID); teamInfo != nil {
+			if teamInfo := h.teamStateMgr.DetectTeamLead(ev.Session.SessionID); teamInfo != nil {
 				logging.Debug("Stop: team mode is 'never', suppressing for team %q", teamInfo.TeamName)
 				return nil
 			}
@@ -252,7 +307,7 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 		// Analyze the transcript to determine status
 		bench.Start("stop.analyze")
-		status, parsedMessages, err = h.handleStopEvent(&hookData)
+		status, parsedMessages, err = h.handleStopEvent(ev)
 		bench.Elapsed("stop.analyze")
 		if err != nil {
 			return err
@@ -260,7 +315,14 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 		// Note: We don't delete session state here to preserve cooldown info
 		// State files have TTL and will be cleaned up automatically
 		defer h.cleanupOldLocks()
-	case "SubagentStop":
+	case SubagentStopPayload:
+		if ev.Product == ProductCodex {
+			// Codex SubagentStop is decoded for SDK completeness but stays
+			// outside product delivery scope in this milestone.
+			logging.Debug("Codex SubagentStop decoded, product delivery not enabled, skipping")
+			return nil
+		}
+
 		// A SubagentStop event always denotes a subagent (Task tool) finishing,
 		// so the event type itself — not the transcript path — is the reliable
 		// subagent signal. Claude Code passes the PARENT session transcript_path
@@ -280,14 +342,18 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 		// Opted in and not suppressed: handle like Stop.
 		logging.Debug("SubagentStop: notifications enabled (config), processing")
 		bench.Start("stop.analyze")
-		status, parsedMessages, err = h.handleStopEvent(&hookData)
+		status, parsedMessages, err = h.handleStopEvent(ev)
 		bench.Elapsed("stop.analyze")
 		if err != nil {
 			return err
 		}
 		defer h.cleanupOldLocks()
-	case "TeammateIdle":
-		return h.handleTeammateIdle(&hookData)
+	case PermissionRequestPayload:
+		// Codex-only in this milestone: the host is waiting on user approval.
+		logging.Debug("PermissionRequest: tool=%s", p.ToolName)
+		status = analyzer.StatusPermissionRequest
+	case TeammateIdlePayload:
+		return h.handleTeammateIdle(ev, p)
 	default:
 		return fmt.Errorf("unknown hook event: %s", hookEvent)
 	}
@@ -301,9 +367,9 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	// Check suppress-filters before any state mutations (dedup lock, cooldowns)
 	bench.Start("git.branch")
 	{
-		gitBranch := platform.GetGitBranch(hookData.CWD)
+		gitBranch := platform.GetGitBranch(ev.Session.CWD)
 		bench.Elapsed("git.branch")
-		folderName := filepath.Base(hookData.CWD)
+		folderName := filepath.Base(ev.Session.CWD)
 		if h.cfg.ShouldFilter(string(status), gitBranch, folderName) {
 			logging.Debug("Notification suppressed by filter: status=%s branch=%q folder=%s", status, gitBranch, folderName)
 			return nil
@@ -311,7 +377,7 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	}
 
 	// Phase 2: Acquire lock before sending (per hook event type)
-	acquired, err := h.dedupMgr.AcquireLock(hookData.SessionID, hookEvent)
+	acquired, err := h.dedupMgr.AcquireLock(keys.lockKey, hookEvent)
 	if err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
@@ -328,7 +394,7 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 		logging.Debug("Checking question cooldown: cooldownSeconds=%d", h.cfg.GetSuppressQuestionAfterAnyNotificationSeconds())
 
 		// Load state to log its contents
-		sessionState, stateErr := h.stateMgr.Load(hookData.SessionID)
+		sessionState, stateErr := h.stateMgr.Load(keys.stateKey)
 		if stateErr != nil {
 			logging.Warn("Failed to load state for logging: %v", stateErr)
 		} else if sessionState != nil {
@@ -340,7 +406,7 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 		// First, check if we should suppress question after ANY notification (not just task_complete)
 		suppressAfterAny, err := h.stateMgr.ShouldSuppressQuestionAfterAnyNotification(
-			hookData.SessionID,
+			keys.stateKey,
 			h.cfg.GetSuppressQuestionAfterAnyNotificationSeconds(),
 		)
 		if err != nil {
@@ -355,7 +421,7 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 		// Also check legacy cooldown after task_complete
 		suppress, err := h.stateMgr.ShouldSuppressQuestion(
-			hookData.SessionID,
+			keys.stateKey,
 			h.cfg.GetSuppressQuestionAfterTaskCompleteSeconds(),
 		)
 		if err != nil {
@@ -369,32 +435,32 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 	// Update state (only for task_complete, PreToolUse already updated state)
 	if status == analyzer.StatusTaskComplete {
-		if err := h.stateMgr.UpdateTaskComplete(hookData.SessionID); err != nil {
+		if err := h.stateMgr.UpdateTaskComplete(keys.stateKey); err != nil {
 			logging.Warn("Failed to update task complete state: %v", err)
 		}
 	}
 
 	// Generate message
 	bench.Start("message.generate")
-	body, actions := h.generateMessage(&hookData, status, parsedMessages)
+	body, actions := h.generateMessage(ev, status, parsedMessages)
 	message := joinMessageParts(body, actions)
 	bench.Elapsed("message.generate")
 
 	// Acquire content lock to prevent race between different hooks (Stop vs Notification)
 	// This ensures only one process can check and update duplicate state at a time
-	contentLockAcquired, err := h.dedupMgr.AcquireContentLock(hookData.SessionID)
+	contentLockAcquired, err := h.dedupMgr.AcquireContentLock(keys.stateKey)
 	if err != nil {
 		logging.Warn("Failed to acquire content lock: %v", err)
 		// Error (not "lock busy") - continue without lock as fallback
 	} else if !contentLockAcquired {
 		// Lock is held by another process - it's already handling this notification
-		logging.Warn("Content lock held by another process: session=%s hook=%s (notification skipped)", hookData.SessionID, hookEvent)
+		logging.Warn("Content lock held by another process: session=%s hook=%s (notification skipped)", keys.stateKey, hookEvent)
 		return nil
 	}
 
 	releaseContentLock := func() {
 		if contentLockAcquired {
-			if err := h.dedupMgr.ReleaseContentLock(hookData.SessionID); err != nil {
+			if err := h.dedupMgr.ReleaseContentLock(keys.stateKey); err != nil {
 				logging.Warn("Failed to release content lock: %v", err)
 			}
 			contentLockAcquired = false
@@ -402,13 +468,20 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 	}
 	defer releaseContentLock()
 
-	// Check for duplicate message content (3 minutes = 180 seconds window)
-	isDuplicate, err := h.stateMgr.IsDuplicateMessage(hookData.SessionID, message, 180)
-	if err != nil {
-		logging.Warn("Failed to check duplicate message: %v", err)
-	} else if isDuplicate {
-		logging.Debug("Duplicate message content detected within 3 minutes, skipping")
-		return nil
+	// Check for duplicate message content (3 minutes = 180 seconds window).
+	// permission_request is exempt: its body is deterministic ("Codex requests
+	// permission: <tool>"), so the session-wide window would silently swallow
+	// a REAL approval prompt for the same tool in a later turn, and the user
+	// would not know the session is blocked. Turn-level duplicates of the
+	// event itself are already bounded by the turn+tool-scoped dedup lock.
+	if status != analyzer.StatusPermissionRequest {
+		isDuplicate, err := h.stateMgr.IsDuplicateMessage(keys.stateKey, message, 180)
+		if err != nil {
+			logging.Warn("Failed to check duplicate message: %v", err)
+		} else if isDuplicate {
+			logging.Debug("Duplicate message content detected within 3 minutes, skipping")
+			return nil
+		}
 	}
 
 	// Release the cross-hook content lock before any delivery work. Desktop
@@ -418,11 +491,11 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 	// Send notifications
 	bench.Start("notify.send")
-	delivery := h.sendNotifications(status, body, actions, hookData.SessionID, hookData.CWD)
+	delivery := h.sendNotifications(status, body, actions, ev.Session.SessionID, ev.Session.CWD)
 	bench.Elapsed("notify.send")
 
 	if delivery.delivered() {
-		if err := h.stateMgr.UpdateLastNotification(hookData.SessionID, status, message); err != nil {
+		if err := h.stateMgr.UpdateLastNotification(keys.stateKey, status, message); err != nil {
 			logging.Warn("Failed to update last notification: %v", err)
 		}
 	} else {
@@ -434,37 +507,29 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 }
 
 // handlePreToolUse handles PreToolUse hook
-func (h *Handler) handlePreToolUse(hookData *HookData) analyzer.Status {
-	logging.Debug("PreToolUse: tool_name='%s'", hookData.ToolName)
+func (h *Handler) handlePreToolUse(ev Event, p PreToolUsePayload) analyzer.Status {
+	logging.Debug("PreToolUse: tool_name='%s'", p.ToolName)
 
-	status := analyzer.GetStatusForPreToolUse(hookData.ToolName)
+	status := analyzer.GetStatusForPreToolUse(p.ToolName)
 
 	// Write session state BEFORE returning (prevents race with Notification hook)
 	// This matches bash version behavior: state is written BEFORE notification is sent
 	if status == analyzer.StatusPlanReady || status == analyzer.StatusQuestion {
-		if err := h.stateMgr.UpdateInteractiveTool(hookData.SessionID, hookData.ToolName, hookData.CWD); err != nil {
+		if err := h.stateMgr.UpdateInteractiveTool(ev.Session.SessionID, p.ToolName, ev.Session.CWD); err != nil {
 			logging.Warn("Failed to update interactive tool state: %v", err)
 		} else {
-			logging.Debug("PreToolUse: session state written (tool=%s)", hookData.ToolName)
+			logging.Debug("PreToolUse: session state written (tool=%s)", p.ToolName)
 		}
 	}
 
 	return status
 }
 
-// handleNotificationEvent handles Notification hook
-// Always returns StatusQuestion as per design: Notification hook is triggered
-// when Claude needs user input (e.g., permission dialogs, questions)
-func (h *Handler) handleNotificationEvent(hookData *HookData) (analyzer.Status, error) {
-	logging.Debug("Notification event received → question status")
-	return analyzer.StatusQuestion, nil
-}
-
 // handleTeammateIdle handles the TeammateIdle hook event.
 // Records the teammate as idle, checks if all teammates are idle + lead stopped,
 // and sends a notification when both conditions are met.
-func (h *Handler) handleTeammateIdle(hookData *HookData) error {
-	if hookData.TeamName == "" || hookData.TeammateName == "" {
+func (h *Handler) handleTeammateIdle(ev Event, p TeammateIdlePayload) error {
+	if p.TeamName == "" || p.TeammateName == "" {
 		logging.Debug("TeammateIdle: missing team_name or teammate_name, skipping")
 		return nil
 	}
@@ -476,50 +541,50 @@ func (h *Handler) handleTeammateIdle(hookData *HookData) error {
 	}
 
 	// Dedup: prevent rapid duplicate TeammateIdle events for the same teammate
-	dedupKey := hookData.SessionID + "-" + hookData.TeammateName
+	dedupKey := ev.Session.SessionID + "-" + p.TeammateName
 	if h.dedupMgr.CheckEarlyDuplicate(dedupKey, "TeammateIdle") {
-		logging.Debug("TeammateIdle: duplicate for %q, skipping", hookData.TeammateName)
+		logging.Debug("TeammateIdle: duplicate for %q, skipping", p.TeammateName)
 		return nil
 	}
 
-	logging.Debug("TeammateIdle: teammate=%q team=%q", hookData.TeammateName, hookData.TeamName)
+	logging.Debug("TeammateIdle: teammate=%q team=%q", p.TeammateName, p.TeamName)
 
 	// Get team info to know all expected members
-	teamInfo := h.teamStateMgr.DetectTeamByName(hookData.TeamName)
+	teamInfo := h.teamStateMgr.DetectTeamByName(p.TeamName)
 	if teamInfo == nil {
-		logging.Debug("TeammateIdle: team %q config not found, skipping", hookData.TeamName)
+		logging.Debug("TeammateIdle: team %q config not found, skipping", p.TeamName)
 		return nil
 	}
 
 	// Record this teammate as idle
-	if err := h.teamStateMgr.RecordTeammateIdle(hookData.TeamName, hookData.TeammateName); err != nil {
+	if err := h.teamStateMgr.RecordTeammateIdle(p.TeamName, p.TeammateName); err != nil {
 		logging.Warn("TeammateIdle: failed to record idle state: %v", err)
 		return nil
 	}
 
 	// Check if all conditions are met: lead stopped + all teammates idle
-	allIdle, err := h.teamStateMgr.CheckAllIdle(hookData.TeamName, teamInfo.Members)
+	allIdle, err := h.teamStateMgr.CheckAllIdle(p.TeamName, teamInfo.Members)
 	if err != nil {
 		logging.Warn("TeammateIdle: failed to check team idle state: %v", err)
 		return nil
 	}
 
 	if !allIdle {
-		logging.Debug("TeammateIdle: not all conditions met yet for team %q", hookData.TeamName)
+		logging.Debug("TeammateIdle: not all conditions met yet for team %q", p.TeamName)
 		return nil
 	}
 
 	// All conditions met — send notification
-	logging.Debug("TeammateIdle: all teammates idle + lead stopped for team %q, sending notification", hookData.TeamName)
+	logging.Debug("TeammateIdle: all teammates idle + lead stopped for team %q, sending notification", p.TeamName)
 
-	if err := h.teamStateMgr.MarkNotified(hookData.TeamName); err != nil {
+	if err := h.teamStateMgr.MarkNotified(p.TeamName); err != nil {
 		logging.Warn("TeammateIdle: failed to mark team notified: %v", err)
 	}
 
 	status := analyzer.StatusTaskComplete
-	body := fmt.Sprintf("Team %q: all teammates finished work", hookData.TeamName)
+	body := fmt.Sprintf("Team %q: all teammates finished work", p.TeamName)
 
-	h.sendNotifications(status, body, "", hookData.SessionID, hookData.CWD)
+	h.sendNotifications(status, body, "", ev.Session.SessionID, ev.Session.CWD)
 
 	logging.Debug("=== Hook completed: TeammateIdle (team notification sent) ===")
 	return nil
@@ -537,18 +602,18 @@ func skipUTF8BOM(input io.Reader) io.Reader {
 // handleStopEvent handles Stop/SubagentStop hooks.
 // Returns the parsed messages alongside the status so callers can reuse them
 // (e.g., for summary generation) without re-reading the transcript file.
-func (h *Handler) handleStopEvent(hookData *HookData) (analyzer.Status, []jsonl.Message, error) {
-	if hookData.TranscriptPath == "" {
+func (h *Handler) handleStopEvent(ev Event) (analyzer.Status, []jsonl.Message, error) {
+	if ev.Session.TranscriptPath == "" {
 		logging.Warn("Transcript path is empty, skipping notification")
 		return analyzer.StatusUnknown, nil, nil
 	}
 
-	if !platform.FileExists(hookData.TranscriptPath) {
-		logging.Warn("Transcript file not found: %s", hookData.TranscriptPath)
+	if !platform.FileExists(ev.Session.TranscriptPath) {
+		logging.Warn("Transcript file not found: %s", ev.Session.TranscriptPath)
 		return analyzer.StatusUnknown, nil, nil
 	}
 
-	status, messages, err := analyzer.AnalyzeTranscriptWithMessages(hookData.TranscriptPath, h.cfg)
+	status, messages, err := analyzer.AnalyzeTranscriptWithMessages(ev.Session.TranscriptPath, h.cfg)
 	if err != nil {
 		logging.Error("Failed to analyze transcript: %v", err)
 		return analyzer.StatusUnknown, nil, nil
@@ -560,13 +625,19 @@ func (h *Handler) handleStopEvent(hookData *HookData) (analyzer.Status, []jsonl.
 
 // generateMessage generates a notification body and action summary.
 // If messages are provided (from handleStopEvent), uses them directly to avoid re-reading the transcript.
-func (h *Handler) generateMessage(hookData *HookData, status analyzer.Status, messages []jsonl.Message) (body, actions string) {
+func (h *Handler) generateMessage(ev Event, status analyzer.Status, messages []jsonl.Message) (body, actions string) {
+	// Codex bodies come from payload fields, never from the Claude-format
+	// transcript parser: the Codex rollout JSONL is a different schema.
+	if ev.Product == ProductCodex {
+		return h.generateCodexMessage(ev, status), ""
+	}
+
 	// Use pre-parsed messages if available (eliminates ~234ms double I/O)
 	if len(messages) > 0 {
 		body, actions = summary.GenerateFromMessagesStructured(messages, status, h.cfg)
-	} else if hookData.TranscriptPath != "" && platform.FileExists(hookData.TranscriptPath) {
+	} else if ev.Session.TranscriptPath != "" && platform.FileExists(ev.Session.TranscriptPath) {
 		// Fallback: read transcript from file (for non-Stop hooks)
-		if parsed, err := jsonl.ParseFile(hookData.TranscriptPath); err == nil {
+		if parsed, err := jsonl.ParseFile(ev.Session.TranscriptPath); err == nil {
 			body, actions = summary.GenerateFromMessagesStructured(parsed, status, h.cfg)
 		}
 	}
@@ -575,6 +646,32 @@ func (h *Handler) generateMessage(hookData *HookData, status analyzer.Status, me
 		body = summary.GenerateSimple(status, h.cfg)
 	}
 	return body, actions
+}
+
+// generateCodexMessage projects a Codex payload into a notification body.
+// ToolInput is intentionally never rendered: only the tool identity is safe
+// to show without redaction.
+func (h *Handler) generateCodexMessage(ev Event, status analyzer.Status) string {
+	switch p := ev.Payload.(type) {
+	case StopPayload:
+		if text := strings.TrimSpace(p.AssistantMessage); text != "" {
+			return truncateRunes(summary.CleanMarkdown(text), 150)
+		}
+	case PermissionRequestPayload:
+		if p.ToolName != "" {
+			return fmt.Sprintf("Codex requests permission: %s", p.ToolName)
+		}
+	}
+	return summary.GenerateSimple(status, h.cfg)
+}
+
+// truncateRunes shortens s to at most max runes, appending an ellipsis.
+func truncateRunes(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "..."
 }
 
 // joinMessageParts mirrors summary.appendActions: joins body and actions with a
@@ -702,6 +799,12 @@ func (h *Handler) cleanupOldLocks() {
 }
 
 func (h *Handler) maybeEmitDesktopPermissionGuidance(err error) {
+	// Observation routes (Codex) must never write to stdout; the guidance is
+	// a Claude Code systemMessage feature.
+	if h.product == ProductCodex {
+		return
+	}
+
 	if !platform.IsMacOS() {
 		return
 	}
