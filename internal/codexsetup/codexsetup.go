@@ -66,83 +66,112 @@ type Result struct {
 	ForeignKept int  // hook entries owned by other tools that were preserved
 }
 
-// hookHandler is one command handler in hooks.json.
+// hookHandler is one handler entry in hooks.json.
+//
+// Handlers that came from the user's file are re-emitted byte-for-byte: a
+// handler may be an entirely different kind (mcp_tool, prompt, agent) whose
+// schema this package must not assume, and Codex rejects a handler carrying
+// fields its variant does not define. Only handlers this package generates
+// are rendered from typed fields.
 type hookHandler struct {
-	Type           string `json:"type"`
-	Command        string `json:"command"`
-	CommandWindows string `json:"commandWindows,omitempty"`
-	Timeout        int    `json:"timeout,omitempty"`
-	Async          bool   `json:"async,omitempty"`
-	// Unknown keys from foreign handlers are preserved verbatim.
-	extra map[string]json.RawMessage
+	// raw is the verbatim source for handlers parsed from an existing file.
+	raw json.RawMessage
+
+	// Parsed view, used for ownership detection and for handlers we build.
+	Type           string
+	Command        string
+	CommandWindows string
+	Timeout        int
 }
 
 func (h hookHandler) MarshalJSON() ([]byte, error) {
-	out := map[string]json.RawMessage{}
-	for k, v := range h.extra {
-		out[k] = v
+	if len(h.raw) > 0 {
+		return h.raw, nil
 	}
-	set := func(key string, value any) error {
-		raw, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		out[key] = raw
-		return nil
-	}
-	if err := set("type", h.Type); err != nil {
-		return nil, err
-	}
-	if err := set("command", h.Command); err != nil {
-		return nil, err
+	out := map[string]any{
+		"type":    h.Type,
+		"command": h.Command,
 	}
 	if h.CommandWindows != "" {
-		if err := set("commandWindows", h.CommandWindows); err != nil {
-			return nil, err
-		}
+		out["commandWindows"] = h.CommandWindows
 	}
 	if h.Timeout != 0 {
-		if err := set("timeout", h.Timeout); err != nil {
-			return nil, err
-		}
-	}
-	if h.Async {
-		if err := set("async", h.Async); err != nil {
-			return nil, err
-		}
+		out["timeout"] = h.Timeout
 	}
 	return json.Marshal(out)
 }
 
 func (h *hookHandler) UnmarshalJSON(data []byte) error {
+	h.raw = append(json.RawMessage(nil), data...)
+	var parsed struct {
+		Type            string `json:"type"`
+		Command         string `json:"command"`
+		CommandWindows  string `json:"commandWindows"`
+		CommandWinSnake string `json:"command_windows"`
+		Timeout         int    `json:"timeout"`
+	}
+	// A handler with an unexpected shape (for example a non-string command)
+	// stays foreign and is preserved verbatim, so decode errors are ignored.
+	_ = json.Unmarshal(data, &parsed)
+	h.Type = parsed.Type
+	h.Command = parsed.Command
+	h.CommandWindows = parsed.CommandWindows
+	if h.CommandWindows == "" {
+		h.CommandWindows = parsed.CommandWinSnake
+	}
+	h.Timeout = parsed.Timeout
+	return nil
+}
+
+// hookGroup is one matcher group in hooks.json. Unknown group-level keys are
+// preserved so a user's own annotations survive a setup run.
+type hookGroup struct {
+	Matcher string
+	Hooks   []hookHandler
+	extra   map[string]json.RawMessage
+}
+
+func (g hookGroup) MarshalJSON() ([]byte, error) {
+	out := map[string]json.RawMessage{}
+	for k, v := range g.extra {
+		out[k] = v
+	}
+	if g.Matcher != "" {
+		raw, err := json.Marshal(g.Matcher)
+		if err != nil {
+			return nil, err
+		}
+		out["matcher"] = raw
+	} else {
+		delete(out, "matcher")
+	}
+	hooks, err := json.Marshal(g.Hooks)
+	if err != nil {
+		return nil, err
+	}
+	out["hooks"] = hooks
+	return json.Marshal(out)
+}
+
+func (g *hookGroup) UnmarshalJSON(data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	h.extra = map[string]json.RawMessage{}
+	g.extra = map[string]json.RawMessage{}
 	for k, v := range raw {
 		switch k {
-		case "type":
-			_ = json.Unmarshal(v, &h.Type)
-		case "command":
-			_ = json.Unmarshal(v, &h.Command)
-		case "commandWindows":
-			_ = json.Unmarshal(v, &h.CommandWindows)
-		case "timeout":
-			_ = json.Unmarshal(v, &h.Timeout)
-		case "async":
-			_ = json.Unmarshal(v, &h.Async)
+		case "matcher":
+			_ = json.Unmarshal(v, &g.Matcher)
+		case "hooks":
+			if err := json.Unmarshal(v, &g.Hooks); err != nil {
+				return fmt.Errorf("hook group has a malformed hooks array: %w", err)
+			}
 		default:
-			h.extra[k] = v
+			g.extra[k] = v
 		}
 	}
 	return nil
-}
-
-// hookGroup is one matcher group in hooks.json.
-type hookGroup struct {
-	Matcher string        `json:"matcher,omitempty"`
-	Hooks   []hookHandler `json:"hooks"`
 }
 
 // hooksFile is the subset of hooks.json this package understands. Top-level
@@ -201,12 +230,32 @@ func ResolveCodexHome(override string) (string, error) {
 
 // HookCommands renders the POSIX and Windows command strings for one event.
 // installDir must be the stable install directory.
+//
+// Quoting is done by hand rather than with %q: strconv escaping doubles
+// backslashes, which cmd.exe does not unescape, and it would also make the
+// generated command diverge from the frozen contract shape. Because the
+// command string feeds the Codex trust hash, that divergence would cost every
+// user a re-approval once corrected.
 func HookCommands(installDir, event string) (posix string, windows string) {
 	posixLauncher := filepath.ToSlash(filepath.Join(installDir, "bin", "codex-hook-wrapper.sh"))
-	windowsLauncher := filepath.Join(installDir, "bin", "codex-hook-wrapper.cmd")
-	posix = fmt.Sprintf("sh %q handle-hook %s --product codex", posixLauncher, event)
-	windows = fmt.Sprintf("cmd.exe /d /s /c call %q handle-hook %s --product codex", windowsLauncher, event)
+	windowsLauncher := filepath.FromSlash(filepath.Join(installDir, "bin", "codex-hook-wrapper.cmd"))
+	posix = fmt.Sprintf("sh %s handle-hook %s --product codex", posixQuote(posixLauncher), event)
+	windows = fmt.Sprintf("cmd.exe /d /s /c call %s handle-hook %s --product codex", windowsQuote(windowsLauncher), event)
 	return posix, windows
+}
+
+// posixQuote wraps a path for `sh -c`. Single quotes are used so nothing
+// inside is expanded: an absolute path may legitimately contain `$` or a
+// backslash, both of which are special inside double quotes.
+func posixQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// windowsQuote wraps a path for cmd.exe. Backslashes are literal there and a
+// double quote cannot appear in a Windows path, so no escaping is possible or
+// needed.
+func windowsQuote(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, "") + `"`
 }
 
 // ownsHandler reports whether a handler was registered by this plugin. The

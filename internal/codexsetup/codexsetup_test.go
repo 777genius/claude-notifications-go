@@ -88,14 +88,36 @@ func TestRunCreatesRegistrationAndInstallCopy(t *testing.T) {
 	}
 
 	// The command must point at the stable install dir, never at the source
-	// bundle: the trust hash covers the command string.
-	raw, _ := json.Marshal(parsed)
-	if strings.Contains(string(raw), bundle) {
-		t.Error("hook command references the source bundle path instead of the stable install dir")
+	// bundle: the trust hash covers the command string. Compare against the
+	// platform-specific renderings rather than the raw path, which is spelled
+	// differently in each command (forward slashes on POSIX, native
+	// separators for cmd.exe).
+	posix, windows := HookCommands(res.InstallDir, "Stop")
+	rawJSON, err := os.ReadFile(res.HooksPath)
+	if err != nil {
+		t.Fatalf("read hooks: %v", err)
 	}
-	if !strings.Contains(string(raw), res.InstallDir) {
-		t.Error("hook command does not reference the stable install dir")
+	body := string(rawJSON)
+	for _, want := range []string{jsonEscape(posix), jsonEscape(windows)} {
+		if !strings.Contains(body, want) {
+			t.Errorf("hooks.json does not contain the expected command %q", want)
+		}
 	}
+	bundlePosix, bundleWindows := HookCommands(bundle, "Stop")
+	for _, unwanted := range []string{jsonEscape(bundlePosix), jsonEscape(bundleWindows)} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("hooks.json references the source bundle path: %q", unwanted)
+		}
+	}
+}
+
+// jsonEscape renders a string the way it appears inside a JSON document.
+func jsonEscape(s string) string {
+	encoded, err := json.Marshal(s)
+	if err != nil {
+		return s
+	}
+	return strings.Trim(string(encoded), `"`)
 }
 
 func TestRunIsIdempotentAndStable(t *testing.T) {
@@ -253,6 +275,146 @@ func TestHookCommandsCarryBothPlatforms(t *testing.T) {
 	}
 	if !strings.HasPrefix(windows, "cmd.exe /d /s /c call ") || !strings.Contains(windows, "codex-hook-wrapper.cmd") {
 		t.Errorf("windows command = %q", windows)
+	}
+}
+
+// TestHookCommandsQuotingIsLiteral guards the command shape that feeds the
+// Codex trust hash. strconv-style quoting (%q) doubles backslashes, which
+// cmd.exe does not unescape; correcting that after a release would cost every
+// Windows user a re-approval.
+// The quoting helpers are exercised directly: filepath.Join renders separators
+// for the host, so a Windows path cannot be built portably inside a test.
+func TestHookCommandsQuotingIsLiteral(t *testing.T) {
+	windowsPath := `C:\Users\Test User\.codex\` + InstallDirName + `\bin\codex-hook-wrapper.cmd`
+	quoted := windowsQuote(windowsPath)
+	if strings.Contains(quoted, `\\`) {
+		t.Errorf("windowsQuote doubled backslashes: %q", quoted)
+	}
+	if quoted != `"`+windowsPath+`"` {
+		t.Errorf("windowsQuote(%q) = %q, want the path wrapped in plain double quotes", windowsPath, quoted)
+	}
+
+	// A POSIX path may legitimately contain characters a shell expands inside
+	// double quotes; single quoting keeps it literal.
+	if got := posixQuote(`/home/u$er/.codex/x`); got != `'/home/u$er/.codex/x'` {
+		t.Errorf("posixQuote = %q, want a single-quoted literal", got)
+	}
+	// Paths containing a single quote must stay parseable by sh.
+	if got := posixQuote(`/home/o'brien/x`); got != `'/home/o'\''brien/x'` {
+		t.Errorf("posixQuote = %q, want the embedded quote escaped", got)
+	}
+
+	// End to end, both commands must carry the launcher and the argv.
+	posix, windows := HookCommands(filepath.Join("/home/u/.codex", InstallDirName), "Stop")
+	if !strings.Contains(posix, "codex-hook-wrapper.sh") || !strings.HasSuffix(posix, "handle-hook Stop --product codex") {
+		t.Errorf("posix command = %q", posix)
+	}
+	if !strings.Contains(windows, "codex-hook-wrapper.cmd") || !strings.HasSuffix(windows, "handle-hook Stop --product codex") {
+		t.Errorf("windows command = %q", windows)
+	}
+}
+
+// TestRunPreservesForeignHandlerKindsVerbatim guards against the worst
+// failure mode of editing someone else's config: a handler of another kind
+// (mcp_tool, prompt, agent) must not gain fields its schema does not define,
+// because Codex would then reject the whole file and the user would lose
+// every hook they have.
+func TestRunPreservesForeignHandlerKindsVerbatim(t *testing.T) {
+	bundle := fakeBundle(t)
+	codexHome := t.TempDir()
+	hooksPath := filepath.Join(codexHome, "hooks.json")
+
+	existing := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^shell$",
+        "description": "group annotation",
+        "hooks": [
+          {"type": "mcp_tool", "server": "audit", "tool": "log", "timeout": 0},
+          {"type": "command", "command": "echo hi", "async": false, "statusMessage": "checking"}
+        ]
+      }
+    ]
+  }
+}`
+	if err := os.WriteFile(hooksPath, []byte(existing), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if _, err := Run(Options{CodexHome: codexHome, PluginRoot: bundle}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	parsed := readHooks(t, hooksPath)
+	groups := parsed["hooks"].(map[string]any)["PreToolUse"].([]any)
+
+	var foreignGroup map[string]any
+	for _, g := range groups {
+		group := g.(map[string]any)
+		if group["matcher"] == "^shell$" {
+			foreignGroup = group
+		}
+	}
+	if foreignGroup == nil {
+		t.Fatal("foreign group disappeared")
+	}
+	if foreignGroup["description"] != "group annotation" {
+		t.Errorf("group-level key lost: %v", foreignGroup["description"])
+	}
+
+	handlers := foreignGroup["hooks"].([]any)
+	if len(handlers) != 2 {
+		t.Fatalf("foreign handlers = %d, want 2", len(handlers))
+	}
+
+	mcp := handlers[0].(map[string]any)
+	if _, injected := mcp["command"]; injected {
+		t.Errorf("a command field was injected into an mcp_tool handler: %v", mcp)
+	}
+	if mcp["server"] != "audit" || mcp["tool"] != "log" {
+		t.Errorf("mcp_tool handler mangled: %v", mcp)
+	}
+	if timeout, ok := mcp["timeout"]; !ok || timeout.(float64) != 0 {
+		t.Errorf("explicit zero timeout lost: %v", mcp)
+	}
+
+	cmd := handlers[1].(map[string]any)
+	if cmd["statusMessage"] != "checking" {
+		t.Errorf("statusMessage lost: %v", cmd)
+	}
+	if async, ok := cmd["async"]; !ok || async.(bool) {
+		t.Errorf("explicit async=false lost: %v", cmd)
+	}
+}
+
+// TestOwnsHandlerBoundaries checks both directions of ownership detection:
+// claiming a foreign hook would delete a user's configuration, and failing to
+// claim our own would duplicate registrations on every run.
+func TestOwnsHandlerBoundaries(t *testing.T) {
+	ourPosix, ourWindows := HookCommands("/home/u/.codex/"+InstallDirName, "Stop")
+
+	owned := []hookHandler{
+		{Command: ourPosix},
+		{CommandWindows: ourWindows},
+		{Command: `sh '/opt/elsewhere/bin/codex-hook-wrapper.sh' handle-hook Stop --product codex`},
+	}
+	for _, h := range owned {
+		if !ownsHandler(h) {
+			t.Errorf("ownsHandler(%q/%q) = false, want true", h.Command, h.CommandWindows)
+		}
+	}
+
+	foreign := []hookHandler{
+		{Command: "echo hi"},
+		{Command: "/usr/local/bin/my-tool --product codex"},               // no launcher name
+		{Command: "sh /opt/other/codex-hook-wrapper.sh handle-hook Stop"}, // no product flag
+		{Type: "mcp_tool"}, // no command at all
+	}
+	for _, h := range foreign {
+		if ownsHandler(h) {
+			t.Errorf("ownsHandler(%q) = true, want false", h.Command)
+		}
 	}
 }
 
