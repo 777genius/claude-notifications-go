@@ -85,7 +85,11 @@ func runSetupCodex(args []string) {
 	fmt.Println()
 	fmt.Println("Next step: start Codex, run /hooks, review the entries and trust them.")
 	fmt.Println("Codex asks for this once; the registration keeps working across plugin updates.")
-	fmt.Println("After updating the plugin, run this command again to refresh the copy.")
+	fmt.Println("After updating the plugin, rerun setup-codex from the updated bundle to refresh the copy.")
+	if executable, err := os.Executable(); err == nil {
+		fmt.Printf("Setup executable (no PATH entry required): %s\n", executable)
+	}
+	fmt.Println("You can also run setup-codex from the installed bundle to repair hook registration.")
 }
 
 func parseSetupCodexOptions(args []string) (setupCodexOptions, error) {

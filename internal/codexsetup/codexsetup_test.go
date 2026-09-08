@@ -308,7 +308,7 @@ func TestRunRejectsNonBundle(t *testing.T) {
 	}
 }
 
-func TestRunRejectsInstallingOntoItself(t *testing.T) {
+func TestRunRegistersInstalledBundle(t *testing.T) {
 	codexHome := t.TempDir()
 	installDir := filepath.Join(codexHome, InstallDirName)
 	if err := os.MkdirAll(filepath.Join(installDir, "bin"), 0o755); err != nil {
@@ -317,8 +317,8 @@ func TestRunRejectsInstallingOntoItself(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(installDir, "bin", "codex-hook-wrapper.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if _, err := Run(Options{CodexHome: codexHome, PluginRoot: installDir}); err == nil {
-		t.Fatal("expected an error when the source and destination are the same directory")
+	if _, err := Run(Options{CodexHome: codexHome, PluginRoot: installDir}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -344,7 +344,7 @@ func TestHookCommandsCarryBothPlatforms(t *testing.T) {
 		!strings.HasSuffix(posix, "handle-hook Stop --product codex") {
 		t.Errorf("posix command = %q", posix)
 	}
-	if !strings.HasPrefix(windows, "cmd.exe /d /s /c call ") || !strings.Contains(windows, "codex-hook-wrapper.cmd") {
+	if !strings.HasPrefix(windows, "cmd.exe /d /v:off /s /c ") || !strings.Contains(windows, "codex-hook-wrapper.cmd") {
 		t.Errorf("windows command = %q", windows)
 	}
 }
@@ -380,7 +380,7 @@ func TestHookCommandsQuotingIsLiteral(t *testing.T) {
 	if !strings.Contains(posix, "codex-hook-wrapper.sh") || !strings.HasSuffix(posix, "handle-hook Stop --product codex") {
 		t.Errorf("posix command = %q", posix)
 	}
-	if !strings.Contains(windows, "codex-hook-wrapper.cmd") || !strings.HasSuffix(windows, "handle-hook Stop --product codex") {
+	if !strings.Contains(windows, "codex-hook-wrapper.cmd") || !strings.HasSuffix(windows, `handle-hook Stop --product codex"`) {
 		t.Errorf("windows command = %q", windows)
 	}
 }
@@ -466,24 +466,26 @@ func TestOwnsHandlerBoundaries(t *testing.T) {
 	ourPosix, ourWindows := HookCommands("/home/u/.codex/"+InstallDirName, "Stop")
 
 	owned := []hookHandler{
-		{Command: ourPosix},
-		{CommandWindows: ourWindows},
-		{Command: `sh '/opt/elsewhere/bin/codex-hook-wrapper.sh' handle-hook Stop --product codex`},
+		{Type: "command", Command: ourPosix},
+		{Type: "command", CommandWindows: ourWindows},
 	}
 	for _, h := range owned {
-		if !ownsHandler(h) {
+		if !ownsHandler(h, "/home/u/.codex/"+InstallDirName, "Stop") {
 			t.Errorf("ownsHandler(%q/%q) = false, want true", h.Command, h.CommandWindows)
 		}
 	}
 
 	foreign := []hookHandler{
+		{Type: "command", Command: "echo " + ourPosix},
+		{Type: "command", Command: ourPosix + " && echo other"},
+		{Type: "command", Command: ourPosix, CommandWindows: "echo foreign"},
 		{Command: "echo hi"},
 		{Command: "/usr/local/bin/my-tool --product codex"},               // no launcher name
 		{Command: "sh /opt/other/codex-hook-wrapper.sh handle-hook Stop"}, // no product flag
 		{Type: "mcp_tool"}, // no command at all
 	}
 	for _, h := range foreign {
-		if ownsHandler(h) {
+		if ownsHandler(h, "/home/u/.codex/"+InstallDirName, "Stop") {
 			t.Errorf("ownsHandler(%q) = true, want false", h.Command)
 		}
 	}

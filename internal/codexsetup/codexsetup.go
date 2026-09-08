@@ -13,6 +13,7 @@
 package codexsetup
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,7 +22,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"time"
 )
 
 // InstallDirName is the stable directory (inside the Codex home) that holds
@@ -127,12 +127,16 @@ func (h *hookHandler) UnmarshalJSON(data []byte) error {
 // hookGroup is one matcher group in hooks.json. Unknown group-level keys are
 // preserved so a user's own annotations survive a setup run.
 type hookGroup struct {
+	raw     json.RawMessage
 	Matcher string
 	Hooks   []hookHandler
 	extra   map[string]json.RawMessage
 }
 
 func (g hookGroup) MarshalJSON() ([]byte, error) {
+	if g.raw != nil {
+		return g.raw, nil
+	}
 	out := map[string]json.RawMessage{}
 	for k, v := range g.extra {
 		out[k] = v
@@ -143,8 +147,6 @@ func (g hookGroup) MarshalJSON() ([]byte, error) {
 			return nil, err
 		}
 		out["matcher"] = raw
-	} else {
-		delete(out, "matcher")
 	}
 	hooks, err := json.Marshal(g.Hooks)
 	if err != nil {
@@ -155,6 +157,7 @@ func (g hookGroup) MarshalJSON() ([]byte, error) {
 }
 
 func (g *hookGroup) UnmarshalJSON(data []byte) error {
+	g.raw = append(json.RawMessage(nil), data...)
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -163,7 +166,7 @@ func (g *hookGroup) UnmarshalJSON(data []byte) error {
 	for k, v := range raw {
 		switch k {
 		case "matcher":
-			_ = json.Unmarshal(v, &g.Matcher)
+			g.extra[k] = v
 		case "hooks":
 			if err := json.Unmarshal(v, &g.Hooks); err != nil {
 				return fmt.Errorf("hook group has a malformed hooks array: %w", err)
@@ -217,10 +220,10 @@ func (f *hooksFile) UnmarshalJSON(data []byte) error {
 // ResolveCodexHome returns the Codex home directory for this machine.
 func ResolveCodexHome(override string) (string, error) {
 	if strings.TrimSpace(override) != "" {
-		return filepath.Clean(override), nil
+		return filepath.Abs(override)
 	}
 	if env := strings.TrimSpace(os.Getenv("CODEX_HOME")); env != "" {
-		return filepath.Clean(env), nil
+		return filepath.Abs(env)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -241,7 +244,7 @@ func HookCommands(installDir, event string) (posix string, windows string) {
 	posixLauncher := filepath.ToSlash(filepath.Join(installDir, "bin", "codex-hook-wrapper.sh"))
 	windowsLauncher := filepath.FromSlash(filepath.Join(installDir, "bin", "codex-hook-wrapper.cmd"))
 	posix = fmt.Sprintf("sh %s handle-hook %s --product codex", posixQuote(posixLauncher), event)
-	windows = fmt.Sprintf("cmd.exe /d /s /c call %s handle-hook %s --product codex", windowsQuote(windowsLauncher), event)
+	windows = fmt.Sprintf(`cmd.exe /d /v:off /s /c "%s handle-hook %s --product codex"`, windowsQuote(windowsLauncher), event)
 	return posix, windows
 }
 
@@ -262,16 +265,16 @@ func windowsQuote(s string) string {
 // ownsHandler reports whether a handler was registered by this plugin. The
 // check is intentionally narrow: it must never claim a hook a user wrote by
 // hand for a different tool.
-func ownsHandler(h hookHandler) bool {
-	for _, cmd := range []string{h.Command, h.CommandWindows} {
-		if cmd == "" {
-			continue
-		}
-		if strings.Contains(cmd, "codex-hook-wrapper") && strings.Contains(cmd, "--product codex") {
-			return true
-		}
+func ownsHandler(h hookHandler, installDir, event string) bool {
+	if h.Type != "command" {
+		return false
 	}
-	return false
+	posix, windows := HookCommands(installDir, event)
+	// Accept only complete generated commands, including the legacy Windows form.
+	legacy := fmt.Sprintf("cmd.exe /d /s /c call %s handle-hook %s --product codex", windowsQuote(filepath.Join(installDir, "bin", "codex-hook-wrapper.cmd")), event)
+	return (h.Command == posix || h.Command == "") &&
+		(h.CommandWindows == windows || h.CommandWindows == legacy || h.CommandWindows == "") &&
+		(h.Command != "" || h.CommandWindows != "")
 }
 
 // Run performs (or simulates) the registration.
@@ -300,11 +303,40 @@ func Run(opts Options) (Result, error) {
 		result.Events = append(result.Events, e.event)
 	}
 
-	// Reject installing from the destination onto itself.
-	if sameDir(pluginRoot, installDir) {
-		return Result{}, fmt.Errorf("plugin root and install directory are the same (%q); run setup from the plugin bundle", installDir)
+	if err := validateInstallPath(installDir); err != nil {
+		return Result{}, err
 	}
-
+	source, err := canonicalPath(pluginRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	destination, err := canonicalPath(installDir)
+	if err != nil {
+		return Result{}, err
+	}
+	self := sameDir(source, destination)
+	if !self && (within(source, destination) || within(destination, source)) {
+		return Result{}, fmt.Errorf("source and destination overlap")
+	}
+	if !opts.DryRun {
+		if err := os.MkdirAll(codexHome, 0700); err != nil {
+			return Result{}, err
+		}
+		lock := filepath.Join(codexHome, ".claude-notifications-setup.lock")
+		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return Result{}, fmt.Errorf("setup lock (remove only after confirming no setup is running): %w", err)
+		}
+		f.Close()
+		defer os.Remove(lock)
+	}
+	before, readErr := os.ReadFile(hooksPath)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return Result{}, readErr
+	}
+	if err := checkHooksSnapshot(hooksPath, before, readErr == nil); err != nil {
+		return Result{}, err
+	}
 	existing, err := readHooksFile(hooksPath)
 	if err != nil {
 		return Result{}, err
@@ -317,13 +349,22 @@ func Run(opts Options) (Result, error) {
 		return result, nil
 	}
 
-	if err := copyBundle(pluginRoot, installDir); err != nil {
-		return Result{}, fmt.Errorf("failed to install plugin copy: %w", err)
+	rollback := func() error { return nil }
+	finish := func() {}
+	if !self {
+		rollback, finish, err = stageBundle(source, destination)
+		if err != nil {
+			return Result{}, fmt.Errorf("failed to install plugin copy: %w", err)
+		}
 	}
-
-	backup, err := writeHooksFile(hooksPath, merged)
+	defer finish()
+	current, currentErr := os.ReadFile(hooksPath)
+	if !bytes.Equal(before, current) || os.IsNotExist(readErr) != os.IsNotExist(currentErr) || (currentErr != nil && !os.IsNotExist(currentErr)) {
+		return Result{}, fmt.Errorf("hooks.json changed during setup; rollback: %v", rollback())
+	}
+	backup, err := writeHooksFile(hooksPath, merged, before, readErr == nil)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fmt.Errorf("%w; bundle rollback: %v", err, rollback())
 	}
 	result.BackupPath = backup
 	return result, nil
@@ -332,6 +373,9 @@ func Run(opts Options) (Result, error) {
 // RenderHooksJSON returns the hooks.json fragment this plugin registers, for
 // users who prefer to merge it themselves.
 func RenderHooksJSON(installDir string) ([]byte, error) {
+	if err := validateInstallPath(installDir); err != nil {
+		return nil, err
+	}
 	empty := hooksFile{Hooks: map[string][]hookGroup{}, extra: map[string]json.RawMessage{}}
 	merged, _, _ := mergeHooks(empty, installDir)
 	return json.MarshalIndent(merged, "", "  ")
@@ -349,25 +393,29 @@ func mergeHooks(existing hooksFile, installDir string) (hooksFile, bool, int) {
 	// handlers (and foreign groups) survive untouched.
 	for event, groups := range existing.Hooks {
 		var kept []hookGroup
+		if groups != nil {
+			kept = []hookGroup{}
+		}
 		for _, g := range groups {
 			var keptHandlers []hookHandler
 			for _, h := range g.Hooks {
-				if ownsHandler(h) {
+				if ownsHandler(h, installDir, event) {
 					replaced = true
 					continue
 				}
 				keptHandlers = append(keptHandlers, h)
 				foreign++
 			}
-			if len(keptHandlers) == 0 {
+			if len(keptHandlers) == 0 && len(g.Hooks) > 0 {
 				continue
 			}
-			g.Hooks = keptHandlers
+			if len(g.Hooks) != len(keptHandlers) {
+				g.raw = nil
+				g.Hooks = keptHandlers
+			}
 			kept = append(kept, g)
 		}
-		if len(kept) > 0 {
-			out.Hooks[event] = kept
-		}
+		out.Hooks[event] = kept
 	}
 
 	for _, spec := range registeredEvents {
@@ -414,7 +462,10 @@ func readHooksFile(path string) (hooksFile, error) {
 }
 
 // writeHooksFile writes atomically, backing up any existing file first.
-func writeHooksFile(path string, content hooksFile) (string, error) {
+func writeHooksFile(path string, content hooksFile, expected []byte, existed bool) (string, error) {
+	if err := checkHooksSnapshot(path, expected, existed); err != nil {
+		return "", err
+	}
 	data, err := json.MarshalIndent(content, "", "  ")
 	if err != nil {
 		return "", err
@@ -431,16 +482,21 @@ func writeHooksFile(path string, content hooksFile) (string, error) {
 	// what the user originally had.
 	backup := ""
 	if prev, err := os.ReadFile(path); err == nil {
-		backup = fmt.Sprintf("%s.backup.%s", path, time.Now().Format("20060102-150405"))
-		for i := 1; ; i++ {
-			if _, err := os.Stat(backup); os.IsNotExist(err) {
-				break
-			}
-			backup = fmt.Sprintf("%s.backup.%s-%d", path, time.Now().Format("20060102-150405"), i)
+		f, err := os.CreateTemp(dir, "hooks.json.backup-*")
+		if err != nil {
+			return "", err
 		}
-		if err := os.WriteFile(backup, prev, 0o600); err != nil {
-			return "", fmt.Errorf("cannot write backup %s: %w", backup, err)
+		backup = f.Name()
+		_, writeErr := f.Write(prev)
+		closeErr := f.Close()
+		if writeErr != nil {
+			return "", writeErr
 		}
+		if closeErr != nil {
+			return "", closeErr
+		}
+	} else if !os.IsNotExist(err) {
+		return "", err
 	}
 
 	tmp, err := os.CreateTemp(dir, "hooks-*.json.tmp")
@@ -464,53 +520,153 @@ func writeHooksFile(path string, content hooksFile) (string, error) {
 	if err := os.Chmod(tmpPath, 0o600); err != nil {
 		return "", err
 	}
+	if err := checkHooksSnapshot(path, expected, existed); err != nil {
+		return "", err
+	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		return "", err
 	}
 	return backup, nil
 }
 
-// skippedBundleEntries are top-level bundle paths the Codex install does not
-// need; skipping them keeps the copy small and avoids shipping sources.
-var skippedBundleEntries = map[string]bool{
-	".git":           true,
-	".github":        true,
-	"cmd":            true,
-	"internal":       true,
-	"pkg":            true,
-	"docs":           true,
-	"tests":          true,
-	"testdata":       true,
-	"swift-notifier": true,
+// Only runtime assets belong in the installed bundle. User config and logs
+// at the installation root are never refreshed from the source.
+func runtimeEntry(name string) bool {
+	return name == "bin" || name == "sounds" || name == "config" || name == "claude_icon.png"
+}
+
+func validateInstallPath(path string) error {
+	if runtime.GOOS == "windows" && strings.ContainsAny(path, "%!\"\r\n") {
+		return fmt.Errorf("Windows install path contains unsupported shell expansion characters")
+	}
+	return nil
+}
+
+func canonicalPath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err == nil {
+		return resolved, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	parent := filepath.Dir(absolute)
+	if parent == absolute {
+		return "", err
+	}
+	resolved, err = canonicalPath(parent)
+	return filepath.Join(resolved, filepath.Base(absolute)), err
+}
+
+func within(parent, child string) bool {
+	if runtime.GOOS == "windows" {
+		parent, child = strings.ToLower(parent), strings.ToLower(child)
+	}
+	rel, err := filepath.Rel(parent, child)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func copyBundle(src, dst string) error {
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return err
+	_, finish, err := stageBundle(src, dst)
+	if err == nil {
+		finish()
+	}
+	return err
+}
+
+// Stage every asset before moving any live entry. Retain old entries until
+// hooks have been committed, and restore them on a reported failure.
+func stageBundle(src, dst string) (func() error, func(), error) {
+	source, err := canonicalPath(src)
+	if err != nil {
+		return nil, nil, err
+	}
+	destination, err := canonicalPath(dst)
+	if err != nil {
+		return nil, nil, err
+	}
+	if within(source, destination) || within(destination, source) {
+		return nil, nil, fmt.Errorf("source and destination overlap")
+	}
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return nil, nil, err
+	}
+	stage, err := os.MkdirTemp(filepath.Dir(dst), ".codex-bundle-*")
+	if err != nil {
+		return nil, nil, err
+	}
+	retain := false
+	finish := func() {
+		if !retain {
+			_ = os.RemoveAll(stage)
+		}
 	}
 	entries, err := os.ReadDir(src)
 	if err != nil {
-		return err
+		finish()
+		return nil, nil, err
 	}
+	var names []string
 	for _, entry := range entries {
-		if skippedBundleEntries[entry.Name()] {
+		if !runtimeEntry(entry.Name()) {
 			continue
 		}
-		target := filepath.Join(dst, entry.Name())
-		// Replace rather than merge. Copying over an existing tree would leave
-		// files that a newer release removed, and a stale file inside
-		// ClaudeNotifier.app breaks its code signature ("a sealed resource is
-		// missing or invalid"), which stops macOS notifications entirely.
-		// Files the install dir accumulates at its root (logs, the config
-		// copy) are outside the entries we copy and survive.
-		if err := os.RemoveAll(target); err != nil {
-			return fmt.Errorf("cannot replace %s: %w", target, err)
+		name := entry.Name()
+		if err := copyPath(filepath.Join(src, name), filepath.Join(stage, "new", name)); err != nil {
+			finish()
+			return nil, nil, err
 		}
-		if err := copyPath(filepath.Join(src, entry.Name()), target); err != nil {
-			return err
+		names = append(names, name)
+	}
+	var moved, installed []string
+	rollback := func() error {
+		retain = true
+		for _, name := range installed {
+			if err := os.RemoveAll(filepath.Join(dst, name)); err != nil {
+				return fmt.Errorf("%w; recovery files: %s", err, stage)
+			}
+		}
+		for _, name := range moved {
+			if err := os.Rename(filepath.Join(stage, "old", name), filepath.Join(dst, name)); err != nil {
+				return fmt.Errorf("%w; recovery files: %s", err, stage)
+			}
+		}
+		retain = false
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Join(stage, "old"), 0700); err != nil {
+		finish()
+		return nil, nil, err
+	}
+	for _, name := range names {
+		target := filepath.Join(dst, name)
+		if _, err = os.Lstat(target); err == nil {
+			err = os.Rename(target, filepath.Join(stage, "old", name))
+			if err == nil {
+				moved = append(moved, name)
+			}
+		} else if os.IsNotExist(err) {
+			err = nil
+		}
+		if err == nil {
+			err = os.Rename(filepath.Join(stage, "new", name), target)
+			if err == nil {
+				installed = append(installed, name)
+			}
+		}
+		if err != nil {
+			if restoreErr := rollback(); restoreErr != nil {
+				return nil, nil, fmt.Errorf("%w; restore failed: %v; recovery files: %s", err, restoreErr, stage)
+			}
+			finish()
+			return nil, nil, err
 		}
 	}
-	return nil
+	return rollback, finish, nil
 }
 
 func copyPath(src, dst string) error {
@@ -522,17 +678,31 @@ func copyPath(src, dst string) error {
 	case info.Mode()&os.ModeSymlink != 0:
 		// Resolve symlinks (the shipped binary is one) so the install copy
 		// never depends on the source tree.
+		link, err := filepath.EvalSymlinks(src)
+		if err != nil {
+			return err
+		}
+		parent, err := filepath.EvalSymlinks(filepath.Dir(src))
+		if err != nil {
+			return err
+		}
+		if !within(parent, link) {
+			return fmt.Errorf("asset symlink escapes its directory: %s", src)
+		}
 		resolved, err := os.Stat(src)
 		if err != nil {
-			return nil // dangling link (wrong-platform binary): skip
+			return err
 		}
-		if resolved.IsDir() {
-			return copyDir(src, dst)
+		if !resolved.Mode().IsRegular() {
+			return fmt.Errorf("symlink to non-regular asset is unsupported: %s", src)
 		}
 		return copyFile(src, dst, resolved.Mode())
 	case info.IsDir():
 		return copyDir(src, dst)
 	default:
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("non-regular asset: %s", src)
+		}
 		return copyFile(src, dst, info.Mode())
 	}
 }
@@ -546,6 +716,9 @@ func copyDir(src, dst string) error {
 		return err
 	}
 	for _, entry := range entries {
+		if filepath.Base(src) == "bin" && !runtimeBinary(entry.Name()) {
+			continue
+		}
 		if err := copyPath(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
 			return err
 		}
@@ -597,4 +770,44 @@ func SortedEvents() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func runtimeBinary(name string) bool {
+	switch name {
+	case "terminal-notifier.app", "codex-hook-wrapper.sh", "codex-hook-wrapper.cmd", "hook-wrapper.sh", "bootstrap.sh", "claude-notifications", "ClaudeNotifier.app":
+		return true
+	}
+	for _, platform := range []string{"linux", "darwin", "windows"} {
+		for _, arch := range []string{"amd64", "arm64"} {
+			expected := "claude-notifications-" + platform + "-" + arch
+			if platform == "windows" {
+				expected += ".exe"
+			}
+			if name == expected {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// The lock serializes installers. Snapshot checks also detect edits by tools
+// that do not honor it; an external write in the final check/rename window
+// cannot be excluded by portable filesystem APIs.
+func checkHooksSnapshot(path string, expected []byte, existed bool) error {
+	info, err := os.Lstat(path)
+	if err == nil && !info.Mode().IsRegular() {
+		return fmt.Errorf("hooks file must be a regular file: %s", path)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	current, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if existed != (err == nil) || !bytes.Equal(current, expected) {
+		return fmt.Errorf("hooks.json changed during setup; retry")
+	}
+	return nil
 }
