@@ -234,3 +234,61 @@ func TestLegacyGeneratedRegistrationMigrates(t *testing.T) {
 		t.Fatal("foreign location claimed")
 	}
 }
+
+func TestDestinationRootSymlinkThirdTree(t *testing.T) {
+	source, foreign, home := fakeBundle(t), fakeBundle(t), t.TempDir()
+	canaries := map[string]string{"bin/bootstrap.sh": "foreign bootstrap", ".claude-plugin/marketplace.json": "foreign marketplace", "config/config.json": "custom config"}
+	for rel, value := range canaries {
+		path := filepath.Join(foreign, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dest := filepath.Join(home, InstallDirName)
+	if err := os.Symlink(foreign, dest); err != nil {
+		t.Skip(err)
+	}
+	hooks := filepath.Join(home, "hooks.json")
+	original := []byte(`{"hooks":{},"foreign":true}`)
+	if err := os.WriteFile(hooks, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(Options{PluginRoot: source, CodexHome: home}); err == nil {
+		t.Fatal("accepted third-tree symlink")
+	}
+	for rel, value := range canaries {
+		got, err := os.ReadFile(filepath.Join(foreign, rel))
+		if err != nil || string(got) != value {
+			t.Fatalf("canary %s changed: %q %v", rel, got, err)
+		}
+	}
+	got, err := os.ReadFile(hooks)
+	if err != nil || string(got) != string(original) {
+		t.Fatal("hooks changed")
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("setup wrote before rejection: %v %v", entries, err)
+	}
+	// Registering the target itself is non-destructive and remains supported.
+	if _, err := Run(Options{PluginRoot: foreign, CodexHome: home}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDestinationSymlinkParentHome(t *testing.T) {
+	home := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "home")
+	if err := os.Symlink(home, alias); err != nil {
+		t.Skip(err)
+	}
+	if _, err := Run(Options{PluginRoot: fakeBundle(t), CodexHome: alias}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, InstallDirName, "bin", "codex-hook-wrapper.sh")); err != nil {
+		t.Fatal(err)
+	}
+}

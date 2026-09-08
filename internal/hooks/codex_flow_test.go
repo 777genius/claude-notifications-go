@@ -237,3 +237,92 @@ func TestCodexFlowUnsupportedEventFails(t *testing.T) {
 		t.Fatalf("error = %v, want unsupported event", err)
 	}
 }
+
+// Holding the real lock models another process paused in its critical section.
+// Delivery must happen before release, rather than after expiry or a retry.
+func TestCodexDistinctEventsDeliverWhileContentLockHeld(t *testing.T) {
+	for _, kind := range []string{"PermissionRequest", "PreToolUse", "SubagentStop", "Stop"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("TMPDIR", root)
+			t.Setenv("TMP", root)
+			t.Setenv("TEMP", root)
+			session := uniqueCodexSession(t)
+			var decoded codexsource.Decoded
+			switch kind {
+			case "PermissionRequest":
+				decoded.PermissionRequest = &codexsource.PermissionRequestData{SessionID: session, TurnID: "t", ToolName: "shell", HookEventName: kind}
+			case "PreToolUse":
+				decoded.PreToolUse = codexQuestionData(session, "t", `{"questions":[{"question":"Which option?"}]}`)
+			case "SubagentStop":
+				decoded.SubagentStop = &codexsource.SubagentStopData{Stop: *codexStopData(session, "t", "Done.", false), AgentID: "b"}
+			case "Stop":
+				decoded.Stop = codexStopData(session, "t", "Done.", false)
+			}
+			h, notifier, _ := newCodexTestHandler(t, decoded)
+			no := false
+			h.cfg.Notifications.SuppressForSubagents = &no
+			h.cfg.Notifications.NotifyOnSubagentStop = true
+			ev, err := h.source.Decode(context.Background(), kind, strings.NewReader(`{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := codexKeys(ev).stateKey
+			ok, err := h.dedupMgr.AcquireContentLock(key)
+			if err != nil || !ok {
+				t.Fatalf("hold lock: %v %v", ok, err)
+			}
+			defer h.dedupMgr.ReleaseContentLock(key)
+			if err := h.HandleHook(kind, strings.NewReader(`{}`)); err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if kind == "Stop" {
+				want = 0
+			}
+			if got := notifier.callCount(); got != want {
+				t.Fatalf("deliveries while lock held = %d, want %d", got, want)
+			}
+			if ok, err := h.dedupMgr.AcquireContentLock(key); err != nil || ok {
+				t.Fatalf("handler removed another event's lock: %v %v", ok, err)
+			}
+			if kind == "SubagentStop" {
+				if err := h.dedupMgr.ReleaseContentLock(key); err != nil {
+					t.Fatal(err)
+				}
+				decoded.SubagentStop.AgentID = "a"
+				h.source = CodexSource{DecodeFn: stubCodexDecode(decoded)}
+				if err := h.HandleHook(kind, strings.NewReader(`{}`)); err != nil {
+					t.Fatal(err)
+				}
+				if notifier.callCount() != 2 {
+					t.Fatal("both overlapping subagents must deliver")
+				}
+			}
+		})
+	}
+}
+
+func TestClaudePermissionRetainsHeldContentLockBehavior(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("TMPDIR", root)
+	t.Setenv("TMP", root)
+	t.Setenv("TEMP", root)
+	h, notifier, _ := newTestHandler(t, codexTestConfig())
+	session := "test-held-claude-permission"
+	ok, err := h.dedupMgr.AcquireContentLock(session)
+	if err != nil || !ok {
+		t.Fatalf("hold lock: %v %v", ok, err)
+	}
+	defer h.dedupMgr.ReleaseContentLock(session)
+	payload := `{"session_id":"test-held-claude-permission","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{}}`
+	if err := h.HandleHook("PermissionRequest", strings.NewReader(payload)); err != nil {
+		t.Fatal(err)
+	}
+	if notifier.callCount() != 0 {
+		t.Fatal("Claude permission must still respect the session content lock")
+	}
+	if ok, err := h.dedupMgr.AcquireContentLock(session); err != nil || ok {
+		t.Fatalf("Claude removed the held lock: %v %v", ok, err)
+	}
+}

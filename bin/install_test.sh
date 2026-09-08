@@ -235,6 +235,13 @@ else
 fi
 echo ""
 
+# Discover the disposable product-isolation regression in the existing CI entrypoint.
+if bash "$SCRIPT_DIR/codex-hook-wrapper_test.sh"; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 # Summary
 echo "========================================="
 echo " Test Summary"

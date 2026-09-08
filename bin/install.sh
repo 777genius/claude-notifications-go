@@ -1384,6 +1384,8 @@ EXEC_EOF
 
 # Set up iTerm2 Python API venv for tmux -CC click-to-focus (macOS only)
 setup_iterm2_venv() {
+    # This venv belongs to Claude; Codex still uses the binary updater.
+    [ "${CN_PRODUCT:-claude}" = "claude" ] || return 0
     # Only relevant on macOS
     [ "$(uname -s)" = "Darwin" ] || return 0
 

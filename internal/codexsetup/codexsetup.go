@@ -313,6 +313,13 @@ func Run(opts Options) (Result, error) {
 		return Result{}, err
 	}
 	self := sameDir(source, destination)
+	// A final-root alias does not establish ownership of a third bundle.
+	// Self-registration does not refresh assets; symlinked parents are safe.
+	if info, err := os.Lstat(installDir); err != nil && !os.IsNotExist(err) {
+		return Result{}, err
+	} else if err == nil && info.Mode()&os.ModeSymlink != 0 && !self {
+		return Result{}, fmt.Errorf("destination root is a symlink to another bundle")
+	}
 	if !self && (within(source, destination) || within(destination, source)) {
 		return Result{}, fmt.Errorf("source and destination overlap")
 	}

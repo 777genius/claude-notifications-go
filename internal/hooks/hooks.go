@@ -501,14 +501,21 @@ func (h *Handler) HandleHook(hookEvent string, input io.Reader) error {
 
 	// Acquire content lock to prevent race between different hooks (Stop vs Notification)
 	// This ensures only one process can check and update duplicate state at a time
-	contentLockAcquired, err := h.dedupMgr.AcquireContentLock(keys.stateKey)
-	if err != nil {
-		logging.Warn("Failed to acquire content lock: %v", err)
-		// Error (not "lock busy") - continue without lock as fallback
-	} else if !contentLockAcquired {
-		// Lock is held by another process - it's already handling this notification
-		logging.Warn("Content lock held by another process: session=%s hook=%s (notification skipped)", keys.stateKey, hookEvent)
-		return nil
+	// Distinct Codex prompts and subagents use event-scoped dedup only.
+	// Claude retains its original session locking, including permissions.
+	skipContentLock := ev.Product == ProductCodex && (status == analyzer.StatusPermissionRequest ||
+		ev.Kind() == EventPreToolUse || ev.Kind() == EventSubagentStop)
+	contentLockAcquired := false
+	if !skipContentLock {
+		contentLockAcquired, err = h.dedupMgr.AcquireContentLock(keys.stateKey)
+		if err != nil {
+			logging.Warn("Failed to acquire content lock: %v", err)
+			// Error (not "lock busy") - continue without lock as fallback
+		} else if !contentLockAcquired {
+			// Lock is held by another process - it's already handling this notification
+			logging.Warn("Content lock held by another process: session=%s hook=%s (notification skipped)", keys.stateKey, hookEvent)
+			return nil
+		}
 	}
 
 	releaseContentLock := func() {
