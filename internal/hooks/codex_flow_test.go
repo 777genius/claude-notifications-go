@@ -272,7 +272,11 @@ func TestCodexDistinctEventsDeliverWhileContentLockHeld(t *testing.T) {
 			if err != nil || !ok {
 				t.Fatalf("hold lock: %v %v", ok, err)
 			}
-			defer h.dedupMgr.ReleaseContentLock(key)
+			defer func() {
+				if err := h.dedupMgr.ReleaseContentLock(key); err != nil {
+					t.Error(err)
+				}
+			}()
 			if err := h.HandleHook(kind, strings.NewReader(`{}`)); err != nil {
 				t.Fatal(err)
 			}
@@ -314,9 +318,13 @@ func TestClaudePermissionRetainsHeldContentLockBehavior(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("hold lock: %v %v", ok, err)
 	}
-	defer h.dedupMgr.ReleaseContentLock(session)
-	payload := `{"session_id":"test-held-claude-permission","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{}}`
-	if err := h.HandleHook("PermissionRequest", strings.NewReader(payload)); err != nil {
+	defer func() {
+		if err := h.dedupMgr.ReleaseContentLock(session); err != nil {
+			t.Error(err)
+		}
+	}()
+	payload := `{"session_id":"test-held-claude-permission","hook_event_name":"Notification","notification_type":"permission_prompt","message":"Permission required"}`
+	if err := h.HandleHook("Notification", strings.NewReader(payload)); err != nil {
 		t.Fatal(err)
 	}
 	if notifier.callCount() != 0 {
@@ -324,5 +332,14 @@ func TestClaudePermissionRetainsHeldContentLockBehavior(t *testing.T) {
 	}
 	if ok, err := h.dedupMgr.AcquireContentLock(session); err != nil || ok {
 		t.Fatalf("Claude removed the held lock: %v %v", ok, err)
+	}
+	if err := h.dedupMgr.ReleaseContentLock(session); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.HandleHook("Notification", strings.NewReader(payload)); err != nil {
+		t.Fatal(err)
+	}
+	if notifier.callCount() != 1 {
+		t.Fatal("Claude permission must deliver after the lock is released")
 	}
 }
