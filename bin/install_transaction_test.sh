@@ -7,7 +7,7 @@ trap 'rm -rf "$sandbox"' EXIT
 export HOME="$sandbox/home" XDG_DATA_HOME="$sandbox/home/data" TMPDIR="$sandbox"
 mkdir -p "$HOME"
 sed '/^main "\$@"$/d' "$root/install.sh" > "$sandbox/functions.sh"
-for scenario in offline fresh_offline download checksum missing_checksum executable interrupt desktop fresh_desktop success fresh_success optional_interrupt; do
+for scenario in offline fresh_offline download checksum missing_checksum executable interrupt desktop fresh_desktop success fresh_success optional_interrupt legacy_fallback retained_legacy failed_fallback; do
     case_dir="$sandbox/$scenario"
     mkdir -p "$case_dir"
     (
@@ -36,6 +36,15 @@ for scenario in offline fresh_offline download checksum missing_checksum executa
         elif [ "$scenario" = desktop ]; then
             rm -rf "$SCRIPT_DIR/ClaudeNotifier.app"
         fi
+        case "$scenario" in
+            legacy_fallback|retained_legacy|failed_fallback)
+                chmod -x "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern"
+                if [ "$scenario" = retained_legacy ]; then
+                    mkdir -p "$SCRIPT_DIR/terminal-notifier.app/Contents/MacOS"
+                    printf '#!/bin/bash\necho legacy-notifier\n' > "$SCRIPT_DIR/terminal-notifier.app/Contents/MacOS/terminal-notifier"
+                    chmod +x "$SCRIPT_DIR/terminal-notifier.app/Contents/MacOS/terminal-notifier"
+                fi ;;
+        esac
         abort_if_wsl_environment() { :; }
         check_required_tools() { :; }
         configure_curl_options() { :; }
@@ -72,7 +81,12 @@ for scenario in offline fresh_offline download checksum missing_checksum executa
             printf '#!/bin/bash\necho new-notifier\n' > "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern"
             chmod +x "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern"
         }
-        download_terminal_notifier() { return 1; }
+        download_terminal_notifier() {
+            [ "$scenario" = legacy_fallback ] || return 1
+            mkdir -p "$SCRIPT_DIR/terminal-notifier.app/Contents/MacOS"
+            printf '#!/bin/bash\necho legacy-notifier\n' > "$SCRIPT_DIR/terminal-notifier.app/Contents/MacOS/terminal-notifier"
+            chmod +x "$SCRIPT_DIR/terminal-notifier.app/Contents/MacOS/terminal-notifier"
+        }
         download_utilities() {
             # Optional downloads cannot start until the live runtime is complete.
             desktop_runtime_usable
@@ -88,14 +102,93 @@ for scenario in offline fresh_offline download checksum missing_checksum executa
         success|fresh_success|optional_interrupt)
             "$binary" | grep -q new-version
             [ -x "$case_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ] ;;
+        legacy_fallback|retained_legacy)
+            [ "$status" = 0 ]
+            "$binary" | grep -q new-version
+            # Match runtime discovery: prefer the modern path if it exists.
+            selected="$case_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern"
+            [ -e "$selected" ] || selected="$case_dir/terminal-notifier.app/Contents/MacOS/terminal-notifier"
+            [ "$("$selected")" = legacy-notifier ]
+            [ ! -e "$case_dir/ClaudeNotifier.app" ] ;;
         fresh_desktop|fresh_offline) [ ! -e "$binary" ]; [ "$status" != 0 ] ;;
         *) "$binary" | grep -q old-version
            "$case_dir/claude-notifications" | grep -q old-version ;;
     esac
     [ "$(cat "$case_dir/sound-preview")" = utility ]
-    if [[ "$scenario" != fresh_* && "$scenario" != desktop ]]; then
+    if [[ "$scenario" != fresh_* && "$scenario" != desktop && "$scenario" != *legacy* && "$scenario" != *fallback ]]; then
         [ "$("$case_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern")" = old-notifier ]
+    fi
+    if [ "$scenario" = failed_fallback ]; then
+        [ "$status" != 0 ]
+        [ -f "$case_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ]
     fi
     [ -z "$(find "$case_dir" -name '.install-stage.*' -o -name '.install.lock')" ]
     echo "PASS: $scenario (status $status)"
 done
+
+# Exercise the real downloader with a curl stub; never touch a live utility.
+(
+    export INSTALL_TARGET_DIR="$sandbox/utilities"
+    mkdir -p "$INSTALL_TARGET_DIR"
+    source "$sandbox/functions.sh"
+    utility="$INSTALL_TARGET_DIR/sound-preview-test"
+    FORCE_UPDATE=true
+    transfer=interrupt
+    curl() {
+        local output=''
+        while [ "$#" -gt 0 ]; do
+            if [ "$1" = -o ]; then output="$2"; shift; fi
+            shift
+        done
+        [ "$output" != "$utility" ] || return 99
+        printf partial > "$output"
+        case "$transfer" in
+            interrupt)
+                # A child shell reports its actual parent, including on Bash 3.2.
+                kill -TERM "$(sh -c 'echo "$PPID"')"
+                return 1 ;;
+            fail) return 22 ;;
+            short) return 0 ;;
+        esac
+        printf '#!/bin/sh\necho new-utility\n' > "$output"
+        head -c 100001 /dev/zero >> "$output"
+    }
+    download_utility test "$utility" && status=0 || status=$?
+    [ "$status" = 143 ]
+    [ ! -e "$utility" ]
+    [ -z "$(find "$INSTALL_TARGET_DIR" -name '*.download.*')" ]
+    transfer=success
+    download_utility test "$utility"
+    [ "$("$utility")" = new-utility ]
+    cp "$utility" "$INSTALL_TARGET_DIR/expected"
+    for transfer in interrupt fail short; do
+        download_utility test "$utility" && status=0 || status=$?
+        [ "$status" != 0 ]
+        cmp "$utility" "$INSTALL_TARGET_DIR/expected"
+        [ -z "$(find "$INSTALL_TARGET_DIR" -name '*.download.*')" ]
+    done
+    FORCE_UPDATE=false
+    transfer=fail
+    download_utility test "$utility" # usable existing file skips download
+    for invalid in partial nonexecutable; do
+        if [ "$invalid" = partial ]; then printf partial > "$utility";
+        else cp "$INSTALL_TARGET_DIR/expected" "$utility"; chmod -x "$utility"; fi
+        transfer=success
+        download_utility test "$utility"
+        utility_usable "$utility"
+    done
+    FORCE_UPDATE=true
+    printf '#!/bin/sh\necho old-utility\n' > "$utility"
+    head -c 100001 /dev/zero >> "$utility"
+    chmod +x "$utility"
+    download_utility test "$utility"
+    [ "$("$utility")" = new-utility ]
+    # Optional phase must not even request the required Windows focus asset.
+    FOCUS_HANDLER_NAME=focus.exe FOCUS_HANDLER_PATH="$INSTALL_TARGET_DIR/focus.exe"
+    SOUND_PREVIEW_NAME=sound LIST_DEVICES_NAME=devices LIST_SOUNDS_NAME=sounds
+    SOUND_PREVIEW_PATH="$utility" LIST_DEVICES_PATH="$utility" LIST_SOUNDS_PATH="$utility"
+    download_utility() { [ "$1" != focus.exe ] || exit 99; }
+    create_utility_symlink() { :; }
+    download_utilities
+    echo 'PASS: real optional downloader interruption, preservation, repair, force, focus exclusion'
+)

@@ -617,42 +617,49 @@ check_existing() {
 }
 
 # Download a utility binary (sound-preview, list-devices)
-download_utility() {
+utility_usable() {
+    [ -f "$1" ] && [ -x "$1" ] && [ "$(get_file_size "$1")" -gt 100000 ]
+}
+
+download_utility() (
     local util_name="$1"
     local util_path="$2"
     local url="${RELEASE_URL}/${util_name}"
+    local temp_path
 
-    # Skip if already exists
-    if [ -f "$util_path" ]; then
+    if [ "$FORCE_UPDATE" != true ] && utility_usable "$util_path"; then
         echo -e "${GREEN}✓${NC} ${util_name} already installed"
         return 0
     fi
 
+    # Keep the live utility intact until a complete replacement is ready.
+    temp_path=$(mktemp "${util_path}.download.XXXXXX") || return 1
+    trap 'rm -f "$temp_path"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     echo -e "${BLUE}📦 Downloading ${util_name}...${NC}"
 
+    local downloaded=false
     if command -v curl &> /dev/null; then
-        if curl -fsSL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CURL_TIMEOUT" "$url" -o "$util_path" 2>/dev/null; then
-            if [ -f "$util_path" ] && [ "$(get_file_size "$util_path")" -gt 100000 ]; then
-                chmod +x "$util_path" 2>/dev/null || true
-                echo -e "${GREEN}✓${NC} ${util_name} downloaded"
-                return 0
-            fi
+        if curl -fsSL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CURL_TIMEOUT" "$url" -o "$temp_path" 2>/dev/null; then
+            downloaded=true
         fi
     elif command -v wget &> /dev/null; then
-        if wget -q "$url" -O "$util_path" 2>/dev/null; then
-            if [ -f "$util_path" ] && [ "$(get_file_size "$util_path")" -gt 100000 ]; then
-                chmod +x "$util_path" 2>/dev/null || true
-                echo -e "${GREEN}✓${NC} ${util_name} downloaded"
-                return 0
-            fi
+        if wget -q "$url" -O "$temp_path" 2>/dev/null; then
+            downloaded=true
         fi
     fi
 
-    # Not critical - just warn
-    rm -f "$util_path" 2>/dev/null
+    # These sound tools do not implement --version; do not launch audio/device
+    # enumeration to validate an optional download.
+    if [ "$downloaded" = true ] && chmod +x "$temp_path" &&
+       utility_usable "$temp_path" && mv -f "$temp_path" "$util_path"; then
+        echo -e "${GREEN}✓${NC} ${util_name} downloaded"
+        return 0
+    fi
     echo -e "${YELLOW}⚠${NC} Could not download ${util_name} (optional utility)"
     return 1
-}
+)
 
 # Download utility binaries (sound-preview, list-devices)
 download_utilities() {
@@ -662,9 +669,8 @@ download_utilities() {
     download_utility "$SOUND_PREVIEW_NAME" "$SOUND_PREVIEW_PATH" || true
     download_utility "$LIST_DEVICES_NAME" "$LIST_DEVICES_PATH" || true
     download_utility "$LIST_SOUNDS_NAME" "$LIST_SOUNDS_PATH" || true
-    if [ -n "$FOCUS_HANDLER_NAME" ]; then
-        download_utility "$FOCUS_HANDLER_NAME" "$FOCUS_HANDLER_PATH" || true
-    fi
+    # The Windows focus handler was verified and promoted with the runtime.
+    # Never overwrite that required asset through the optional downloader.
 
     # Create symlinks for utilities (may fail if downloads failed - that's OK)
     create_utility_symlink "sound-preview" "$SOUND_PREVIEW_NAME" "$SOUND_PREVIEW_PATH" || true
@@ -1656,6 +1662,13 @@ stage_and_promote_runtime() (
                 fi
                 mv "$stage/$app" "$live_dir/$app" || exit 1
             done
+        fi
+        # Runtime discovery prefers a present modern executable path, even if
+        # it cannot execute. Remove that shadow only after legacy is ready.
+        if ! [ -x "$live_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ] &&
+           [ -x "$live_dir/terminal-notifier.app/Contents/MacOS/terminal-notifier" ] &&
+           { [ -e "$live_dir/ClaudeNotifier.app" ] || [ -L "$live_dir/ClaudeNotifier.app" ]; }; then
+            mv "$live_dir/ClaudeNotifier.app" "$stage/unusable-ClaudeNotifier.app" || exit 1
         fi
     elif [ "$PLATFORM" = "windows" ]; then
         # Click-to-focus is part of the runtime, not an optional sound utility.
