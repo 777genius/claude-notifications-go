@@ -51,6 +51,22 @@ type SubagentStopData struct {
 	AgentTranscriptPath string
 }
 
+// PreToolUseData mirrors the decoded Codex PreToolUse payload.
+type PreToolUseData struct {
+	SessionID      string
+	TurnID         string
+	TranscriptPath string
+	CWD            string
+	HookEventName  string
+	Model          string
+	PermissionMode string
+	ToolName       string
+	ToolInput      json.RawMessage
+	ToolUseID      string
+	AgentID        string
+	AgentType      string
+}
+
 // PermissionRequestData mirrors the decoded Codex PermissionRequest payload.
 type PermissionRequestData struct {
 	SessionID      string
@@ -70,6 +86,7 @@ type PermissionRequestData struct {
 type Decoded struct {
 	Stop              *StopData
 	SubagentStop      *SubagentStopData
+	PreToolUse        *PreToolUseData
 	PermissionRequest *PermissionRequestData
 }
 
@@ -81,6 +98,8 @@ func InvocationForEvent(publicEvent string) (string, bool) {
 		return "CodexStop", true
 	case "SubagentStop":
 		return "CodexSubagentStop", true
+	case "PreToolUse":
+		return "CodexPreToolUse", true
 	case "PermissionRequest":
 		return "CodexPermissionRequest", true
 	}
@@ -176,6 +195,23 @@ func decodeWithIO(ctx context.Context, publicEvent string, payload []byte) (Deco
 		}
 		return codex.Continue()
 	})
+	registrar.OnPreToolUse(func(e *codex.PreToolUseEvent) *codex.Response {
+		out.PreToolUse = &PreToolUseData{
+			SessionID:      e.SessionID,
+			TurnID:         e.TurnID,
+			TranscriptPath: e.TranscriptPath,
+			CWD:            e.CWD,
+			HookEventName:  e.HookEventName,
+			Model:          e.Model,
+			PermissionMode: e.PermissionMode,
+			ToolName:       e.ToolName,
+			ToolInput:      cloneRaw(e.ToolInput),
+			ToolUseID:      e.ToolUseID,
+			AgentID:        e.AgentID,
+			AgentType:      e.AgentType,
+		}
+		return codex.Continue()
+	})
 	registrar.OnPermissionRequest(func(e *codex.PermissionRequestEvent) *codex.Response {
 		out.PermissionRequest = &PermissionRequestData{
 			SessionID:      e.SessionID,
@@ -196,7 +232,7 @@ func decodeWithIO(ctx context.Context, publicEvent string, payload []byte) (Deco
 	if code := app.RunContext(ctx); code != 0 {
 		return Decoded{}, io, fmt.Errorf("sdk dispatch for %s failed: exit %d, stderr: %q", invocation, code, io.stderr.String())
 	}
-	if out.Stop == nil && out.SubagentStop == nil && out.PermissionRequest == nil {
+	if out.Stop == nil && out.SubagentStop == nil && out.PreToolUse == nil && out.PermissionRequest == nil {
 		return Decoded{}, io, fmt.Errorf("sdk dispatch for %s produced no callback result", invocation)
 	}
 	return out, io, nil

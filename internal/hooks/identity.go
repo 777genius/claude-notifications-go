@@ -34,6 +34,8 @@ func codexKeys(ev Event) eventKeys {
 		if p.Agent != nil {
 			lockFields = append(lockFields, "agent", p.Agent.ID)
 		}
+	case PreToolUsePayload:
+		lockFields = append(lockFields, "tool", p.ToolName, "call", p.ToolUseID)
 	case SubagentStopPayload:
 		if p.Agent != nil {
 			lockFields = append(lockFields, "agent", p.Agent.ID)

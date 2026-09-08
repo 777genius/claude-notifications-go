@@ -89,9 +89,12 @@ type PermissionRequestPayload struct {
 	Agent     *AgentContext // optional on the Codex wire
 }
 
-// PreToolUsePayload is the Claude PreToolUse interactive-tool event.
+// PreToolUsePayload is an interactive-tool event (Claude PreToolUse, or
+// Codex PreToolUse for notification-relevant tools). ToolUseID is set on
+// the Codex wire and empty for legacy Claude payloads.
 type PreToolUsePayload struct {
 	ToolName  string
+	ToolUseID string
 	ToolInput json.RawMessage
 }
 
