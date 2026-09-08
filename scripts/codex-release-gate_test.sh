@@ -11,6 +11,8 @@ for path in go.mod go.sum .github/workflows/ci-linux.yml .github/workflows/relea
 done
 for package in codexsource codexsetup analyzer audio config daemon dedup errorhandler hooks logging notifier platform sessionname sounds state summary webhook winfocus teamstate; do check required --paths "internal/$package/behavior.go"; done
 check required --paths future/behavior.js
+check required --paths commands/notifications-init.md
+check required --paths bin/checksums.txt
 check required --paths 'internal/hooks/name with spaces.go'
 # Independent disposable Git history verifies real diff, deletions, renames,
 # empty diffs, invalid refs and initial-release handling without touching checkout.

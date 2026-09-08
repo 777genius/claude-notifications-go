@@ -6,6 +6,7 @@ set -eu
 select_path() {
  case "$1" in
   scripts/codex-release-gate.sh|scripts/codex-release-gate_test.sh) return 0 ;;
+  commands/*|.claude-plugin/*|.codex-plugin/*|hooks/*|config/*|bin/*|sounds/*|swift-notifier/*|.github/workflows/*) return 0 ;;
   *.md|*.rst|*.txt|docs/*|LICENSE|LICENSE.*) return 1 ;;
   *) return 0 ;;
  esac

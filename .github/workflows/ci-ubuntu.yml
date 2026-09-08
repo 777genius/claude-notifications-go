@@ -69,6 +69,9 @@ jobs:
       - name: Run install.sh unit tests
         run: bash bin/install_test.sh
 
+      - name: Test Codex release gate selection
+        run: sh scripts/codex-release-gate_test.sh
+
       - name: Run install.sh E2E tests (offline + mock)
         run: bash bin/install_e2e_test.sh
 

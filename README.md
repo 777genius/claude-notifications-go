@@ -141,16 +141,40 @@ The same binary can notify for OpenAI Codex CLI sessions.
 
 ### Setup
 
-One command registers everything (macOS, Linux, and Windows — it is part of the Go binary, so
-there is nothing to install and no `jq` or shell-specific scripting involved):
+The registration command is implemented in Go and does not require `jq`. You need a
+Codex-capable release (v1.42.0 or later) and its plugin bundle; an older binary cannot run
+`setup-codex`. The command is not automatically added to your `PATH` by the Claude plugin.
+
+For a Codex-only installation, download a bundle and its platform binary first. In a
+terminal with Git and Bash (Git Bash on Windows), run:
 
 ```bash
-claude-notifications setup-codex
+git clone --depth 1 https://github.com/777genius/claude-notifications-go.git
+cd claude-notifications-go
+bash bin/install.sh
 ```
+
+This downloads the notification binary; it does not install Claude Code. Keep this source
+directory for updates. The Codex registration below installs a separate stable runtime copy.
+
+From an already downloaded plugin bundle, run the binary by its path:
+
+```bash
+./bin/claude-notifications setup-codex --plugin-root .
+```
+
+On Windows, run the downloaded `claude-notifications-windows-amd64.exe` in PowerShell:
+
+```powershell
+.\bin\claude-notifications-windows-amd64.exe setup-codex --plugin-root .
+```
+
+Run these commands in the bundle directory. If you have explicitly added the binary to
+`PATH`, `claude-notifications setup-codex --plugin-root <bundle-directory>` also works.
 
 It installs a self-contained copy of the plugin at `~/.codex/claude-notifications-go` and writes
 the hook entries into `~/.codex/hooks.json`. Hooks you already have are kept exactly as they are,
-and every run saves a timestamped backup of the previous file next to it.
+and every run saves a uniquely named backup of the previous file next to it.
 
 Then start Codex, run `/hooks`, review the entries and trust them — Codex asks once.
 
@@ -159,6 +183,13 @@ yourself, `--codex-home` and `--plugin-root` override the paths.
 
 After updating the plugin, run the command again to refresh the installed copy. The registration
 itself does not change, so Codex does not ask you to trust the hooks again.
+For the Git checkout above, update with `git pull --ff-only`, run `bash bin/install.sh --force`,
+then repeat the appropriate `setup-codex` command. Existing Claude plugin users can update
+their source bundle using the usual Claude plugin update process before repeating setup.
+
+Claude Code installation and updates continue to use the [existing installation steps](#installation).
+Both products share settings at `~/.claude/claude-notifications-go/config.json`; installing
+Codex does not require installing Claude Code. Keep your existing settings file when updating.
 
 <details>
 <summary>Why a separate step is needed</summary>
