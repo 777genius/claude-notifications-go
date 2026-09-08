@@ -173,7 +173,7 @@ Run these commands in the bundle directory. If you have explicitly added the bin
 `PATH`, `claude-notifications setup-codex --plugin-root <bundle-directory>` also works.
 
 It installs a self-contained copy of the plugin at `~/.codex/claude-notifications-go` and writes
-the hook entries into `~/.codex/hooks.json`. Hooks you already have are kept exactly as they are,
+the hook entries into `~/.codex/hooks.json`. Existing foreign hook definitions and unknown fields are preserved,
 and every run saves a uniquely named backup of the previous file next to it.
 
 Then start Codex, run `/hooks`, review the entries and trust them — Codex asks once.
@@ -194,11 +194,12 @@ Codex does not require installing Claude Code. Keep your existing settings file 
 <details>
 <summary>Why a separate step is needed</summary>
 
-The bundle ships a native Codex plugin manifest (`.codex-plugin/plugin.json` declaring
-`hooks/hooks-codex.json`), and `codex plugin add` installs it correctly. However, current Codex
-releases do not run hooks declared by a plugin: the `plugin_hooks` feature is marked removed
-(verified on v0.152.0 and v0.153.4) and cannot be re-enabled. Hooks only execute when they are
-present in `$CODEX_HOME/hooks.json`, which is what `setup-codex` writes.
+`setup-codex` registers user hooks explicitly, using a stable runtime directory independent
+of the plugin cache. This is the setup path covered by this project's installer tests.
+The bundle also includes a Codex plugin manifest. Codex versions can differ in plugin-hook
+loading; follow the [current Codex hooks documentation](https://learn.chatgpt.com/docs/hooks)
+for native plugin setup. Use one registration path to avoid duplicate hooks, and inspect
+`/hooks` after installation.
 
 Codex includes the command string in its trust hash, so the registration deliberately points at
 the stable `~/.codex/claude-notifications-go` copy rather than a versioned plugin cache

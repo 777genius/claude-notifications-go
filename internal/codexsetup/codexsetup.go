@@ -1,9 +1,7 @@
 // Package codexsetup registers this plugin's hooks with the Codex CLI.
 //
-// Codex does not load hooks declared by a plugin manifest (its plugin_hooks
-// feature is removed), so notifications only run when the hooks are present
-// in the user's hooks.json. This package performs that registration in Go so
-// one implementation covers macOS, Linux, and Windows.
+// Setup explicitly registers user hooks in hooks.json, independently of native
+// plugin-hook discovery. One Go implementation covers macOS, Linux, and Windows.
 //
 // The registered command must stay byte-identical across releases: Codex
 // hashes the command string for its trust review, so a versioned path would

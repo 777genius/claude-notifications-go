@@ -138,20 +138,20 @@ func TestCodexHookIdentityGolden(t *testing.T) {
 	}{
 		"Stop": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook Stop --product codex`,
-			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook Stop --product codex`,
+			commandWindows: `cmd.exe /d /v:off /s /c ""${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook Stop --product codex"`,
 		},
 		"PreToolUse": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook PreToolUse --product codex`,
-			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PreToolUse --product codex`,
+			commandWindows: `cmd.exe /d /v:off /s /c ""${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PreToolUse --product codex"`,
 			matcher:        `^request_user_input$`,
 		},
 		"SubagentStop": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook SubagentStop --product codex`,
-			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook SubagentStop --product codex`,
+			commandWindows: `cmd.exe /d /v:off /s /c ""${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook SubagentStop --product codex"`,
 		},
 		"PermissionRequest": {
 			command:        `sh "${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh" handle-hook PermissionRequest --product codex`,
-			commandWindows: `cmd.exe /d /s /c call "${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PermissionRequest --product codex`,
+			commandWindows: `cmd.exe /d /v:off /s /c ""${PLUGIN_ROOT}\bin\codex-hook-wrapper.cmd" handle-hook PermissionRequest --product codex"`,
 		},
 	}
 
