@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 )
 
 // InstallDirName is the stable directory (inside the Codex home) that holds
@@ -425,9 +426,18 @@ func writeHooksFile(path string, content hooksFile) (string, error) {
 		return "", err
 	}
 
+	// Backups are timestamped. A fixed ".backup" name would be overwritten on
+	// the second run with our own generated file, destroying the only copy of
+	// what the user originally had.
 	backup := ""
 	if prev, err := os.ReadFile(path); err == nil {
-		backup = path + ".backup"
+		backup = fmt.Sprintf("%s.backup.%s", path, time.Now().Format("20060102-150405"))
+		for i := 1; ; i++ {
+			if _, err := os.Stat(backup); os.IsNotExist(err) {
+				break
+			}
+			backup = fmt.Sprintf("%s.backup.%s-%d", path, time.Now().Format("20060102-150405"), i)
+		}
 		if err := os.WriteFile(backup, prev, 0o600); err != nil {
 			return "", fmt.Errorf("cannot write backup %s: %w", backup, err)
 		}
@@ -486,7 +496,17 @@ func copyBundle(src, dst string) error {
 		if skippedBundleEntries[entry.Name()] {
 			continue
 		}
-		if err := copyPath(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
+		target := filepath.Join(dst, entry.Name())
+		// Replace rather than merge. Copying over an existing tree would leave
+		// files that a newer release removed, and a stale file inside
+		// ClaudeNotifier.app breaks its code signature ("a sealed resource is
+		// missing or invalid"), which stops macOS notifications entirely.
+		// Files the install dir accumulates at its root (logs, the config
+		// copy) are outside the entries we copy and survive.
+		if err := os.RemoveAll(target); err != nil {
+			return fmt.Errorf("cannot replace %s: %w", target, err)
+		}
+		if err := copyPath(filepath.Join(src, entry.Name()), target); err != nil {
 			return err
 		}
 	}

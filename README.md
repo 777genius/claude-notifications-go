@@ -148,9 +148,9 @@ there is nothing to install and no `jq` or shell-specific scripting involved):
 claude-notifications setup-codex
 ```
 
-It installs a self-contained copy of the plugin at `~/.codex/claude-notifications-go`, writes the
-hook entries into `~/.codex/hooks.json` (keeping any hooks you already have, with a `.backup`
-file), and prints the last step.
+It installs a self-contained copy of the plugin at `~/.codex/claude-notifications-go` and writes
+the hook entries into `~/.codex/hooks.json`. Hooks you already have are kept exactly as they are,
+and every run saves a timestamped backup of the previous file next to it.
 
 Then start Codex, run `/hooks`, review the entries and trust them — Codex asks once.
 

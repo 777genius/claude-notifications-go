@@ -210,6 +210,77 @@ func TestRunPreservesForeignHooks(t *testing.T) {
 	}
 }
 
+// TestBackupsNeverOverwriteTheOriginal guards the recovery path: with a fixed
+// backup name, the second run would replace the user's original file with our
+// own generated output, leaving nothing to restore from.
+func TestBackupsNeverOverwriteTheOriginal(t *testing.T) {
+	bundle := fakeBundle(t)
+	codexHome := t.TempDir()
+	hooksPath := filepath.Join(codexHome, "hooks.json")
+
+	original := `{"note":"keep me","hooks":{"SessionEnd":[{"hooks":[{"type":"command","command":"echo bye"}]}]}}`
+	if err := os.WriteFile(hooksPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	first, err := Run(Options{CodexHome: codexHome, PluginRoot: bundle})
+	if err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+	second, err := Run(Options{CodexHome: codexHome, PluginRoot: bundle})
+	if err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+
+	if first.BackupPath == second.BackupPath {
+		t.Fatalf("both runs used the same backup path %q", first.BackupPath)
+	}
+	saved, err := os.ReadFile(first.BackupPath)
+	if err != nil {
+		t.Fatalf("read first backup: %v", err)
+	}
+	if string(saved) != original {
+		t.Errorf("the user's original file is no longer recoverable:\ngot:  %s\nwant: %s", saved, original)
+	}
+}
+
+// TestInstallCopyDropsStaleFiles guards macOS notification delivery: a file
+// left inside ClaudeNotifier.app from an older release invalidates its code
+// signature ("a sealed resource is missing or invalid").
+func TestInstallCopyDropsStaleFiles(t *testing.T) {
+	bundle := fakeBundle(t)
+	codexHome := t.TempDir()
+
+	res, err := Run(Options{CodexHome: codexHome, PluginRoot: bundle})
+	if err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+
+	stale := filepath.Join(res.InstallDir, "bin", "stale-from-old-release.txt")
+	if err := os.WriteFile(stale, []byte("left over"), 0o644); err != nil {
+		t.Fatalf("plant stale file: %v", err)
+	}
+	// A file the install dir accumulates at its own root (a log) must survive.
+	liveLog := filepath.Join(res.InstallDir, "notification-debug.log")
+	if err := os.WriteFile(liveLog, []byte("log line"), 0o644); err != nil {
+		t.Fatalf("plant log: %v", err)
+	}
+
+	if _, err := Run(Options{CodexHome: codexHome, PluginRoot: bundle}); err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale file survived the refresh (err=%v)", err)
+	}
+	if _, err := os.Stat(liveLog); err != nil {
+		t.Errorf("runtime file at the install root was deleted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(res.InstallDir, "bin", "codex-hook-wrapper.sh")); err != nil {
+		t.Errorf("refresh lost a bundle file: %v", err)
+	}
+}
+
 func TestRunRefusesCorruptedHooksFile(t *testing.T) {
 	bundle := fakeBundle(t)
 	codexHome := t.TempDir()
