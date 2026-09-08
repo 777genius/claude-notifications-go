@@ -86,6 +86,7 @@ check_github_availability() { OFFLINE_MODE=false; }
 check_existing() { [ "$EXISTING" = yes ]; }
 pin_release_urls() { :; }
 download_and_verify_binary() { echo downloaded >> "$ROOT/downloads"; }
+stage_and_promote_runtime() { download_and_verify_binary; }
 verify_executable() { :; }
 make_executable() { :; }
 create_symlink() { :; }

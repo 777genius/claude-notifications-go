@@ -788,8 +788,8 @@ test_required_tools_curl_wget() {
     cleanup_test_dir
 }
 
-test_force_removes_binaries() {
-    echo -e "\n${CYAN}▶ test_force_removes_binaries${NC}"
+test_force_preserves_binaries() {
+    echo -e "\n${CYAN}▶ test_force_preserves_binaries${NC}"
     setup_test_dir
 
     # Create fake binary files
@@ -803,15 +803,15 @@ test_force_removes_binaries() {
              SKIP_CONNECTIVITY_CHECK=true \
              run_with_timeout 5 bash "$INSTALL_SCRIPT" --force 2>&1 || true)
 
-    # Old files should be removed before download attempt
-    assert_contains "$output" "removing old files" "Force cleanup message shown"
-    assert_file_not_exists "$TEST_DIR/$binary_name" "Old binary removed"
+    # Old files must survive a failed download
+    assert_contains "$output" "preserving live files" "Force preservation message shown"
+    assert_file_exists "$TEST_DIR/$binary_name" "Old binary preserved"
 
     cleanup_test_dir
 }
 
-test_force_removes_symlinks() {
-    echo -e "\n${CYAN}▶ test_force_removes_symlinks${NC}"
+test_force_preserves_symlinks() {
+    echo -e "\n${CYAN}▶ test_force_preserves_symlinks${NC}"
     setup_test_dir
 
     # Create fake symlinks
@@ -826,12 +826,12 @@ test_force_removes_symlinks() {
     SKIP_CONNECTIVITY_CHECK=true \
     run_with_timeout 5 bash "$INSTALL_SCRIPT" --force 2>&1 || true
 
-    # Symlinks should be removed
-    if [ -L "$TEST_DIR/claude-notifications" ]; then
-        echo -e "  ${RED}✗${NC} Symlink not removed"
+    # Symlinks must survive a failed download
+    if [ ! -L "$TEST_DIR/claude-notifications" ]; then
+        echo -e "  ${RED}✗${NC} Symlink lost"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     else
-        echo -e "  ${GREEN}✓${NC} Symlink removed by --force"
+        echo -e "  ${GREEN}✓${NC} Symlink preserved by --force"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
     TESTS_RUN=$((TESTS_RUN + 1))
@@ -1227,8 +1227,8 @@ FAKE_BASH_GO_EOF
     cleanup_test_dir
 }
 
-test_force_removes_apps_macos() {
-    echo -e "\n${CYAN}▶ test_force_removes_apps_macos${NC}"
+test_force_preserves_apps_macos() {
+    echo -e "\n${CYAN}▶ test_force_preserves_apps_macos${NC}"
 
     if [ "$(uname)" != "Darwin" ]; then
         skip_test "macOS apps" "not on macOS"
@@ -1248,9 +1248,9 @@ test_force_removes_apps_macos() {
     SKIP_CONNECTIVITY_CHECK=true \
     run_with_timeout 5 bash "$INSTALL_SCRIPT" --force 2>&1 || true
 
-    # Apps should be removed
-    assert_dir_not_exists "$TEST_DIR/terminal-notifier.app" "terminal-notifier.app removed"
-    assert_dir_not_exists "$TEST_DIR/ClaudeNotifications.app" "ClaudeNotifications.app removed"
+    # Apps must survive a failed download
+    [ -d "$TEST_DIR/terminal-notifier.app" ] && pass_test "terminal-notifier preserved" || fail_test "terminal-notifier preserved" "missing"
+    [ -d "$TEST_DIR/ClaudeNotifications.app" ] && pass_test "icon app preserved" || fail_test "icon app preserved" "missing"
 
     cleanup_test_dir
 }
@@ -2358,15 +2358,15 @@ main() {
         test_directory_auto_created
         test_transport_error_diagnostics
         test_required_tools_curl_wget
-        test_force_removes_binaries
-        test_force_removes_symlinks
+        test_force_preserves_binaries
+        test_force_preserves_symlinks
         test_windows_native_hooks_configured_existing_binary
         test_windows_old_binary_forces_update_before_hooks
         test_windows_wrapper_exec_form_forces_update_before_hooks
         test_windows_sh_exec_form_forces_update_before_hooks
         test_windows_native_hooks_real_exec_launch
         test_windows_real_hook_schedules_lazy_update
-        test_force_removes_apps_macos
+        test_force_preserves_apps_macos
     fi
 
     # Category B: Mock Server Tests
