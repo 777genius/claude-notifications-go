@@ -135,11 +135,23 @@ If the binary auto-update didn't work (e.g. no internet at the time), run `/clau
 | API Error | 🔴 | Authentication expired, rate limit, server error, connection error | Stop/SubagentStop hooks (state machine detects via `isApiErrorMessage` flag + `error` field from JSONL) |
 | Permission Request | 🔐 | Codex is waiting for tool approval | Codex `PermissionRequest` hook (Codex only) |
 
-## Codex CLI Support (beta)
+## Codex CLI Support (beta, setup not automated yet)
 
-The same binary can notify for OpenAI Codex CLI sessions. The Codex integration ships as a
-native Codex plugin: `.codex-plugin/plugin.json` declares `hooks/hooks-codex.json`, which runs
-`bin/codex-hook-wrapper.sh` (or `.cmd` on Windows) with `--product codex`.
+The same binary can notify for OpenAI Codex CLI sessions. The bundle ships a native Codex
+plugin manifest (`.codex-plugin/plugin.json` declaring `hooks/hooks-codex.json`, which runs
+`bin/codex-hook-wrapper.sh`, or `.cmd` on Windows, with `--product codex`).
+
+> [!IMPORTANT]
+> **Installing the plugin alone does not enable notifications yet.** `codex plugin add` places
+> the bundle correctly, but current Codex releases (checked on v0.152.0 and v0.153.4) do not
+> load hooks declared by a plugin: the `plugin_hooks` feature is marked removed and cannot be
+> re-enabled. Hooks only run when they are registered in `$CODEX_HOME/hooks.json`
+> (`~/.codex/hooks.json` by default) and trusted once through `/hooks` inside Codex.
+>
+> An installer that performs that registration against a stable launcher path is still being
+> designed, so treat Codex support as manual setup for now. Note that the trust hash covers the
+> command string: if you point it at the versioned plugin cache directory, every plugin update
+> will ask you to review the hook again.
 
 What works today:
 
