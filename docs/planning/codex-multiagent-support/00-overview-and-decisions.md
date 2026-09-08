@@ -194,8 +194,7 @@ be dead configuration. An opted-out run costs one async process that exits at th
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook PreToolUse --product codex",
             "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook PreToolUse --product codex",
-            "timeout": 30,
-            "async": true
+            "timeout": 30
           }
         ]
       }
@@ -207,8 +206,7 @@ be dead configuration. An opted-out run costs one async process that exits at th
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook Stop --product codex",
             "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook Stop --product codex",
-            "timeout": 30,
-            "async": true
+            "timeout": 30
           }
         ]
       }
@@ -220,8 +218,7 @@ be dead configuration. An opted-out run costs one async process that exits at th
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook SubagentStop --product codex",
             "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook SubagentStop --product codex",
-            "timeout": 30,
-            "async": true
+            "timeout": 30
           }
         ]
       }
@@ -233,8 +230,7 @@ be dead configuration. An opted-out run costs one async process that exits at th
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/bin/codex-hook-wrapper.sh\" handle-hook PermissionRequest --product codex",
             "commandWindows": "cmd.exe /d /s /c call \"${PLUGIN_ROOT}\\bin\\codex-hook-wrapper.cmd\" handle-hook PermissionRequest --product codex",
-            "timeout": 30,
-            "async": true
+            "timeout": 30
           }
         ]
       }
@@ -333,6 +329,24 @@ Before implementation proceeds past the plugin-artifact stage, a disposable Code
 >   settled before Codex support is advertised to users.
 > - `hooks/hooks-codex.json` stays in the bundle: it costs nothing, documents the intended
 >   handler contract, and becomes live if upstream restores the feature.
+>
+> **Resolution (2026-09-08)**: the registration is implemented as `claude-notifications
+> setup-codex` (`internal/codexsetup`), in Go rather than shell so one implementation covers all
+> three platforms without a `jq` dependency. It installs a self-contained bundle copy at
+> `<codex-home>/claude-notifications-go` and registers the hooks against that stable path, so the
+> trust hash survives releases. The hooks.json merge preserves foreign handlers, foreign events
+> and unknown keys, backs up the previous file, writes atomically, refuses to overwrite an
+> unparseable file, and is byte-identical on re-runs.
+
+> [!CAUTION]
+> **`async: true` must not be used. Measured 2026-09-08 against Codex v0.152.0.**
+>
+> An identical hook configuration fired reliably without `async` and never fired with it:
+> `codex exec` exits as soon as the turn ends and the backgrounded handler is lost, so the
+> notification disappears silently. The handler config in this contract, in
+> `hooks/hooks-codex.json`, and in the setup command is therefore synchronous. The observation
+> hook is fast and fail-open, and `timeout` caps the worst case; the residual cost is that a
+> configured `notifyDelaySeconds` delays turn completion by that amount.
 
 ## 5. SDK Codex event contract
 
