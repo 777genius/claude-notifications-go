@@ -78,6 +78,7 @@ func (f setupE2E) run(t *testing.T, input, binary string, args ...string) (strin
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, binary, args...)
+	configureE2EShell(c, binary, args)
 	c.Dir = f.root
 	c.Env = f.env
 	c.Stdin = strings.NewReader(input)

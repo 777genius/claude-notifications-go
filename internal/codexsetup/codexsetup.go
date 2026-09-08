@@ -327,8 +327,11 @@ func Run(opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, fmt.Errorf("setup lock (remove only after confirming no setup is running): %w", err)
 		}
-		f.Close()
-		defer os.Remove(lock)
+		if err := f.Close(); err != nil {
+			_ = os.Remove(lock)
+			return Result{}, fmt.Errorf("close setup lock: %w", err)
+		}
+		defer func() { _ = os.Remove(lock) }()
 	}
 	before, readErr := os.ReadFile(hooksPath)
 	if readErr != nil && !os.IsNotExist(readErr) {
@@ -537,7 +540,7 @@ func runtimeEntry(name string) bool {
 
 func validateInstallPath(path string) error {
 	if runtime.GOOS == "windows" && strings.ContainsAny(path, "%!\"\r\n") {
-		return fmt.Errorf("Windows install path contains unsupported shell expansion characters")
+		return fmt.Errorf("windows install path contains unsupported shell expansion characters")
 	}
 	return nil
 }

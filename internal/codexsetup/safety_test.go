@@ -22,8 +22,12 @@ func TestForeignEmptyAndMatcherPreserved(t *testing.T) {
 			t.Fatal(err)
 		}
 		var original, actual map[string]any
-		json.Unmarshal([]byte(input), &original)
-		json.Unmarshal(encoded, &actual)
+		if err := json.Unmarshal([]byte(input), &original); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(encoded, &actual); err != nil {
+			t.Fatal(err)
+		}
 		oldHooks := original["hooks"].(map[string]any)
 		newHooks := actual["hooks"].(map[string]any)
 		for event, groups := range oldHooks {
@@ -79,7 +83,9 @@ func TestCopyFailureLeavesLiveAssets(t *testing.T) {
 	}
 	live := filepath.Join(dst, "bin", "codex-hook-wrapper.sh")
 	before, _ := os.ReadFile(live)
-	os.WriteFile(filepath.Join(src, "bin", "codex-hook-wrapper.sh"), []byte("new"), 0700)
+	if err := os.WriteFile(filepath.Join(src, "bin", "codex-hook-wrapper.sh"), []byte("new"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink("missing", filepath.Join(src, "sounds", "broken")); err != nil {
 		t.Skip(err)
 	}
@@ -115,8 +121,12 @@ func TestRuntimeSelectionAndRollback(t *testing.T) {
 	src, dst := fakeBundle(t), t.TempDir()
 	for _, name := range []string{".env", "notification-debug.log", ".claude/worktrees/secret", "bin/private-token"} {
 		path := filepath.Join(src, name)
-		os.MkdirAll(filepath.Dir(path), 0700)
-		os.WriteFile(path, []byte("secret fixture"), 0600)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("secret fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := copyBundle(src, dst); err != nil {
 		t.Fatal(err)
@@ -128,7 +138,9 @@ func TestRuntimeSelectionAndRollback(t *testing.T) {
 	}
 	path := filepath.Join(dst, "bin", "codex-hook-wrapper.sh")
 	old, _ := os.ReadFile(path)
-	os.WriteFile(filepath.Join(src, "bin", "codex-hook-wrapper.sh"), []byte("replacement"), 0700)
+	if err := os.WriteFile(filepath.Join(src, "bin", "codex-hook-wrapper.sh"), []byte("replacement"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	rollback, finish, err := stageBundle(src, dst)
 	if err != nil {
 		t.Fatal(err)
@@ -147,8 +159,12 @@ func TestSetupLockPreservesHooks(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, "hooks.json")
 	original := `{"hooks":{}}`
-	os.WriteFile(path, []byte(original), 0600)
-	os.WriteFile(filepath.Join(home, ".claude-notifications-setup.lock"), nil, 0600)
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude-notifications-setup.lock"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := Run(Options{CodexHome: home, PluginRoot: fakeBundle(t)}); err == nil {
 		t.Fatal("concurrent setup accepted")
 	}
@@ -176,7 +192,9 @@ func TestHooksSnapshotRejectsLostUpdate(t *testing.T) {
 			expected = []byte(`{"hooks":{}}`)
 		}
 		changed := []byte(`{"hooks":{},"foreign":"new edit"}`)
-		os.WriteFile(path, changed, 0600)
+		if err := os.WriteFile(path, changed, 0600); err != nil {
+			t.Fatal(err)
+		}
 		_, err := writeHooksFile(path, hooksFile{Hooks: map[string][]hookGroup{}}, expected, existed)
 		if err == nil {
 			t.Fatal("overwrote concurrent edit")
@@ -192,7 +210,9 @@ func TestSymlinkAssetsCannotEscapeOrRecurse(t *testing.T) {
 	for _, target := range []string{"..", filepath.Join(t.TempDir(), "private-fixture")} {
 		src := fakeBundle(t)
 		if filepath.IsAbs(target) {
-			os.WriteFile(target, []byte("fixture"), 0600)
+			if err := os.WriteFile(target, []byte("fixture"), 0600); err != nil {
+				t.Fatal(err)
+			}
 		}
 		if err := os.Symlink(target, filepath.Join(src, "sounds", "link")); err != nil {
 			t.Skip(err)

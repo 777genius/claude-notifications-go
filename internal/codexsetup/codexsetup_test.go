@@ -492,13 +492,16 @@ func TestOwnsHandlerBoundaries(t *testing.T) {
 }
 
 func TestResolveCodexHomePrecedence(t *testing.T) {
-	t.Setenv("CODEX_HOME", filepath.Join("/tmp", "env-codex"))
-	got, err := ResolveCodexHome("/tmp/explicit")
-	if err != nil || got != filepath.Clean("/tmp/explicit") {
+	root := t.TempDir()
+	explicit := filepath.Join(root, "explicit")
+	envHome := filepath.Join(root, "env-codex")
+	t.Setenv("CODEX_HOME", envHome)
+	got, err := ResolveCodexHome(explicit)
+	if err != nil || got != explicit {
 		t.Fatalf("explicit override = %q, %v", got, err)
 	}
 	got, err = ResolveCodexHome("")
-	if err != nil || got != filepath.Clean("/tmp/env-codex") {
+	if err != nil || got != envHome {
 		t.Fatalf("env override = %q, %v", got, err)
 	}
 
