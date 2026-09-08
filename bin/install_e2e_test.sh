@@ -878,10 +878,15 @@ test_force_preserves_symlinks() {
     echo -e "\n${CYAN}▶ test_force_preserves_symlinks${NC}"
     setup_test_dir
 
-    # Create fake symlinks
-    touch "$TEST_DIR/target_binary"
-    ln -sf target_binary "$TEST_DIR/claude-notifications" 2>/dev/null || true
-    ln -sf target_binary "$TEST_DIR/sound-preview" 2>/dev/null || true
+    # Git Bash can copy ln -s targets instead of creating a symlink. Exercise
+    # the actual launcher form the installer uses on each platform.
+    if is_windows; then
+        printf '@echo off\r\nREM existing launcher\r\n' > "$TEST_DIR/claude-notifications.bat"
+        cp "$TEST_DIR/claude-notifications.bat" "$TEST_DIR/expected-launcher"
+    else
+        touch "$TEST_DIR/target_binary"
+        ln -s target_binary "$TEST_DIR/claude-notifications" || return 1
+    fi
 
     # Run with --force and unreachable URL
     # SKIP_CONNECTIVITY_CHECK bypasses the curl to github.com (flaky on CI)
@@ -890,12 +895,18 @@ test_force_preserves_symlinks() {
     SKIP_CONNECTIVITY_CHECK=true \
     run_with_timeout 5 bash "$INSTALL_SCRIPT" --force 2>&1 || true
 
-    # Symlinks must survive a failed download
-    if [ ! -L "$TEST_DIR/claude-notifications" ]; then
-        echo -e "  ${RED}✗${NC} Symlink lost"
+    # Launcher bytes or symlink target must survive a failed download.
+    local preserved=false
+    if is_windows; then
+        cmp -s "$TEST_DIR/expected-launcher" "$TEST_DIR/claude-notifications.bat" && preserved=true
+    elif [ -L "$TEST_DIR/claude-notifications" ] && [ "$(readlink "$TEST_DIR/claude-notifications")" = target_binary ]; then
+        preserved=true
+    fi
+    if [ "$preserved" != true ]; then
+        echo -e "  ${RED}✗${NC} Launcher lost or changed"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     else
-        echo -e "  ${GREEN}✓${NC} Symlink preserved by --force"
+        echo -e "  ${GREEN}✓${NC} Launcher preserved by --force"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
     TESTS_RUN=$((TESTS_RUN + 1))
