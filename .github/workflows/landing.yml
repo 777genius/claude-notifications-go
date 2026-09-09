@@ -100,6 +100,7 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: artifact
+          include-hidden-files: true
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@v5
