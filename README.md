@@ -63,6 +63,8 @@ Notifications for Claude Code and Codex CLI (beta), with sounds, git branch disp
 
 ### Quick Install (Recommended)
 
+Prefer a guided setup? [Open the installation guide](https://777genius.github.io/claude-notifications-go/#install) to choose your agent, OS and task.
+
 One command to install or update the notifications plugin for Claude Code, Codex, or both. The interactive menu asks you to choose:
 
 ```bash
