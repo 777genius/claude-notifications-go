@@ -38,6 +38,7 @@ const commandField = ref<HTMLTextAreaElement>();
 const snippet = computed(() =>
   command(product.value, target.value, intent.value),
 );
+const displaySnippet = computed(() => snippet.value?.replace(" | ", " |\n"));
 onMounted(() => {
   detected.value = detectTarget(navigator.userAgent, navigator.maxTouchPoints);
   if (!manualOverride.value) target.value = detected.value;
@@ -192,38 +193,49 @@ async function copy() {
       </p>
     </div>
     <template v-else>
-      <div class="setup-panel installation-command">
+      <div class="installation-command">
         <div class="command-panel-heading">
           <label for="command"
             >{{ intent === "update" ? "Update" : "Install" }} command</label
           >
-          <span>{{ target === "windows" ? "Git Bash" : "Bash" }}</span>
+          <div class="command-tools">
+            <span>{{ target === "windows" ? "Git Bash" : "Bash" }}</span>
+            <button class="primary" @click="copy">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                aria-hidden="true"
+              >
+                <rect x="8" y="3" width="12" height="15" rx="2" />
+                <path d="M16 18v3H4V7h4" /></svg
+              >Copy command
+            </button>
+          </div>
         </div>
         <div class="install-command-line">
           <span class="terminal-prompt" aria-hidden="true">$</span>
           <textarea
             id="command"
             ref="commandField"
-            :value="snippet"
+            :value="displaySnippet"
             readonly
             spellcheck="false"
-            rows="3"
+            rows="2"
+            wrap="off"
           />
-          <button class="primary" @click="copy">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              aria-hidden="true"
-            >
-              <rect x="8" y="3" width="12" height="15" rx="2" />
-              <path d="M16 18v3H4V7h4" /></svg
-            >Copy command
-          </button>
         </div>
+        <button
+          v-if="intent === 'install'"
+          class="text-action update-under-command"
+          aria-label="Update"
+          @click="changeIntent('update')"
+        >
+          Updating instead?
+        </button>
         <p role="status" class="copy-status">{{ copyStatus }}</p>
         <p v-if="intent === 'update'" class="update-note">
           Install and update use the same command. Your existing settings are
@@ -302,14 +314,7 @@ async function copy() {
         >
           Installation instructions
         </button>
-        <button
-          v-if="intent !== 'update'"
-          class="text-action"
-          aria-label="Update"
-          @click="changeIntent('update')"
-        >
-          Updating instead?
-        </button>
+
         <button
           v-if="intent !== 'configure'"
           class="text-action"
