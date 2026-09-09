@@ -859,3 +859,336 @@ footer .brand {
     min-height: 380px;
   }
 }
+/* Owner-selected installation reference: docs/design/installation-reference.png */
+.guided-install {
+  max-width: 1120px;
+  padding-top: 65px;
+}
+.install-heading {
+  text-align: center;
+  margin-bottom: 30px;
+}
+.install-heading h2 {
+  font-size: clamp(32px, 4.5vw, 56px);
+  letter-spacing: -1.8px;
+  color: #f4f5fa;
+  margin-bottom: 12px;
+}
+.install-heading p {
+  font-size: 16px;
+  margin-bottom: 0;
+}
+.agent-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin: 0 40px;
+}
+.agent-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  text-align: left;
+  padding: 18px 20px;
+  color: #f0f1f7;
+  background: linear-gradient(115deg, #0e1420, #090c13);
+  border: 1px solid #293648;
+  border-radius: 10px;
+  min-width: 0;
+}
+.agent-card[aria-pressed="true"] {
+  border-color: #32bfff;
+  box-shadow:
+    0 0 0 1px #32bfff25,
+    0 0 24px #0873eb19;
+}
+.agent-card .agent-logo {
+  width: 38px;
+  height: 38px;
+}
+.agent-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+.agent-card-copy strong {
+  font-size: 16px;
+  font-weight: 650;
+}
+.agent-card-copy > span {
+  color: #9eafc9;
+  font-size: 13px;
+}
+.agent-card-copy small {
+  font-size: 10px;
+  margin-left: 8px;
+  padding: 3px 8px;
+  color: #75b5ff;
+  background: #172b54;
+  border-radius: 5px;
+}
+.agent-check {
+  display: grid;
+  place-items: center;
+  border: 1px solid #687c98;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  font-size: 15px;
+}
+.agent-card[aria-pressed="true"] .agent-check {
+  background: #52b6ff;
+  color: #061223;
+  border-color: #52b6ff;
+  box-shadow: 0 0 18px #398cff44;
+}
+.environment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin: 20px 40px;
+  font-size: 12px;
+}
+.os-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 9px;
+}
+.os-summary > span {
+  color: #d6e1f2;
+}
+.os-summary small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.text-action {
+  background: none;
+  border: 0;
+  padding: 3px 0;
+  color: #66caff;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.both-choice {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.os-picker {
+  max-width: 350px;
+  margin: 0 40px 22px;
+}
+.setup-panel {
+  padding: 24px;
+  border: 1px solid #293a50;
+  border-radius: 10px;
+  background: linear-gradient(125deg, #111824, #0a0e15 65%);
+}
+.installation-command {
+  margin-top: 20px;
+}
+.command-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 16px;
+}
+.command-panel-heading label {
+  color: #b8cbe7;
+  font:
+    9px ui-monospace,
+    monospace;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.command-panel-heading > span {
+  color: #acbfdc;
+  font-size: 12px;
+}
+.install-command-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid #273447;
+  border-radius: 9px;
+  background: #080c13;
+}
+.terminal-prompt {
+  color: #9cabc3;
+  font:
+    14px ui-monospace,
+    monospace;
+}
+.install-command-line textarea {
+  color: #82dce5;
+  line-height: 1.6;
+  font-size: 12px;
+}
+.install-command-line .primary {
+  flex-shrink: 0;
+  padding: 16px 20px;
+  color: white;
+  font-weight: 600;
+  background:
+    linear-gradient(110deg, #09aeef, #673cfa 52%, #d300ed) padding-box,
+    linear-gradient(110deg, #5dd8ff, #b390ff, #f56bff) border-box;
+}
+.installation-command .copy-status {
+  font-size: 12px;
+  margin: 12px 0 0;
+  min-height: 0;
+}
+.installation-command .copy-status:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.next-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 18px;
+}
+.next-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 24px;
+}
+.step-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 54px;
+  height: 54px;
+  border: 1px solid #28394d;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #152234, #0c1420);
+  color: #a3c9f7;
+}
+.step-icon svg {
+  width: 28px;
+  height: 28px;
+}
+.step-label {
+  font:
+    9px ui-monospace,
+    monospace;
+  color: #b3c4e0;
+  letter-spacing: 2px;
+}
+.next-step h3 {
+  margin: 8px 0;
+  font-size: 20px;
+  color: #f4f5fa;
+}
+.next-step p {
+  color: #a0b2ce;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+.next-step p + p {
+  margin-top: 8px;
+}
+.next-step code {
+  color: #b4ebf7;
+}
+.install-footer {
+  max-width: none;
+  margin: 28px 0 0;
+  padding: 0;
+  border: 0;
+  justify-content: space-between;
+  font-size: 12px;
+  gap: 18px;
+}
+.install-footer > a {
+  color: #8d9fb9;
+}
+.install-footer > div {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+}
+.install-footer .text-action + .text-action {
+  border-left: 1px solid #293648;
+  padding-left: 22px;
+}
+.install-prerequisite {
+  font-size: 12px;
+}
+.install-prerequisite a {
+  text-decoration: underline;
+}
+.update-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+@media (max-width: 700px) {
+  .agent-cards {
+    margin-inline: 0;
+    gap: 12px;
+  }
+  .agent-card {
+    padding: 16px 12px;
+    gap: 10px;
+  }
+  .agent-card-copy strong {
+    font-size: 14px;
+  }
+  .agent-card-copy small {
+    margin-left: 0;
+    display: inline-block;
+  }
+  .agent-check {
+    width: 18px;
+    height: 18px;
+  }
+  .environment-row {
+    margin-inline: 0;
+    flex-wrap: wrap;
+  }
+  .os-picker {
+    margin-inline: 0;
+  }
+  .install-command-line {
+    flex-wrap: wrap;
+  }
+  .install-command-line .primary {
+    width: 100%;
+  }
+  .next-steps {
+    grid-template-columns: 1fr;
+  }
+  .install-footer {
+    flex-wrap: wrap;
+    margin-inline: 0;
+  }
+}
+@media (max-width: 430px) {
+  .agent-cards {
+    grid-template-columns: 1fr;
+  }
+  .install-heading p {
+    font-size: 14px;
+  }
+  .setup-panel {
+    padding: 18px;
+  }
+  .next-step {
+    gap: 14px;
+  }
+  .next-step h3 {
+    font-size: 18px;
+  }
+}
