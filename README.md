@@ -56,13 +56,13 @@ Smart notifications for Claude Code with click-to-focus, git branch display, and
 
 ### Prerequisites
 
-- Claude Code
+- Claude Code and/or Codex CLI for the products you select
 - **Windows users:** Git Bash (included with [Git for Windows](https://git-scm.com/download/win))
 - **macOS/Linux users:** No additional software required
 
 ### Quick Install (Recommended)
 
-One command to install everything:
+One command to install or update the notifications plugin for Claude Code, Codex, or both. The interactive menu asks you to choose:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash
@@ -70,7 +70,15 @@ curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/m
 
 > Windows users: open Git Bash from the Start menu and run this command there. Do not run the `curl ... | bash` command from PowerShell or Windows Terminal if `bash` opens WSL, because that targets Linux paths and binaries instead of Windows.
 
-Then restart Claude Code and optionally run `/claude-notifications-go:settings` to configure sounds.
+For automation or terminals without a controlling TTY, choose explicitly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash -s -- --product codex
+```
+
+Use `claude`, `codex`, or `both`. All selected host CLIs must already be on `PATH`. Codex installation requires a published stable release v1.42.0 or newer; source and binaries use the same release tag. It respects `CODEX_HOME` and automatically registers hooks using `setup-codex`. Then start Codex, run `/hooks`, and review and trust the entries yourself. Installation does not grant trust.
+
+For Claude, restart Claude Code and optionally run `/claude-notifications-go:settings` to configure sounds.
 
 The binary is downloaded once and cached locally. You can re-run `/claude-notifications-go:settings` anytime to reconfigure.
 
@@ -145,17 +153,11 @@ The registration command is implemented in Go and does not require `jq`. You nee
 Codex-capable release (v1.42.0 or later) and its plugin bundle; an older binary cannot run
 `setup-codex`. The command is not automatically added to your `PATH` by the Claude plugin.
 
-For a Codex-only installation, download a bundle and its platform binary first. In a
-terminal with Git and Bash (Git Bash on Windows), run:
+Use the [one-command installer](#quick-install-recommended) and choose Codex or both.
+It downloads matching release source and binaries in temporary staging, registers the
+stable runtime copy, and removes staging automatically. Re-run it to update.
 
-```bash
-git clone --depth 1 https://github.com/777genius/claude-notifications-go.git
-cd claude-notifications-go
-CN_PRODUCT=codex bash bin/install.sh
-```
-
-This downloads the notification binary; it does not install Claude Code. Keep this source
-directory for updates. The Codex registration below installs a separate stable runtime copy.
+For manual registration, use a downloaded **matching release** bundle and binary:
 
 From an already downloaded plugin bundle, run the binary by its path:
 
@@ -183,16 +185,15 @@ yourself, `--codex-home` and `--plugin-root` override the paths.
 
 After updating the plugin, run the command again to refresh the installed copy. The registration
 itself does not change, so Codex does not ask you to trust the hooks again.
-For the Git checkout above, update with `git pull --ff-only`, run `CN_PRODUCT=codex bash bin/install.sh --force`,
-then repeat the appropriate `setup-codex` command. Existing Claude plugin users can update
-their source bundle using the usual Claude plugin update process before repeating setup.
+With the bootstrap installer, re-run the same one-liner and select Codex or both to
+install the latest supported stable release and refresh registration automatically.
 
 Claude Code installation and updates continue to use the [existing installation steps](#installation).
 Both products share settings at `~/.claude/claude-notifications-go/config.json`; installing
 Codex does not require installing Claude Code. Keep your existing settings file when updating.
 
 <details>
-<summary>Why a separate step is needed</summary>
+<summary>How registration works</summary>
 
 `setup-codex` registers user hooks explicitly, using a stable runtime directory independent
 of the plugin cache. This is the setup path covered by this project's installer tests.
