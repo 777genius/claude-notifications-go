@@ -33,6 +33,9 @@ MARKETPLACE_PLUGIN_JSON="${MARKETPLACE_DIR}/.claude-plugin/plugin.json"
 
 # State
 PLUGIN_ROOT=""
+_BOOTSTRAP_STAGE=""
+PRODUCT=""
+BOOTSTRAP_TAG=""
 _BOOTSTRAP_TMP=""  # temp file path for trap (set -u safe)
 
 # ──────────────────────────────────────────────
@@ -86,7 +89,7 @@ abort_if_wsl_environment() {
 # ──────────────────────────────────────────────
 
 check_prerequisites() {
-    if ! command -v claude &>/dev/null; then
+    if [ "${PRODUCT:-claude}" != codex ] && ! command -v claude &>/dev/null; then
         echo -e "${RED}✗ claude CLI not found in PATH${NC}" >&2
         echo "" >&2
         echo -e "${YELLOW}Install Claude Code first:${NC}" >&2
@@ -94,7 +97,14 @@ check_prerequisites() {
         echo "" >&2
         exit 1
     fi
-    echo -e "${GREEN}✓${NC} claude CLI found"
+    if [ "${PRODUCT:-claude}" != claude ] && ! command -v codex &>/dev/null; then
+        echo "codex CLI not found in PATH; install Codex first." >&2
+        exit 1
+    fi
+    if [ "${PRODUCT:-claude}" != claude ] && ! command -v tar &>/dev/null; then
+        echo "tar is required for the Codex source bundle." >&2
+        exit 1
+    fi
 
     if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
         echo -e "${RED}✗ curl or wget required${NC}" >&2
@@ -842,7 +852,7 @@ download_binary() {
 
     # Download install.sh to a temp file, verify it's non-empty, then run
     # Set trap BEFORE mktemp to avoid race condition on Ctrl+C
-    trap 'rm -f "$_BOOTSTRAP_TMP" 2>/dev/null' EXIT INT TERM
+    install_cleanup_traps
     # Validate TMPDIR exists; fall back to /tmp if it doesn't
     local tmp_base="${TMPDIR:-/tmp}"
     if [ ! -d "$tmp_base" ]; then
@@ -866,7 +876,7 @@ download_binary() {
 
     # </dev/null prevents stdin conflicts when running via `curl | bash`
     local install_exit=0
-    INSTALL_TARGET_DIR="$target_dir" bash "$tmp_script" </dev/null || install_exit=$?
+    install_runtime claude "$tmp_script" "$target_dir" || install_exit=$?
 
     if [ $install_exit -ne 0 ]; then
         echo -e "${RED}✗ Binary installation failed (exit code: ${install_exit})${NC}" >&2
@@ -952,18 +962,168 @@ print_success() {
 
 # ──────────────────────────────────────────────
 
-main() {
-    print_header
-    abort_if_wsl_environment
-    check_prerequisites
-    detect_platform
+# Product selection must precede any filesystem or host CLI mutation.
+select_product() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --product)
+                [ "$#" -ge 2 ] && [ -z "$PRODUCT" ] || { echo "Use --product claude|codex|both once." >&2; return 1; }
+                PRODUCT="$2"; shift 2 ;;
+            --help|-h)
+                echo "Usage: bash bootstrap.sh [--product claude|codex|both]"
+                exit 0 ;;
+            *) echo "Unknown option: $1" >&2; return 1 ;;
+        esac
+    done
+    if [ -z "$PRODUCT" ]; then
+        if ! { exec 3<>/dev/tty; } 2>/dev/null; then
+            echo "No controlling TTY. Specify --product claude|codex|both." >&2
+            return 1
+        fi
+        printf 'Install notifications for: 1) Claude  2) Codex  3) Both\nChoice: ' >&3
+        local choice=""
+        IFS= read -r choice <&3 || true
+        exec 3>&-
+        case "$choice" in
+            1|claude) PRODUCT=claude ;;
+            2|codex) PRODUCT=codex ;;
+            3|both) PRODUCT=both ;;
+            *) echo "Invalid product choice; use claude, codex or both." >&2; return 1 ;;
+        esac
+    fi
+    case "$PRODUCT" in
+        claude|codex|both) ;;
+        *) echo "Invalid product: $PRODUCT; use claude, codex or both." >&2; return 1 ;;
+    esac
+}
+
+bootstrap_cleanup() {
+    [ -z "$_BOOTSTRAP_TMP" ] || rm -f "$_BOOTSTRAP_TMP"
+    [ -z "$_BOOTSTRAP_STAGE" ] || rm -rf "$_BOOTSTRAP_STAGE"
+    return 0
+}
+
+install_cleanup_traps() {
+    trap bootstrap_cleanup EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+}
+
+install_runtime() {
+    local product="$1" script="$2" target="$3"
+    CN_PRODUCT="$product" INSTALL_TARGET_DIR="$target" bash "$script" "${@:4}" </dev/null
+}
+
+fetch_bootstrap_file() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --connect-timeout 15 --max-time 120 "$1" -o "$2"
+    else
+        wget -q -T 120 "$1" -O "$2"
+    fi
+}
+
+resolve_bootstrap_release() {
+    BOOTSTRAP_TAG="${BOOTSTRAP_RELEASE_TAG:-}"
+    if [ -z "$BOOTSTRAP_TAG" ]; then
+        _BOOTSTRAP_TMP=$(mktemp "${TMPDIR:-/tmp}/bootstrap-release-XXXXXX") || return 1
+        fetch_bootstrap_file "${BOOTSTRAP_LATEST_RELEASE_API_URL:-https://api.github.com/repos/${REPO}/releases/latest}" "$_BOOTSTRAP_TMP" || return 1
+        BOOTSTRAP_TAG=$(grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' "$_BOOTSTRAP_TMP" | head -1 | sed -E 's/.*"([^"]+)".*/\1/') || return 1
+        rm -f "$_BOOTSTRAP_TMP"
+        _BOOTSTRAP_TMP=""
+    fi
+    # Reject prereleases, malformed tags and releases predating setup-codex.
+    printf '%s\n' "$BOOTSTRAP_TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || {
+        echo "Invalid stable release tag: $BOOTSTRAP_TAG" >&2; return 1;
+    }
+    local version="${BOOTSTRAP_TAG#v}" major minor component
+    for component in ${version//./ }; do
+        [ "${#component}" -le 9 ] || { echo "Release version component too large." >&2; return 1; }
+    done
+    major="${version%%.*}"; minor="${version#*.}"; minor="${minor%%.*}"
+    if [ "$major" -lt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -lt 42 ]; }; then
+        echo "Codex requires published release v1.42.0 or newer; found $BOOTSTRAP_TAG." >&2
+        return 1
+    fi
+}
+
+install_codex() {
+    local tag="$BOOTSTRAP_TAG" version="${BOOTSTRAP_TAG#v}"
+    local source_base="${BOOTSTRAP_SOURCE_BASE_URL:-https://github.com/${REPO}/archive/refs/tags}"
+    local release_base="${BOOTSTRAP_RELEASES_BASE_URL:-https://github.com/${REPO}/releases}"
+    _BOOTSTRAP_STAGE=$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-codex-XXXXXX") || return 1
+    local bundle="$_BOOTSTRAP_STAGE/bundle"
+    mkdir "$bundle" || return 1
+    if [ -n "$PLUGIN_ROOT" ] && [ "$(get_manifest_version "$PLUGIN_ROOT/.claude-plugin/plugin.json")" = "$version" ]; then
+        # Work on a copy so failed Codex updates cannot damage the Claude install.
+        cp -R "$PLUGIN_ROOT/." "$bundle/" || return 1
+    else
+        [ "$PRODUCT" != both ] || echo "Claude bundle differs from $tag; downloading matching Codex source."
+        fetch_bootstrap_file "$source_base/$tag.tar.gz" "$_BOOTSTRAP_STAGE/source.tar.gz" || return 1
+        tar -xzf "$_BOOTSTRAP_STAGE/source.tar.gz" --strip-components=1 -C "$bundle" || return 1
+    fi
+    [ "$(get_manifest_version "$bundle/.claude-plugin/plugin.json")" = "$version" ] || {
+        echo "Source bundle must match Codex-capable release $tag (minimum v1.42.0)." >&2; return 1;
+    }
+    [ -f "$bundle/bin/install.sh" ] || return 1
+    RELEASE_URL="$release_base/download/$tag" \
+    CHECKSUMS_URL="$release_base/download/$tag/checksums.txt" \
+    MODERN_NOTIFIER_URL="$release_base/download/$tag/ClaudeNotifier.app.zip" \
+        install_runtime codex "$bundle/bin/install.sh" "$bundle/bin" --force || return 1
+    local binary="$bundle/bin/claude-notifications" arch
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            case "$(uname -m)" in
+                x86_64|amd64) arch=amd64 ;;
+                aarch64|arm64) arch=arm64 ;;
+                *) echo "Unsupported Windows architecture" >&2; return 1 ;;
+            esac
+            binary="$bundle/bin/claude-notifications-windows-$arch.exe" ;;
+    esac
+    local actual
+    actual=$(CN_PRODUCT=codex "$binary" --version) || return 1
+    [ "$actual" = "claude-notifications v$version" ] || {
+        echo "Binary must match $tag and support setup-codex." >&2; return 1;
+    }
+    CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" --dry-run </dev/null || return 1
+    CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" </dev/null || return 1
+    echo "Codex installed. Start Codex, run /hooks, review and trust the entries."
+}
+
+install_claude() {
     setup_marketplace
     sync_marketplace_checkout
     install_plugin
     find_plugin_root
     download_binary
     setup_iterm2_venv
-    print_success
+    if [ "$PRODUCT" = both ]; then
+        echo "Claude notifications installed; continuing with Codex."
+    else
+        print_success
+    fi
+}
+
+main() {
+    select_product "$@"
+    print_header
+    abort_if_wsl_environment
+    check_prerequisites
+    detect_platform
+    install_cleanup_traps
+    if [ "$PRODUCT" != claude ]; then
+        resolve_bootstrap_release || { echo "Cannot resolve supported Codex release." >&2; return 1; }
+    fi
+    if [ "$PRODUCT" != codex ]; then
+        # Function assignment scopes child environment while preserving PLUGIN_ROOT.
+        CN_PRODUCT=claude install_claude
+    fi
+    if [ "$PRODUCT" != claude ]; then
+        if ! install_codex; then
+            echo "Codex installation/registration failed; no all-products success." >&2
+            [ "$PRODUCT" != both ] || echo "Claude installation completed separately." >&2
+            return 1
+        fi
+    fi
 }
 
 main "$@"
