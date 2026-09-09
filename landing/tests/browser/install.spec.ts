@@ -6,9 +6,13 @@ async function chooseOS(page: Page, value: string) {
     windows: "Windows · Git Bash",
     manual: "Manual instructions",
   };
-  await page
-    .getByRole("combobox", { name: "02 / Target operating system" })
-    .click();
+  if (
+    !(await page
+      .getByRole("combobox", { name: "Target operating system" })
+      .isVisible())
+  )
+    await page.getByRole("button", { name: "Change", exact: true }).click();
+  await page.getByRole("combobox", { name: "Target operating system" }).click();
   await page.getByRole("option", { name: labels[value], exact: true }).click();
 }
 test("production command matrix, aftercare, clipboard and configuration", async ({
@@ -29,7 +33,10 @@ test("production command matrix, aftercare, clipboard and configuration", async 
     for (const os of ["macos", "linux", "windows"]) {
       await chooseOS(page, os);
       for (const intent of ["Install", "Update"]) {
-        await page.getByRole("button", { name: intent, exact: true }).click();
+        if (
+          await page.getByRole("button", { name: intent, exact: true }).count()
+        )
+          await page.getByRole("button", { name: intent, exact: true }).click();
         await expect(page.getByLabel(intent + " command")).toHaveValue(
           "curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash -s -- --product " +
             product,
@@ -101,7 +108,7 @@ test("unknown target, manual route and mobile layout", async ({ browser }) => {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.evaluate(() => window.scrollTo({top: 0, behavior: "instant"}));
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await page.screenshot({ path: "test-results/mobile.png", fullPage: true });
   await context.close();
 });
@@ -220,14 +227,14 @@ test("installation order, sticky header and custom select keyboard behavior", as
     await page
       .locator("main > *")
       .evaluateAll((nodes) =>
-        nodes.map((n) => n.id || n.className).slice(0, 2),
+        nodes.map((n) => n.id || n.className).slice(0, 3),
       ),
-  ).toEqual(["hero-wrap", "install"]);
+  ).toEqual(["hero-wrap", "compatibility", "install"]);
   for (const title of await page.locator("h1,h2,h3").allTextContents())
     expect(title).not.toContain(".");
   await chooseOS(page, "linux");
   const select = page.getByRole("combobox", {
-    name: "02 / Target operating system",
+    name: "Target operating system",
   });
   await select.focus();
   await page.keyboard.press("Enter");
@@ -239,11 +246,15 @@ test("installation order, sticky header and custom select keyboard behavior", as
     page.getByRole("option", { name: "Choose target OS", exact: true }),
   ).toBeFocused();
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("option", { name: "macOS", exact: true })).toBeFocused();
+  await expect(
+    page.getByRole("option", { name: "macOS", exact: true }),
+  ).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(select).toContainText("macOS");
   await expect(select).toBeFocused();
-  await page.evaluate(() => window.scrollTo({ top: 1200, behavior: "instant" }));
+  await page.evaluate(() =>
+    window.scrollTo({ top: 1200, behavior: "instant" }),
+  );
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
   expect(
     await page
@@ -258,12 +269,55 @@ test("installation order, sticky header and custom select keyboard behavior", as
     expect(logo).toBeGreaterThan(0);
 });
 
-test('hero headline remains a single unclipped line at narrow widths', async ({ page }) => {
+test("hero headline remains a single unclipped line at narrow widths", async ({
+  page,
+}) => {
   for (const width of [320, 390, 768, 1024, 1280]) {
-    await page.setViewportSize({width, height: 900});
-    await page.goto('');
-    const box = await page.locator('h1 em').boundingBox();
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("");
+    const box = await page.locator("h1 em").boundingBox();
     expect(box!.x + box!.width).toBeLessThanOrEqual(width);
     expect(box!.height).toBeLessThan(60);
   }
+});
+test("guided reference layout, detected OS and mode focus", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 1088, height: 900 },
+    userAgent:
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    reducedMotion: "reduce",
+  });
+  const page = await context.newPage();
+  await page.goto("http://127.0.0.1:4173/claude-notifications-go/");
+  await expect(page.locator(".os-summary")).toContainText("macOS");
+  await expect(page.locator(".os-summary")).toContainText(
+    "Detected automatically",
+  );
+  await expect(
+    page.getByRole("button", { name: "Back", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .locator("#install")
+    .screenshot({ path: "test-results/installation-reference-desktop.png" });
+  await page.getByRole("button", { name: "Configure", exact: true }).click();
+  await expect(page.locator("#install-title")).toBeFocused();
+  await expect(page.getByRole("button", { name: "Copy command" })).toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "Install", exact: true }).click();
+  await chooseOS(page, "windows");
+  await expect(page.locator(".os-summary")).toContainText("Selected");
+  await expect(page.locator(".os-summary")).not.toContainText(
+    "Detected automatically",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Run in Git Bash", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Both agents", exact: true }).click();
+  await expect(
+    page.getByRole("link", { name: "Claude installation help ↗" }),
+  ).toBeVisible();
+  await context.close();
 });

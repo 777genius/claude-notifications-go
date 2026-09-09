@@ -70,7 +70,6 @@ const features = [
           <NotificationPreview />
         </section>
       </div>
-      <InstallWizard />
       <div class="compatibility">
         <span>BUILT FOR YOUR WORKFLOW</span
         ><strong><AgentLogo agent="claude" /> Claude Code</strong
@@ -78,6 +77,7 @@ const features = [
           ><AgentLogo agent="codex" /> Codex CLI <small>beta</small></strong
         ><span class="platforms">macOS / Linux / Windows</span>
       </div>
+      <InstallWizard />
       <section id="features" class="section anchor-offset">
         <p class="eyebrow">THE RIGHT SIGNAL. AT THE RIGHT TIME.</p>
         <h2>Keep your focus<br />Lose the constant checking</h2>
