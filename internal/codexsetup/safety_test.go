@@ -46,10 +46,13 @@ func TestForeignEmptyAndMatcherPreserved(t *testing.T) {
 func TestCopyPreservesUpdaterAssets(t *testing.T) {
 	src, dst := fakeBundle(t), t.TempDir()
 	files := map[string]string{
-		".claude-plugin/plugin.json":  `{"version":"1.42.0"}`,
-		".claude-plugin/private-note": "not a runtime asset",
-		"bin/install.sh":              "#!/bin/sh\nexit 0\n",
-		"bin/bootstrap.sh":            "not used by the Codex launcher",
+		".claude-plugin/plugin.json":                       `{"version":"1.42.0"}`,
+		".claude-plugin/private-note":                      "not a runtime asset",
+		"bin/install.sh":                                   "#!/bin/sh\nexit 0\n",
+		"bin/bootstrap.sh":                                 "not used by the Codex launcher",
+		"bin/claude-notifications-windows-amd64-focus.exe": "amd64 GUI focus helper",
+		"bin/claude-notifications-windows-arm64-focus.exe": "arm64 GUI focus helper",
+		"bin/claude-notifications-linux-amd64-focus.exe":   "not a supported helper",
 	}
 	for name, content := range files {
 		path := filepath.Join(src, filepath.FromSlash(name))
@@ -63,13 +66,13 @@ func TestCopyPreservesUpdaterAssets(t *testing.T) {
 	if err := copyBundle(src, dst); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{".claude-plugin/plugin.json", "bin/install.sh"} {
+	for _, name := range []string{".claude-plugin/plugin.json", "bin/install.sh", "bin/claude-notifications-windows-amd64-focus.exe", "bin/claude-notifications-windows-arm64-focus.exe"} {
 		got, err := os.ReadFile(filepath.Join(dst, filepath.FromSlash(name)))
 		if err != nil || string(got) != files[name] {
 			t.Fatalf("runtime asset %s missing or altered: %v", name, err)
 		}
 	}
-	for _, name := range []string{".claude-plugin/private-note", "bin/bootstrap.sh"} {
+	for _, name := range []string{".claude-plugin/private-note", "bin/bootstrap.sh", "bin/claude-notifications-linux-amd64-focus.exe"} {
 		if _, err := os.Stat(filepath.Join(dst, filepath.FromSlash(name))); !os.IsNotExist(err) {
 			t.Fatalf("unexpected asset %s: %v", name, err)
 		}
