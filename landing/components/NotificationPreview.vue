@@ -81,7 +81,7 @@ onUnmounted(() => {
       </button>
       <button v-else class="preview-control" @click="cursor++">Next</button>
     </div>
-    <TransitionGroup name="notification" tag="div" class="notification-stack">
+    <TransitionGroup :css="!reduced" name="notification" tag="div" class="notification-stack">
       <article
         v-for="{ item, id } in visible"
         :key="id"

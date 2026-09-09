@@ -225,6 +225,7 @@ test("installation order, sticky header and custom select keyboard behavior", as
   ).toEqual(["hero-wrap", "install"]);
   for (const title of await page.locator("h1,h2,h3").allTextContents())
     expect(title).not.toContain(".");
+  await chooseOS(page, "linux");
   const select = page.getByRole("combobox", {
     name: "02 / Target operating system",
   });
@@ -242,6 +243,8 @@ test("installation order, sticky header and custom select keyboard behavior", as
   await page.keyboard.press("Enter");
   await expect(select).toContainText("macOS");
   await expect(select).toBeFocused();
+  await page.evaluate(() => window.scrollTo({ top: 1200, behavior: "instant" }));
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
   expect(
     await page
       .locator(".header")
