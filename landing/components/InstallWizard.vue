@@ -200,7 +200,11 @@ async function copy() {
           >
           <div class="command-tools">
             <span>{{ target === "windows" ? "Git Bash" : "Bash" }}</span>
-            <button class="primary" @click="copy">
+
+          </div>
+        </div>
+        <div class="install-command-line">
+            <button class="copy-icon" aria-label="Copy command" title="Copy command" @click="copy">
               <svg
                 width="18"
                 height="18"
@@ -212,11 +216,8 @@ async function copy() {
               >
                 <rect x="8" y="3" width="12" height="15" rx="2" />
                 <path d="M16 18v3H4V7h4" /></svg
-              >Copy command
+              >
             </button>
-          </div>
-        </div>
-        <div class="install-command-line">
           <span class="terminal-prompt" aria-hidden="true">$</span>
           <textarea
             id="command"

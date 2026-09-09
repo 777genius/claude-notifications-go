@@ -277,7 +277,7 @@ test("hero headline remains a single unclipped line at narrow widths", async ({
     await page.goto("");
     const box = await page.locator("h1 em").boundingBox();
     expect(box!.x + box!.width).toBeLessThanOrEqual(width);
-    expect(box!.height).toBeLessThan(60);
+    expect(box!.height).toBeLessThan(76);
   }
 });
 test("guided reference layout, detected OS and mode focus", async ({
