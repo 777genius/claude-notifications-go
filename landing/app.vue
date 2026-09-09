@@ -75,7 +75,7 @@ const features = [
         ><strong><AgentLogo agent="claude" /> Claude Code</strong
         ><strong
           ><AgentLogo agent="codex" /> Codex CLI <small>beta</small></strong
-        ><span class="platforms">macOS / Linux / Windows</span>
+        ><PlatformLogos />
       </div>
       <InstallWizard />
       <section id="features" class="section anchor-offset">
