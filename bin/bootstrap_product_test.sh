@@ -107,6 +107,14 @@ run(['--product', 'codex']); run(['--product', 'codex'])
 run(['--product', 'codex'], extra={'BOOTSTRAP_RELEASE_TAG':'v1.43.0'})
 registration = pathlib.Path(env['CODEX_HOME']) / 'fixture-registration'
 before = registration.read_bytes()
+# Reject mixed binary/source releases before registration and retain live state.
+payload_file = web / 'download/v1.42.0/binary'
+valid_payload = payload_file.read_text()
+payload_file.write_text(valid_payload.replace('v1.42.0', 'v1.41.0'))
+run(['--product', 'codex'], 1)
+assert registration.read_bytes() == before
+payload_file.write_text(valid_payload)
+
 run(['--product', 'codex'], 1, {'FAIL_REGISTER':'1'})
 run(['--product', 'codex'], 1, {'BOOTSTRAP_SOURCE_BASE_URL':base+'/missing'})
 assert registration.read_bytes() == before
@@ -119,10 +127,16 @@ command = 'source '+shlex.quote(str(sandbox/'functions.sh'))+'; PRODUCT=both; PL
 r = subprocess.run([bash,'-c',command],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20)
 assert r.returncode == 0, r.stdout.decode()
 assert (live/'bin/claude-notifications').read_text() == 'stale'
-for choice, success in ([('2',True), ('invalid',False)] if os.name != 'nt' else []):
+# Menu routing for Claude/both uses explicit adapters; Codex below exercises
+# the complete bootstrap HTTP/staging path with fake runtime assets.
+dispatch = (root / 'bin/bootstrap.sh').read_text().replace('main "$@"', '')
+dispatch += '\ncheck_prerequisites() { :; }\nresolve_bootstrap_release() { :; }\ninstall_claude() { echo CLAUDE_ADAPTER; }\ninstall_codex() { echo CODEX_ADAPTER; }\nmain "$@"\n'
+(web / 'dispatch.sh').write_text(dispatch)
+for choice, success in ([('1',True), ('2',True), ('3',True), ('invalid',False)] if os.name != 'nt' else []):
+    entry = '/dispatch.sh' if choice in ['1', '3'] else '/bootstrap.sh'
     pid, fd = pty.fork()
     if pid == 0:
-        os.execve(bash,[bash,'-c', 'curl -fsSL '+base+'/bootstrap.sh | bash'],env)
+        os.execve(bash,[bash,'-c', 'curl -fsSL '+base+entry+' | bash'],env)
     output = b''; sent = False; deadline = time.monotonic()+20
     while time.monotonic() < deadline:
         if select.select([fd],[],[],0.1)[0]:
@@ -136,6 +150,9 @@ for choice, success in ([('2',True), ('invalid',False)] if os.name != 'nt' else 
         os.kill(pid,9); raise AssertionError('PTY timeout')
     _, status = os.waitpid(pid,0); os.close(fd)
     assert sent and (os.waitstatus_to_exitcode(status)==0)==success, output.decode()
+    if choice in ['1','3']: assert b'CLAUDE_ADAPTER' in output
+    if choice == '1': assert b'CODEX_ADAPTER' not in output
+    if choice == '3': assert b'CODEX_ADAPTER' in output
 assert not list(pathlib.Path(env['TMPDIR']).glob('bootstrap-codex-*'))
 assert not list(pathlib.Path(env['TMPDIR']).glob('bootstrap-release-*'))
 server.shutdown(); server.server_close()
