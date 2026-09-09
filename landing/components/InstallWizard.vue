@@ -49,7 +49,7 @@ async function copy() {
     aria-labelledby="install-title"
   >
     <p class="eyebrow">YOUR NEXT STEP</p>
-    <h2 id="install-title">A little setup. A lot less checking.</h2>
+    <h2 id="install-title">A little setup, a lot less checking</h2>
     <p>Choose your agent and the machine where it runs.</p>
     <div class="panel wizard">
       <fieldset>
@@ -66,20 +66,18 @@ async function copy() {
         </div>
       </fieldset>
       <div class="wizard-row">
-        <label
-          >02 / Target operating system<select
-            v-model="target"
-            @change="manualOverride = true"
-          >
-            <option
-              v-for="item in targets"
-              :key="item.value"
-              :value="item.value"
-            >
-              {{ item.label }}
-            </option>
-          </select></label
-        >
+        <div class="target-field">
+          <span class="field-label">02 / Target operating system</span>
+          <AppSelect
+            :model-value="target"
+            :options="targets"
+            label="02 / Target operating system"
+            @update:model-value="
+              target = $event as Target;
+              manualOverride = true;
+            "
+          />
+        </div>
         <fieldset>
           <legend>03 / What would you like to do?</legend>
           <div class="choices">

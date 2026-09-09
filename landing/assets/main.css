@@ -78,7 +78,7 @@ h3 {
   overflow: clip;
 }
 .header {
-  height: 86px;
+  height: 62px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -86,8 +86,11 @@ h3 {
   margin: auto;
   padding: 0 34px;
   border-bottom: 1px solid var(--line);
-  position: relative;
-  z-index: 3;
+  position: sticky;
+  top: 0;
+  background: #0a0a0feb;
+  backdrop-filter: blur(18px);
+  z-index: 30;
 }
 .brand {
   display: flex;
@@ -157,13 +160,14 @@ h3 {
   box-shadow: 0 0 12px #54e6ae;
 }
 h1 {
-  font-size: clamp(48px, 5.2vw, 70px);
+  font-size: clamp(32px, 3.1vw, 44px);
   line-height: 1.05;
-  letter-spacing: -3px;
+  letter-spacing: -1.8px;
   font-weight: 680;
   margin-bottom: 28px;
 }
 h1 em {
+  white-space: nowrap;
   font-style: normal;
   background: linear-gradient(115deg, #d68aff 5%, #a4a2ff 45%, #5edeea 90%);
   background-clip: text;
@@ -195,7 +199,10 @@ h1 em {
 .primary {
   background: linear-gradient(110deg, #65eff5, #9b80fa 55%, #dd2aec);
   color: #080d1b;
-  border: 1px solid #ffffff25;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(110deg, #65eff5, #9b80fa 55%, #dd2aec) padding-box,
+    linear-gradient(110deg, #a6ffff, #bb9dff 55%, #f570ff) border-box;
   box-shadow: 0 8px 36px #b700d32a;
 }
 .primary:hover {
@@ -211,150 +218,9 @@ h1 em {
   letter-spacing: 0.5px;
   margin-top: 20px;
 }
-.preview {
-  height: 390px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.preview-label {
-  position: absolute;
-  top: 20px;
-  left: 56px;
-  font:
-    9px ui-monospace,
-    monospace;
-  letter-spacing: 2px;
-  color: #8190a8;
-}
-.orbit {
-  position: absolute;
-  border: 1px solid #37cad11d;
-  border-radius: 50%;
-  width: 470px;
-  height: 390px;
-  transform: rotate(-30deg);
-  pointer-events: none;
-}
-.orbit-two {
-  width: 350px;
-  height: 460px;
-  border-color: #d154de15;
-  transform: rotate(30deg);
-}
-.toast {
-  position: absolute;
-  display: flex;
-  gap: 15px;
-  border: 1px solid #737e9e42;
-  border-radius: 18px;
-  padding: 22px;
-  background: linear-gradient(120deg, #202332, #101622);
-  box-shadow: 0 22px 70px #0007;
-  width: 390px;
-  max-width: 90%;
-}
-.toast > div {
-  flex: 1;
-  min-width: 0;
-}
-.toast-back {
-  top: 76px;
-  left: 10px;
-  transform: rotate(-5deg);
-  opacity: 0.66;
-}
-.toast-front {
-  top: 164px;
-  right: 0;
-  transform: rotate(3deg);
-  border-color: #71899f64;
-}
-.toast-icon {
-  height: 36px;
-  width: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  font-size: 22px;
-  flex-shrink: 0;
-}
-.complete {
-  color: #7ef4c6;
-  background: #244038;
-}
-.question {
-  color: #d4b4fa;
-  background: #392d4a;
-}
-.toast-source {
-  display: block;
-  color: #92a1bc;
-  font-size: 9px;
-  letter-spacing: 1.3px;
-  margin-bottom: 12px;
-}
-.toast-source small {
-  float: right;
-  letter-spacing: 0;
-}
-.toast h3 {
-  font-size: 16px;
-  margin-bottom: 8px;
-}
-.toast p {
-  font-size: 12px;
-  margin-bottom: 15px;
-}
-.branch {
-  font:
-    9px ui-monospace,
-    monospace;
-  padding: 4px 7px;
-  background: #ffffff0c;
-  border-radius: 4px;
-  color: #91dfe5;
-  margin-left: 7px;
-}
-.toast-action {
-  font-size: 9px;
-  color: #90e8da;
-}
-.preview-caption {
-  position: absolute;
-  bottom: -20px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 9px;
-}
-.signal {
-  position: absolute;
-  bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.signal span {
-  height: 9px;
-  width: 3px;
-  background: #6fd2df88;
-  border-radius: 3px;
-}
-.signal span:nth-child(2n) {
-  height: 18px;
-}
-.signal span:nth-child(3n) {
-  height: 30px;
-}
-.signal span:nth-child(5) {
-  height: 40px;
-  background: #be82e9;
-}
 .compatibility {
   max-width: 1192px;
-  margin: auto;
+  margin: 65px auto 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -382,7 +248,7 @@ h1 em {
   margin: auto;
 }
 .anchor-offset {
-  scroll-margin-top: 28px;
+  scroll-margin-top: 80px;
 }
 .feature-grid {
   display: grid;
@@ -657,7 +523,7 @@ footer .brand {
 }
 @media (max-width: 560px) {
   .header {
-    height: 74px;
+    height: 60px;
     padding: 0 22px;
   }
   .header nav {
@@ -679,7 +545,7 @@ footer .brand {
     gap: 0;
   }
   h1 {
-    font-size: 48px;
+    font-size: clamp(21px, 7vw, 40px);
     letter-spacing: -2.5px;
   }
   .eyebrow {
@@ -795,5 +661,201 @@ footer .brand {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+.agent-logo {
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.compatibility strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.notification-preview {
+  width: 100%;
+  min-width: 0;
+}
+.preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  font:
+    9px ui-monospace,
+    monospace;
+  letter-spacing: 1.5px;
+  color: #a6b3c8;
+}
+.preview-control {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: #141923;
+  color: var(--muted);
+  font: 11px inherit;
+}
+.notification-stack {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  min-height: 390px;
+  align-content: start;
+}
+.notification-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-radius: 22px;
+  padding: 18px;
+  background: linear-gradient(120deg, #b1b2b6, #94969b);
+  border: 1px solid #ddd6;
+  color: #191b20;
+  box-shadow: 0 10px 35px #0003;
+  min-height: 116px;
+}
+.notification-card .agent-logo {
+  width: 48px;
+  height: 48px;
+}
+.notification-copy {
+  min-width: 0;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.notification-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-content: space-between;
+}
+.notification-title h3 {
+  font-size: 16px;
+  letter-spacing: -0.3px;
+  margin: 0;
+}
+.notification-title > span {
+  color: #505257;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.notification-copy strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.notification-copy p {
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.35;
+  margin: 3px 0 0;
+}
+.notification-detail {
+  display: block;
+  margin-top: 3px;
+}
+.notification-enter-active,
+.notification-leave-active,
+.notification-move {
+  transition:
+    transform 0.55s ease,
+    opacity 0.55s ease;
+}
+.notification-enter-from {
+  opacity: 0;
+  transform: translateX(45px);
+}
+.notification-leave-to {
+  opacity: 0;
+  transform: translateY(-30px);
+}
+.notification-leave-active {
+  position: absolute;
+  width: 100%;
+}
+.field-label {
+  font-size: 12px;
+  font-weight: 650;
+  color: #b8c5de;
+}
+.app-select__trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101522;
+  color: var(--text);
+  font-size: 12px;
+}
+.app-select__value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.app-select__chevron svg {
+  width: 16px;
+  height: 16px;
+  stroke: #88e5ee;
+  stroke-width: 1.5;
+}
+.app-select__content {
+  z-index: 50;
+  min-width: var(--reka-select-trigger-width);
+  max-height: var(--reka-select-content-available-height);
+  border: 1px solid #446778;
+  border-radius: 10px;
+  padding: 5px;
+  background: #121724;
+  box-shadow: 0 16px 45px #0008;
+}
+.app-select__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+}
+.app-select__item[data-highlighted] {
+  background: linear-gradient(110deg, #21414b, #352444);
+}
+.app-select__indicator {
+  margin-left: auto;
+  color: var(--cyan);
+}
+.app-select__scroll {
+  text-align: center;
+}
+@media (max-width: 900px) {
+  .notification-preview {
+    max-width: 540px;
+    margin: 30px auto 0;
+  }
+}
+@media (max-width: 560px) {
+  .notification-card {
+    padding: 14px;
+    gap: 10px;
+  }
+  .notification-card .agent-logo {
+    width: 38px;
+    height: 38px;
+  }
+  .notification-title h3 {
+    font-size: 14px;
+  }
+  .notification-copy,
+  .notification-copy p {
+    font-size: 12px;
+  }
+  .notification-stack {
+    min-height: 380px;
   }
 }
