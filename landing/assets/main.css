@@ -1031,7 +1031,7 @@ footer .brand {
   line-height: 1.6;
   font-size: 12px;
 }
-.install-command-line .primary {
+.command-tools .primary {
   flex-shrink: 0;
   padding: 16px 20px;
   color: white;
@@ -1164,7 +1164,7 @@ footer .brand {
   .install-command-line {
     flex-wrap: wrap;
   }
-  .install-command-line .primary {
+  .command-tools .primary {
     width: 100%;
   }
   .next-steps {
@@ -1190,5 +1190,44 @@ footer .brand {
   }
   .next-step h3 {
     font-size: 18px;
+  }
+}
+
+/* Keep the command separate from its controls and remove the outer card. */
+.command-tools {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.command-tools > span {
+  color: #acbfdc;
+  font-size: 12px;
+}
+.install-command-line {
+  align-items: flex-start;
+}
+.install-command-line textarea {
+  padding: 0;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  overflow-x: auto;
+}
+.terminal-prompt {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.update-under-command {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: 12px;
+}
+@media (max-width: 700px) {
+  .command-tools .primary {
+    width: auto;
+    padding: 12px;
+  }
+  .command-tools {
+    gap: 10px;
   }
 }

@@ -38,7 +38,7 @@ test("production command matrix, aftercare, clipboard and configuration", async 
         )
           await page.getByRole("button", { name: intent, exact: true }).click();
         await expect(page.getByLabel(intent + " command")).toHaveValue(
-          "curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash -s -- --product " +
+          "curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh |\nbash -s -- --product " +
             product,
         );
       }
