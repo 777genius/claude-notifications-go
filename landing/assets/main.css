@@ -545,7 +545,7 @@ footer .brand {
     gap: 0;
   }
   h1 {
-    font-size: clamp(26px, 7.2vw, 40px);
+    font-size: clamp(21px, 7vw, 40px);
     letter-spacing: -2.5px;
   }
   .eyebrow {

@@ -101,6 +101,7 @@ test("unknown target, manual route and mobile layout", async ({ browser }) => {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  await page.evaluate(() => window.scrollTo({top: 0, behavior: "instant"}));
   await page.screenshot({ path: "test-results/mobile.png", fullPage: true });
   await context.close();
 });
@@ -251,4 +252,14 @@ test("installation order, sticky header and custom select keyboard behavior", as
       nodes.map((n) => (n as HTMLImageElement).naturalWidth),
     ))
     expect(logo).toBeGreaterThan(0);
+});
+
+test('hero headline remains a single unclipped line at narrow widths', async ({ page }) => {
+  for (const width of [320, 390, 768, 1024, 1280]) {
+    await page.setViewportSize({width, height: 900});
+    await page.goto('');
+    const box = await page.locator('h1 em').boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    expect(box!.height).toBeLessThan(60);
+  }
 });
