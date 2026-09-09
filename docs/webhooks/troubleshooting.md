@@ -532,7 +532,7 @@ If you're still stuck after trying these solutions:
    - Error messages
 
 2. **Check existing issues:**
-   - GitHub Issues: https://github.com/777genius/claude-notifications-go/issues
+   - GitHub Issues: https://github.com/777genius/agent-notifications/issues
 
 3. **Create detailed issue:**
    - Include reproduction steps

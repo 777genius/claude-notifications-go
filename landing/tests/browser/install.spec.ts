@@ -38,7 +38,7 @@ test("production command matrix, aftercare, clipboard and configuration", async 
         )
           await page.getByRole("button", { name: intent, exact: true }).click();
         await expect(page.getByLabel(intent + " command")).toHaveValue(
-          "curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh |\nbash -s -- --product " +
+          "curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh |\nbash -s -- --product " +
             product,
         );
       }
@@ -91,7 +91,7 @@ test("unknown target, manual route and mobile layout", async ({ browser }) => {
     reducedMotion: "reduce",
   });
   const page = await context.newPage();
-  await page.goto("http://127.0.0.1:4173/claude-notifications-go/");
+  await page.goto("http://127.0.0.1:4173/agent-notifications/");
   await expect(page.getByRole("button", { name: "Copy command" })).toHaveCount(
     0,
   );
@@ -126,7 +126,7 @@ test("keyboard navigation, base-path reload and desktop screenshot", async ({
   for (const asset of await page
     .locator("script[src]")
     .evaluateAll((nodes) => nodes.map((n) => (n as HTMLScriptElement).src)))
-    expect(asset).toContain("/claude-notifications-go/");
+    expect(asset).toContain("/agent-notifications/");
   await page.screenshot({ path: "test-results/desktop.png", fullPage: true });
 });
 test("pending clipboard completion cannot claim a different command was copied", async ({
@@ -290,7 +290,7 @@ test("guided reference layout, detected OS and mode focus", async ({
     reducedMotion: "reduce",
   });
   const page = await context.newPage();
-  await page.goto("http://127.0.0.1:4173/claude-notifications-go/");
+  await page.goto("http://127.0.0.1:4173/agent-notifications/");
   await expect(page.locator(".os-summary")).toContainText("macOS");
   await expect(page.locator(".os-summary")).toContainText(
     "Detected automatically",

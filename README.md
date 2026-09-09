@@ -1,10 +1,10 @@
-<h1 align="center">Claude Notifications (plugin)</h1>
+<h1 align="center">Agent Notifications</h1>
 
-[![Ubuntu CI](https://github.com/777genius/claude-notifications-go/workflows/Ubuntu%20CI/badge.svg)](https://github.com/777genius/claude-notifications-go/actions)
-[![macOS CI](https://github.com/777genius/claude-notifications-go/workflows/macOS%20CI/badge.svg)](https://github.com/777genius/claude-notifications-go/actions)
-[![Windows CI](https://github.com/777genius/claude-notifications-go/workflows/Windows%20CI/badge.svg)](https://github.com/777genius/claude-notifications-go/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/777genius/claude-notifications-go)](https://goreportcard.com/report/github.com/777genius/claude-notifications-go)
-[![codecov](https://codecov.io/gh/777genius/claude-notifications-go/branch/main/graph/badge.svg)](https://codecov.io/gh/777genius/claude-notifications-go)
+[![Ubuntu CI](https://github.com/777genius/agent-notifications/workflows/Ubuntu%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
+[![macOS CI](https://github.com/777genius/agent-notifications/workflows/macOS%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
+[![Windows CI](https://github.com/777genius/agent-notifications/workflows/Windows%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/777genius/agent-notifications)](https://goreportcard.com/report/github.com/777genius/agent-notifications)
+[![codecov](https://codecov.io/gh/777genius/agent-notifications/branch/main/graph/badge.svg)](https://codecov.io/gh/777genius/agent-notifications)
 
 <div>
 <table>
@@ -17,6 +17,8 @@
 </div>
 
 Notifications for Claude Code and Codex CLI (beta), with sounds, git branch display, and webhook integrations. See [Codex support and limitations](#codex-cli-support-beta) for differences between products.
+
+> **Compatibility:** the product and repository are now named **Agent Notifications** / `agent-notifications`. Existing executable names, Claude plugin commands, installation directories, environment variables, and configuration paths keep their `claude-notifications*` names during the migration, so current installations continue to update without manual changes.
 
 > **Boost your productivity** — check out the [advanced task manager for Claude with a convenient UI](https://github.com/777genius/claude_agent_teams_ui), from the creator of this plugin.
 
@@ -63,12 +65,12 @@ Notifications for Claude Code and Codex CLI (beta), with sounds, git branch disp
 
 ### Quick Install (Recommended)
 
-Prefer a guided setup? [Open the installation guide](https://777genius.github.io/claude-notifications-go/#install) to choose your agent, OS and task.
+Prefer a guided setup? [Open the installation guide](https://777genius.github.io/agent-notifications/#install) to choose your agent, OS and task.
 
 One command to install or update the notifications plugin for Claude Code, Codex, or both. The interactive menu asks you to choose:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash
 ```
 
 > Windows users: open Git Bash from the Start menu and run this command there. Do not run the `curl ... | bash` command from PowerShell or Windows Terminal if `bash` opens WSL, because that targets Linux paths and binaries instead of Windows.
@@ -76,7 +78,7 @@ curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/m
 For automation or terminals without a controlling TTY, choose explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash -s -- --product codex
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash -s -- --product codex
 ```
 
 Use `claude`, `codex`, or `both`. This installs the notifications plugin; the selected Claude Code / Codex CLI must already be on `PATH`.
@@ -100,7 +102,7 @@ Run these slash commands in the Claude Code chat, not in your system terminal:
 
 ```text
 # 1) Add marketplace
-/plugin marketplace add 777genius/claude-notifications-go
+/plugin marketplace add 777genius/agent-notifications
 # 2) Install plugin
 /plugin install claude-notifications-go@claude-notifications-go
 # 3) Restart Claude Code
@@ -119,7 +121,7 @@ Run these slash commands in the Claude Code chat, not in your system terminal:
 Run the same command and choose the product(s) you want to update:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash
 ```
 
 For Claude, restart Claude Code. For Codex, restart Codex and inspect `/hooks`; changed hook definitions may need trust approval again. The installer refreshes the Codex runtime and registration automatically. Existing foreign hooks and shared settings in `~/.claude/claude-notifications-go/config.json` are preserved.

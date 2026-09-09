@@ -4,7 +4,7 @@ disable-model-invocation: true
 allowed-tools: Bash
 ---
 
-# 📥 Initialize Claude Notifications Binary
+# 📥 Initialize Agent Notifications Binary
 
 This command downloads the notification binary for your platform (macOS, Linux, or Windows).
 
@@ -30,7 +30,7 @@ echo "Plugin root: $PLUGIN_ROOT"
 echo ""
 
 # Always download the latest install.sh from GitHub to ensure we have newest version
-INSTALL_SCRIPT_URL="https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/install.sh"
+INSTALL_SCRIPT_URL="https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/install.sh"
 # Use portable temp directory (works on macOS, Linux, Windows Git Bash)
 TEMP_DIR="${TMPDIR:-${TEMP:-/tmp}}"
 TEMP_INSTALL_SCRIPT="${TEMP_DIR}/claude-notifications-install-$$.sh"

@@ -32,7 +32,7 @@ jobs:
       - run: npm run test
       - run: npm run generate
         env:
-          NUXT_APP_BASE_URL: /claude-notifications-go/
+          NUXT_APP_BASE_URL: /agent-notifications/
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - uses: actions/upload-artifact@v7

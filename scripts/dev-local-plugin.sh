@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local development helper for Claude Notifications plugin installs/updates.
+# Local development helper for Agent Notifications plugin installs/updates.
 # Uses an isolated CLAUDE_CONFIG_DIR by default so local testing never touches
 # your real Claude installation unless you explicitly opt into that.
 

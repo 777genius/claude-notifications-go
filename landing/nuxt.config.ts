@@ -2,9 +2,9 @@ export default defineNuxtConfig({
   compatibilityDate: "2026-09-09",
   devtools: { enabled: false },
   app: {
-    baseURL: process.env.NUXT_APP_BASE_URL || "/claude-notifications-go/",
+    baseURL: process.env.NUXT_APP_BASE_URL || "/agent-notifications/",
     head: {
-      title: "Claude Notifications — Stay in flow",
+      title: "Agent Notifications — Stay in flow",
       htmlAttrs: { lang: "en" },
       meta: [
         {

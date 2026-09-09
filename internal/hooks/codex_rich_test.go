@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/777genius/claude-notifications/internal/analyzer"
-	"github.com/777genius/claude-notifications/internal/codexsource"
+	"github.com/777genius/agent-notifications/internal/analyzer"
+	"github.com/777genius/agent-notifications/internal/codexsource"
 )
 
 func codexQuestionData(session, turn string, toolInput string) *codexsource.PreToolUseData {

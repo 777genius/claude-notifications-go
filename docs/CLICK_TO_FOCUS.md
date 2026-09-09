@@ -73,7 +73,7 @@ Falls back to standard notifications if no focus tool is available.
 If Linux click-to-focus focuses the wrong window, run the diagnostic script immediately after reproducing the failed click:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/scripts/linux-focus-debug.sh | bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/scripts/linux-focus-debug.sh | bash
 ```
 
 It writes a report file in the current directory with:

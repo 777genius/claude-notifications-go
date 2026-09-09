@@ -15,7 +15,7 @@ export const targets = [
   { value: "manual", label: "Manual instructions" },
 ] as const;
 export const intents = ["install", "update", "configure"] as const;
-export const repo = "https://github.com/777genius/claude-notifications-go";
+export const repo = "https://github.com/777genius/agent-notifications";
 export function detectTarget(ua: string, touchPoints = 0): Target {
   const browser = Bowser.getParser(ua);
   if (
@@ -41,5 +41,5 @@ export function command(
 ): string | null {
   if (intent === "configure" || target === "unknown" || target === "manual")
     return null;
-  return `curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash -s -- --product ${product}`;
+  return `curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash -s -- --product ${product}`;
 }

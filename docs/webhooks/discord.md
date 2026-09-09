@@ -18,7 +18,7 @@ Discord webhooks allow you to send automated messages to channels without requir
 
 ### 2. Configure Webhook
 
-1. **Name:** Set a name (e.g., "Claude Notifications")
+1. **Name:** Set a name (e.g., "Agent Notifications")
 2. **Channel:** Select the target channel from dropdown
 3. **Avatar:** (Optional) Upload a custom icon
 4. Click **"Copy Webhook URL"**
@@ -84,7 +84,7 @@ Claude Code
 [bold-cat] Created new authentication
 system with JWT tokens
 
-Session: abc-123 | Claude Notifications
+Session: abc-123 | Agent Notifications
 2025-10-19 15:30:45
 ```
 
@@ -101,7 +101,7 @@ Messages use Discord's **Embeds API**:
       "description": "[bold-cat] Created new authentication system with JWT tokens",
       "color": 2664261,
       "footer": {
-        "text": "Session: abc-123 | Claude Notifications"
+        "text": "Session: abc-123 | Agent Notifications"
       },
       "timestamp": "2025-10-19T15:30:45Z"
     }
@@ -255,7 +255,7 @@ Discord webhooks are a **common attack vector**. If an attacker gets your webhoo
 
 ## Best Practices
 
-1. **Dedicated channel** - Create a `#claude-notifications` channel
+1. **Dedicated channel** - Create an `#agent-notifications` channel
 2. **Custom avatar** - Upload Claude icon for easy identification
 3. **Enable retry** - Handle transient network failures
 4. **Monitor rate limits** - Discord has stricter limits than Slack

@@ -38,7 +38,7 @@ const features = [
             <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
             <path d="M9 21h6M12 1v2" /></svg></span
         ><span
-          >Claude Notifications<small>FOR YOUR CODING AGENTS</small></span
+          >Agent Notifications<small>FOR YOUR CODING AGENTS</small></span
         ></a
       >
       <nav aria-label="Main">
@@ -165,7 +165,7 @@ const features = [
       </section>
     </main>
     <footer>
-      <a class="brand" href="#">Claude Notifications</a
+      <a class="brand" href="#">Agent Notifications</a
       ><span
         >Built by <a href="https://github.com/777genius">777genius</a>. Open
         source.</span

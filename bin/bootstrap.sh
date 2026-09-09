@@ -1,6 +1,6 @@
 #!/bin/bash
 # bootstrap.sh - One-command install/update for claude-notifications plugin
-# Usage: curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Constants
-REPO="777genius/claude-notifications-go"
+REPO="777genius/agent-notifications"
 MARKETPLACE_SOURCE="${BOOTSTRAP_MARKETPLACE_SOURCE:-$REPO}"
 MARKETPLACE_NAME="claude-notifications-go"
 PLUGIN_NAME="claude-notifications-go"
@@ -43,7 +43,7 @@ _BOOTSTRAP_TMP=""  # temp file path for trap (set -u safe)
 print_header() {
     echo ""
     echo -e "${BOLD}============================================${NC}"
-    echo -e "${BOLD} Claude Notifications — Bootstrap Installer${NC}"
+    echo -e "${BOLD} Agent Notifications — Bootstrap Installer${NC}"
     echo -e "${BOLD}============================================${NC}"
     echo ""
 }
@@ -1097,7 +1097,7 @@ install_claude() {
     download_binary
     setup_iterm2_venv
     if [ "$PRODUCT" = both ]; then
-        echo "Claude notifications installed; continuing with Codex."
+    echo "Agent Notifications installed; continuing with Codex."
     else
         print_success
     fi
