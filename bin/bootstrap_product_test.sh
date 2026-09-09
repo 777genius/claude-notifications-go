@@ -129,9 +129,9 @@ assert r.returncode == 0, r.stdout.decode()
 assert (live/'bin/claude-notifications').read_text() == 'stale'
 # Menu routing for Claude/both uses explicit adapters; Codex below exercises
 # the complete bootstrap HTTP/staging path with fake runtime assets.
-dispatch = (root / 'bin/bootstrap.sh').read_text().replace('main "$@"', '')
+dispatch = (root / 'bin/bootstrap.sh').read_text(encoding='utf-8').replace('main "$@"', '')
 dispatch += '\ncheck_prerequisites() { :; }\nresolve_bootstrap_release() { :; }\ninstall_claude() { echo CLAUDE_ADAPTER; }\ninstall_codex() { echo CODEX_ADAPTER; }\nmain "$@"\n'
-(web / 'dispatch.sh').write_text(dispatch)
+(web / 'dispatch.sh').write_text(dispatch, encoding='utf-8')
 for choice, success in ([('1',True), ('2',True), ('3',True), ('invalid',False)] if os.name != 'nt' else []):
     entry = '/dispatch.sh' if choice in ['1', '3'] else '/bootstrap.sh'
     pid, fd = pty.fork()
