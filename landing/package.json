@@ -17,7 +17,8 @@
   "dependencies": {
     "bowser": "2.14.1",
     "nuxt": "3.21.11",
-    "vue": "3.5.42"
+    "vue": "3.5.42",
+    "reka-ui": "2.10.4"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

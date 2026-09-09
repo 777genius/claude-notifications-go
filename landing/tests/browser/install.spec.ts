@@ -1,4 +1,16 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+async function chooseOS(page: Page, value: string) {
+  const labels: Record<string, string> = {
+    macos: "macOS",
+    linux: "Linux",
+    windows: "Windows · Git Bash",
+    manual: "Manual instructions",
+  };
+  await page
+    .getByRole("combobox", { name: "02 / Target operating system" })
+    .click();
+  await page.getByRole("option", { name: labels[value], exact: true }).click();
+}
 test("production command matrix, aftercare, clipboard and configuration", async ({
   page,
 }) => {
@@ -15,7 +27,7 @@ test("production command matrix, aftercare, clipboard and configuration", async 
   ]) {
     await page.getByRole("button", { name, exact: true }).click();
     for (const os of ["macos", "linux", "windows"]) {
-      await page.getByLabel("02 / Target operating system").selectOption(os);
+      await chooseOS(page, os);
       for (const intent of ["Install", "Update"]) {
         await page.getByRole("button", { name: intent, exact: true }).click();
         await expect(page.getByLabel(intent + " command")).toHaveValue(
@@ -76,11 +88,11 @@ test("unknown target, manual route and mobile layout", async ({ browser }) => {
   await expect(page.getByRole("button", { name: "Copy command" })).toHaveCount(
     0,
   );
-  await page.getByLabel("02 / Target operating system").selectOption("manual");
+  await chooseOS(page, "manual");
   await expect(
     page.getByRole("link", { name: "Manual Claude installation", exact: true }),
   ).toBeVisible();
-  await page.getByLabel("02 / Target operating system").selectOption("windows");
+  await chooseOS(page, "windows");
   await expect(
     page.getByRole("button", { name: "Copy command" }),
   ).toBeVisible();
@@ -124,7 +136,7 @@ test("pending clipboard completion cannot claim a different command was copied",
     }),
   );
   await page.goto("");
-  await page.getByLabel("02 / Target operating system").selectOption("linux");
+  await chooseOS(page, "linux");
   await page.getByRole("button", { name: "Copy command" }).click();
   await page.getByRole("button", { name: "Both agents", exact: true }).click();
   await page.evaluate(() => (window as any).finishCopy());
@@ -159,4 +171,84 @@ test("assets load, hydration is clean and reduced motion disables background ani
     await page.locator("h1").evaluate((n) => getComputedStyle(n).fontSize),
   ).not.toBe("32px");
   expect(errors).toEqual([]);
+});
+test("notification sequence covers statuses and agents, pause and reduced motion", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const cards = page.locator(".notification-card");
+  const initial = await cards.allTextContents();
+  await page.clock.fastForward(7000);
+  expect(await cards.allTextContents()).toEqual(initial);
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  const seen = new Set<string>();
+  for (let i = 0; i < 7; i++) {
+    for (const title of await cards.locator("h3").allTextContents())
+      seen.add(title);
+    await page.clock.fastForward(3400);
+    await page.clock.runFor(600);
+  }
+  expect([...seen].sort()).toEqual(
+    [
+      "❓ Question",
+      "📋 Plan",
+      "✅ Completed",
+      "🔍 Review",
+      "🔐 Permission Request",
+      "⏱️ Session Limit Reached",
+      "🔴 API Error: 401",
+    ].sort(),
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(
+    page.getByRole("button", { name: "Next", exact: true }),
+  ).toBeVisible();
+  const staticCards = await cards.allTextContents();
+  await page.clock.fastForward(10000);
+  expect(await cards.allTextContents()).toEqual(staticCards);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  expect(await cards.allTextContents()).not.toEqual(staticCards);
+});
+test("installation order, sticky header and custom select keyboard behavior", async ({
+  page,
+}) => {
+  await page.goto("");
+  expect(
+    await page
+      .locator("main > *")
+      .evaluateAll((nodes) =>
+        nodes.map((n) => n.id || n.className).slice(0, 2),
+      ),
+  ).toEqual(["hero-wrap", "install"]);
+  for (const title of await page.locator("h1,h2,h3").allTextContents())
+    expect(title).not.toContain(".");
+  const select = page.getByRole("combobox", {
+    name: "02 / Target operating system",
+  });
+  await select.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("option", { name: "Linux", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(
+    page.getByRole("option", { name: "Choose target OS", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(select).toContainText("macOS");
+  await expect(select).toBeFocused();
+  expect(
+    await page
+      .locator(".header")
+      .evaluate((n) => Math.abs(n.getBoundingClientRect().top)),
+  ).toBeLessThan(1);
+  for (const logo of await page
+    .locator(".agent-logo")
+    .evaluateAll((nodes) =>
+      nodes.map((n) => (n as HTMLImageElement).naturalWidth),
+    ))
+    expect(logo).toBeGreaterThan(0);
 });
