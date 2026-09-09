@@ -82,14 +82,15 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-width: 1260px;
-  margin: auto;
-  padding: 0 34px;
-  border-bottom: 1px solid var(--line);
+  width: 100%;
+  margin: 0;
+  padding: 0 max(34px, calc((100% - 1192px) / 2));
+  border-bottom: 1px solid rgba(0, 240, 255, 0.08);
   position: sticky;
   top: 0;
-  background: #0a0a0feb;
-  backdrop-filter: blur(18px);
+  background: rgba(10, 10, 15, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   z-index: 30;
 }
 .brand {
@@ -219,14 +220,14 @@ h1 em {
   margin-top: 20px;
 }
 .compatibility {
-  max-width: 1192px;
-  margin: 65px auto 0;
+  width: 100%;
+  margin: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 20px;
-  border-block: 1px solid var(--line);
-  padding: 24px 0;
+  border: 0;
+  padding: 14px 34px;
 }
 .compatibility > span {
   font-size: 9px;
@@ -480,7 +481,8 @@ footer .brand {
     margin: 0 auto;
   }
   .compatibility {
-    margin: 0 28px;
+    margin: 0;
+    padding-inline: 28px;
     flex-wrap: wrap;
   }
   .compatibility .platforms {
@@ -592,7 +594,8 @@ footer .brand {
     left: 10px;
   }
   .compatibility {
-    margin: 0 22px;
+    margin: 0;
+    padding-inline: 22px;
     gap: 15px;
   }
   .compatibility > span:first-child {
@@ -862,7 +865,7 @@ footer .brand {
 /* Owner-selected installation reference: docs/design/installation-reference.png */
 .guided-install {
   max-width: 1120px;
-  padding-top: 65px;
+  padding-top: 24px;
 }
 .install-heading {
   text-align: center;
