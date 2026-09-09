@@ -238,6 +238,7 @@ test("installation order, sticky header and custom select keyboard behavior", as
     page.getByRole("option", { name: "Choose target OS", exact: true }),
   ).toBeFocused();
   await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("option", { name: "macOS", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(select).toContainText("macOS");
   await expect(select).toBeFocused();
