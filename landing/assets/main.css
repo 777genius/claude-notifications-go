@@ -1231,3 +1231,23 @@ footer .brand {
     gap: 10px;
   }
 }
+
+/* Give the headline priority over the illustrative notification stack. */
+@media (min-width: 901px) {
+  .hero { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
+  h1 { font-size: clamp(44px, 4.25vw, 60px); }
+}
+.notification-preview { justify-self: center; max-width: 285px; }
+.notification-stack { gap: 6px; min-height: 200px; }
+.notification-card { min-height: 58px; padding: 9px; gap: 7px; border-radius: 11px; }
+.notification-card .agent-logo { width: 24px; height: 24px; }
+.notification-copy, .notification-copy p { font-size: 8px; line-height: 1.35; }
+.notification-title { gap: 4px; }
+.notification-title h3 { font-size: 9px; letter-spacing: -.1px; }
+.notification-title > span { font-size: 7px; }
+.notification-copy p, .notification-detail { margin-top: 2px; }
+.preview-heading { letter-spacing: 1px; font-size: 8px; }
+.install-command-line { position: relative; padding-right: 60px; }
+.copy-icon { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid #34435a; border-radius: 7px; background: #141c29; color: #b9d9ec; }
+.copy-icon:hover { background: #223249; color: #8ff5ff; }
+@media (min-width: 561px) and (max-width: 900px) { h1 { font-size: clamp(36px, 5.6vw, 50px); } }
