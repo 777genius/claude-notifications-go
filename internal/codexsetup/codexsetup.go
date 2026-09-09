@@ -797,6 +797,10 @@ func runtimeBinary(name string) bool {
 		for _, arch := range []string{"amd64", "arm64"} {
 			expected := "claude-notifications-" + platform + "-" + arch
 			if platform == "windows" {
+				// Toast clicks use the GUI helper to avoid opening a console window.
+				if name == expected+"-focus.exe" {
+					return true
+				}
 				expected += ".exe"
 			}
 			if name == expected {

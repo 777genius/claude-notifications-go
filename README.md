@@ -16,7 +16,7 @@
 </table>
 </div>
 
-Smart notifications for Claude Code with click-to-focus, git branch display, and webhook integrations.
+Notifications for Claude Code and Codex CLI (beta), with sounds, git branch display, and webhook integrations. See [Codex support and limitations](#codex-cli-support-beta) for differences between products.
 
 > **Boost your productivity** — check out the [advanced task manager for Claude with a convenient UI](https://github.com/777genius/claude_agent_teams_ui), from the creator of this plugin.
 
@@ -29,6 +29,7 @@ Smart notifications for Claude Code with click-to-focus, git branch display, and
     - [Manual Install](#manual-install)
     - [Updating](#updating)
   - [Supported Notification Types](#supported-notification-types)
+  - [Codex CLI Support (beta)](#codex-cli-support-beta)
   - [Platform Support](#platform-support)
     - [Click-to-Focus (macOS & Linux)](#click-to-focus-macos--linux)
   - [Configuration](#configuration)
@@ -44,7 +45,7 @@ Smart notifications for Claude Code with click-to-focus, git branch display, and
 ## Features
 
 - **Cross-platform**: macOS (Intel & Apple Silicon), Linux (x64 & ARM64), Windows 10+ (x64)
-- **6 notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit, API Error
+- **Claude notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit, API Error
 - **Click-to-focus** (macOS, Linux): click notification to focus the exact project window and tab — Ghostty, VS Code, iTerm2, Warp, kitty, WezTerm, Alacritty, Hyper, Apple Terminal, GNOME Terminal, Konsole, Tilix, Terminator, XFCE4 Terminal, MATE Terminal
 - **Multiplexers**: tmux (including iTerm2 -CC integration mode), zellij, WezTerm, kitty — click switches to the correct session/pane/tab
 - **Git branch in title**: `✅ Completed main [cat]`
@@ -76,13 +77,17 @@ For automation or terminals without a controlling TTY, choose explicitly:
 curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash -s -- --product codex
 ```
 
-Use `claude`, `codex`, or `both`. All selected host CLIs must already be on `PATH`. Codex installation requires a published stable release v1.42.0 or newer; source and binaries use the same release tag. It respects `CODEX_HOME` and automatically registers hooks using `setup-codex`. Then start Codex, run `/hooks`, and review and trust the entries yourself. Installation does not grant trust.
+Use `claude`, `codex`, or `both`. This installs the notifications plugin; the selected Claude Code / Codex CLI must already be on `PATH`.
 
-For Claude, restart Claude Code and optionally run `/claude-notifications-go:settings` to configure sounds.
+After installation:
 
-The binary is downloaded once and cached locally. You can re-run `/claude-notifications-go:settings` anytime to reconfigure.
+- **Claude:** restart Claude Code. Optionally run `/claude-notifications-go:settings` to configure sounds.
+- **Codex:** start Codex, run `/hooks`, then review and trust the installed hooks. The installer registers them automatically; no JSON editing or manual registration command is needed. Trust approval remains yours.
+- **Both:** complete both steps above.
 
-> If the bootstrap script doesn't work for your environment, use the [Manual Install](#manual-install) steps below inside Claude Code.
+Codex requires a published stable plugin release v1.42.0 or newer. The installer downloads matching source and binaries, respects `CODEX_HOME`, and keeps a permanent runtime copy there. It reports an error if no supported release is published yet.
+
+> If installation fails, use [manual Claude installation](#manual-install) or [manual Codex registration](#manual-codex-registration), depending on the product.
 
 ### Manual Install
 
@@ -109,16 +114,16 @@ Run these slash commands in the Claude Code chat, not in your system terminal:
 
 ### Updating
 
-Run the same command as for installation — it will update both the plugin and the binary:
+Run the same command and choose the product(s) you want to update:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash
 ```
 
-Then restart Claude Code to apply the new version. Your settings in `~/.claude/claude-notifications-go/config.json` are preserved across updates.
+For Claude, restart Claude Code. For Codex, restart Codex and inspect `/hooks`; changed hook definitions may need trust approval again. The installer refreshes the Codex runtime and registration automatically. Existing foreign hooks and shared settings in `~/.claude/claude-notifications-go/config.json` are preserved.
 
 <details>
-<summary>Manual update (if bootstrap didn't work)</summary>
+<summary>Manual Claude update (if bootstrap didn't work)</summary>
 
 Claude Code also periodically checks for plugin updates automatically. Binaries are updated on the next hook invocation when a version mismatch is detected.
 
@@ -132,6 +137,8 @@ If the binary auto-update didn't work (e.g. no internet at the time), run `/clau
 </details>
 
 ## Supported Notification Types
+
+The Claude triggers are listed below. Codex uses a different event mapping, described in [Codex support](#codex-cli-support-beta).
 
 | Status | Icon | Description | Trigger |
 |--------|------|-------------|---------|
@@ -149,17 +156,17 @@ The same binary can notify for OpenAI Codex CLI sessions.
 
 ### Setup
 
-The registration command is implemented in Go and does not require `jq`. You need a
-Codex-capable release (v1.42.0 or later) and its plugin bundle; an older binary cannot run
-`setup-codex`. The command is not automatically added to your `PATH` by the Claude plugin.
-
 Use the [one-command installer](#quick-install-recommended) and choose Codex or both.
-It downloads matching release source and binaries in temporary staging, registers the
-stable runtime copy, and removes staging automatically. Re-run it to update.
+It downloads matching release source and binaries, registers the hooks, and keeps a stable
+runtime copy. Then start Codex and approve the entries in `/hooks`.
 
-For manual registration, use a downloaded **matching release** bundle and binary:
+### Manual Codex registration
 
-From an already downloaded plugin bundle, run the binary by its path:
+Skip this section if you used the one-command installer. For manual setup, download a
+matching release bundle and binary (v1.42.0 or newer). The Go registration command needs
+no `jq` and is not automatically added to your `PATH`.
+
+From the bundle directory:
 
 ```bash
 ./bin/claude-notifications setup-codex --plugin-root .
@@ -178,15 +185,14 @@ It installs a self-contained copy of the plugin at `~/.codex/claude-notification
 the hook entries into `~/.codex/hooks.json`. Existing foreign hook definitions and unknown fields are preserved,
 and every run saves a uniquely named backup of the previous file next to it.
 
-Then start Codex, run `/hooks`, review the entries and trust them — Codex asks once.
+Then start Codex, run `/hooks`, review the entries and trust them.
 
 Useful flags: `--dry-run` shows what would change, `--print` outputs the JSON so you can merge it
 yourself, `--codex-home` and `--plugin-root` override the paths.
 
-After updating the plugin, run the command again to refresh the installed copy. The registration
-itself does not change, so Codex does not ask you to trust the hooks again.
-With the bootstrap installer, re-run the same one-liner and select Codex or both to
-install the latest supported stable release and refresh registration automatically.
+For manual updates, run the registration command again to refresh the installed copy.
+Unchanged hook definitions retain trust; changed definitions require review again.
+The one-command installer handles this registration step automatically.
 
 Claude Code installation and updates continue to use the [existing installation steps](#installation).
 Both products share settings at `~/.claude/claude-notifications-go/config.json`; installing
