@@ -1,0 +1,28 @@
+{
+  "name": "claude-notifications-landing",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt generate",
+    "generate": "nuxt generate",
+    "typecheck": "nuxt typecheck",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "preview": "node scripts/serve.mjs",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "bowser": "2.14.1",
+    "nuxt": "3.21.11",
+    "vue": "3.5.42"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.2",
+    "typescript": "6.0.3",
+    "vue-tsc": "3.3.11"
+  }
+}
