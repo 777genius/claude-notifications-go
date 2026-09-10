@@ -6,6 +6,8 @@
   "language": {
     "label": "Language",
     "current": "Current language: {language}",
+    "search": "Search languages",
+    "noResults": "No languages found",
     "switchError": "Unable to change language. Please try again."
   },
   "accessibility": {

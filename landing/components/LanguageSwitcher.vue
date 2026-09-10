@@ -1,19 +1,45 @@
 <script setup lang="ts">
-import { isLocaleCode, supportedLocales } from "~/data/i18n";
+import { isLocaleCode, supportedLocales, type LocaleCode } from "~/data/i18n";
 
 const { locale, setLocale, t, te } = useI18n();
+const root = ref<HTMLElement>();
+const searchInput = ref<HTMLInputElement>();
+const open = ref(false);
+const query = ref("");
 const pending = ref(false);
 const error = ref(false);
 
-const currentName = computed(
+const currentLocale = computed(
   () =>
-    supportedLocales.find((item) => item.code === locale.value)?.name ??
-    supportedLocales[0].name,
+    supportedLocales.find((item) => item.code === locale.value) ??
+    supportedLocales[0],
 );
+const filteredLocales = computed(() => {
+  const needle = query.value.trim().toLocaleLowerCase();
+  if (!needle) return supportedLocales;
+  return supportedLocales.filter((item) =>
+    `${item.name} ${item.code} ${item.language}`
+      .toLocaleLowerCase()
+      .includes(needle),
+  );
+});
 
-async function changeLanguage(event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
-  if (!isLocaleCode(value) || value === locale.value || pending.value) return;
+function toggle() {
+  if (pending.value) return;
+  open.value = !open.value;
+  error.value = false;
+}
+
+function close() {
+  open.value = false;
+  query.value = "";
+}
+
+async function selectLanguage(value: LocaleCode) {
+  if (!isLocaleCode(value) || value === locale.value || pending.value) {
+    close();
+    return;
+  }
 
   pending.value = true;
   error.value = false;
@@ -22,6 +48,7 @@ async function changeLanguage(event: Event) {
     await setLocale(value);
     if (!te("seo.title", value))
       throw new Error(`Locale messages for ${value} were not loaded`);
+    close();
   } catch {
     if (locale.value !== previousLocale) {
       try {
@@ -31,27 +58,93 @@ async function changeLanguage(event: Event) {
       }
     }
     error.value = true;
-    (event.target as HTMLSelectElement).value = locale.value;
   } finally {
     pending.value = false;
   }
 }
+
+function focusFirstOption() {
+  root.value?.querySelector<HTMLButtonElement>("[role='option']")?.focus();
+}
+
+function onDocumentPointerDown(event: PointerEvent) {
+  if (!root.value?.contains(event.target as Node)) close();
+}
+
+watch(open, async (isOpen) => {
+  if (!isOpen) return;
+  await nextTick();
+  searchInput.value?.focus();
+});
+
+onMounted(() => document.addEventListener("pointerdown", onDocumentPointerDown));
+onBeforeUnmount(() =>
+  document.removeEventListener("pointerdown", onDocumentPointerDown),
+);
 </script>
 
 <template>
-  <div class="language-switcher">
-    <span class="language-switcher__icon" aria-hidden="true">文</span>
-    <select
-      :value="locale"
-      :aria-label="t('language.current', { language: currentName })"
+  <div ref="root" class="language-switcher">
+    <button
+      class="language-switcher__trigger"
+      type="button"
+      :aria-label="t('language.current', { language: currentLocale.name })"
+      aria-haspopup="listbox"
+      :aria-expanded="open"
+      aria-controls="language-options"
       :disabled="pending"
       :aria-busy="pending"
-      @change="changeLanguage"
+      @click="toggle"
+      @keydown.down.prevent="open = true"
+      @keydown.esc="close"
     >
-      <option v-for="item in supportedLocales" :key="item.code" :value="item.code">
-        {{ item.name }}
-      </option>
-    </select>
+      <span class="language-switcher__glyph" aria-hidden="true">文</span>
+      <span>{{ currentLocale.name }}</span>
+      <svg class="language-switcher__chevron" viewBox="0 0 12 8" aria-hidden="true">
+        <path d="m1 1 5 5 5-5" />
+      </svg>
+    </button>
+
+    <div v-if="open" class="language-switcher__popover">
+      <label class="language-switcher__search">
+        <span class="visually-hidden">{{ t("language.search") }}</span>
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <circle cx="8.5" cy="8.5" r="5.5" />
+          <path d="m13 13 4 4" />
+        </svg>
+        <input
+          ref="searchInput"
+          v-model="query"
+          type="search"
+          autocomplete="off"
+          :placeholder="t('language.search')"
+          @keydown.esc.prevent="close"
+          @keydown.down.prevent="focusFirstOption"
+        />
+      </label>
+
+      <div id="language-options" class="language-switcher__options" role="listbox" :aria-label="t('language.label')">
+        <button
+          v-for="item in filteredLocales"
+          :key="item.code"
+          type="button"
+          role="option"
+          :aria-selected="item.code === locale"
+          :class="{ active: item.code === locale }"
+          @click="selectLanguage(item.code)"
+        >
+          <span class="language-switcher__code" aria-hidden="true">{{ item.code.toUpperCase() }}</span>
+          <span>{{ item.name }}</span>
+          <svg v-if="item.code === locale" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m3 8 3 3 7-7" />
+          </svg>
+        </button>
+        <p v-if="filteredLocales.length === 0" class="language-switcher__empty">
+          {{ t("language.noResults") }}
+        </p>
+      </div>
+    </div>
+
     <span v-if="error" class="visually-hidden" role="alert">
       {{ t("language.switchError") }}
     </span>

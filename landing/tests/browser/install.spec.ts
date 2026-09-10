@@ -15,6 +15,10 @@ async function chooseOS(page: Page, value: string) {
   await page.getByRole("combobox", { name: "Target operating system" }).click();
   await page.getByRole("option", { name: labels[value], exact: true }).click();
 }
+async function chooseLanguage(page: Page, current: RegExp, language: string) {
+  await page.getByRole("button", { name: current }).click();
+  await page.getByRole("option", { name: language, exact: true }).click();
+}
 test("production command matrix, aftercare, clipboard and configuration", async ({
   page,
 }) => {
@@ -187,8 +191,7 @@ test("language switch localizes content, URL, metadata and persists the choice",
   await page.getByRole("button", { name: "Codex CLI · beta", exact: true }).click();
   await chooseOS(page, "windows");
   await expect(page.getByLabel("Install command")).toHaveValue(/--product codex$/);
-  const language = page.getByRole("combobox", { name: /Current language/ });
-  await language.selectOption("zh");
+  await chooseLanguage(page, /Current language/, "简体中文");
   await expect(page).toHaveURL(/\/agent-notifications\/zh\/?\?source=i18n#features$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("保持专注");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
@@ -197,13 +200,17 @@ test("language switch localizes content, URL, metadata and persists the choice",
     "content",
     /桌面通知/,
   );
+  await expect(page.locator('meta[property="og:type"]')).toHaveAttribute("content", "website");
+  expect(
+    await page.locator('script[type="application/ld+json"]').textContent(),
+  ).toContain("SoftwareApplication");
   await expect(page.getByLabel("安装命令")).toHaveValue(/--product codex$/);
   await expect(page.getByText("请在 Windows 的 Git Bash 中运行。", { exact: true })).toBeVisible();
   expect((await page.context().cookies()).find((cookie) => cookie.name === "agent_notifications_locale")?.value).toBe("zh");
 
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("保持专注");
-  await page.getByRole("combobox", { name: /当前语言/ }).selectOption("en");
+  await chooseLanguage(page, /当前语言/, "English");
   await expect(page).toHaveURL(/\/agent-notifications\/?\?source=i18n#features$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Stay in flow");
 });
@@ -212,12 +219,31 @@ test("failed locale payload keeps the working language and reports the error", a
 }) => {
   await page.route("**/_i18n/**/zh/messages.json", (route) => route.abort());
   await page.goto("");
-  await page.getByRole("combobox", { name: /Current language/ }).selectOption("zh");
+  await chooseLanguage(page, /Current language/, "简体中文");
   await expect(page.getByRole("alert")).toContainText(
     "Unable to change language",
   );
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Stay in flow");
   await expect(page).toHaveURL(/\/agent-notifications\/?$/);
+});
+test("language menu is searchable, keyboard accessible and closes outside", async ({
+  page,
+}) => {
+  await page.goto("");
+  const trigger = page.getByRole("button", { name: /Current language/ });
+  await trigger.press("ArrowDown");
+  const search = page.getByRole("searchbox", { name: "Search languages" });
+  await expect(search).toBeFocused();
+  await search.fill("zh-CN");
+  await expect(page.getByRole("option", { name: "简体中文" })).toBeVisible();
+  await expect(page.getByRole("option", { name: "English" })).toHaveCount(0);
+  await search.fill("missing");
+  await expect(page.getByText("No languages found", { exact: true })).toBeVisible();
+  await search.press("Escape");
+  await expect(search).toHaveCount(0);
+  await trigger.click();
+  await page.locator("main").click({ position: { x: 5, y: 5 } });
+  await expect(page.getByRole("searchbox", { name: "Search languages" })).toHaveCount(0);
 });
 test("notification sequence covers statuses and agents, pause and reduced motion", async ({
   page,
