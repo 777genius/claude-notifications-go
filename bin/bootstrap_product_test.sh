@@ -250,6 +250,8 @@ registry.write_text(json.dumps({'plugins':{'claude-notifications-go@claude-notif
 (cli/'claude').write_bytes(claude_script.encode('utf-8')); (cli/'claude').chmod(0o755)
 def events():
     return [json.loads(line) for line in trace.read_text().splitlines()] if trace.exists() else []
+def path_ids(values):
+    return [pathlib.Path(value).resolve() for value in values]
 def reset_case():
     # Every directory is an explicit child of this fixture, never host state.
     for key in ['HOME','XDG_CONFIG_HOME','CODEX_HOME','CLAUDE_CONFIG_DIR']:
@@ -295,11 +297,11 @@ for target_name in ['installed_plugins.json','known_marketplaces.json','settings
         after={name:(path.read_bytes() if path.exists() else None) for name,path in targets.items()}
         assert after==before
         protected=json.loads(request.read_text())['protectedPaths']
-        assert protected==[
-            str(pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'plugins/installed_plugins.json'),
-            str(pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'plugins/known_marketplaces.json'),
-            str(pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'settings.json'),
-        ]
+        assert path_ids(protected)==path_ids([
+            pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'plugins/installed_plugins.json',
+            pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'plugins/known_marketplaces.json',
+            pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'settings.json',
+        ])
 reset_case()
 legacy=pathlib.Path(env['HOME'])/'.claude/claude-notifications-go/config.json'
 legacy.parent.mkdir(parents=True); legacy.write_bytes(b'{ "future": {"x":1} }\n')
@@ -321,7 +323,7 @@ for value in [b'{"personalized":true}',b'{}']:
     output=run(['--product','claude'],1)
     assert 'import-required' in output and not any(e[:1]==['claude'] for e in events())
     assert (active/'bin/runtime').read_bytes()==b'working-runtime'
-    assert json.loads(request.read_text())['activeBundleRoots']==[str(active)]
+    assert path_ids(json.loads(request.read_text())['activeBundleRoots'])==path_ids([active])
 # A verified exact-version template permits initialization. Personalized bytes
 # against that same template still stop; current template is never substituted.
 dest=web/'download/v1.40.0'; dest.mkdir()
@@ -348,8 +350,8 @@ for product in ['codex', 'claude', 'both']:
     run(['--product',product],0 if product=='codex' else 1)
     if product=='codex':
         req=json.loads(request.read_text())
-        assert req['activeBundleRoots']==[]
-        assert req['refreshDirs']==[str(pathlib.Path(env['CODEX_HOME'])/'claude-notifications-go')]
+        assert path_ids(req['activeBundleRoots'])==[]
+        assert path_ids(req['refreshDirs'])==path_ids([pathlib.Path(env['CODEX_HOME'])/'claude-notifications-go'])
         assert len(init_events())==1
         assert not any(e[:1]==['claude'] for e in events())
         assert not any('v1.40.0' in path for path in request_paths)
