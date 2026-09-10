@@ -1,10 +1,31 @@
 package config
 
 import (
+	"encoding/json"
+	"errors"
 	"io/fs"
+	"syscall"
 	"testing"
 	"time"
 )
+
+func TestPathErrorPrivateCauseMetadata(t *testing.T) {
+	err := pathErrorAt("/safe/path", "resolve-lstat", syscall.Errno(32))
+	var ce *Error
+	if !errors.As(err, &ce) || ce.causeStage != "resolve-lstat" || ce.causeErrno != 32 {
+		t.Fatalf("cause metadata not retained: %#v", ce)
+	}
+	raw, marshalErr := json.Marshal(ce)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	if string(raw) != `{"Code":"ConfigInvalid","Path":"/safe/path","Offset":0}` {
+		t.Fatalf("private cause metadata escaped: %s", raw)
+	}
+	if got := ce.Error(); got != `ConfigInvalid: path="/safe/path" offset=0` {
+		t.Fatalf("public error changed: %s", got)
+	}
+}
 
 type fakeEntry struct {
 	name string

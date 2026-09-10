@@ -1,6 +1,10 @@
 package config
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"syscall"
+)
 
 // Code is a stable, content-free diagnostic category.
 type Code string
@@ -34,9 +38,23 @@ type Error struct {
 	Path    string
 	Pointer string `json:"-"`
 	Offset  int64
+	// causeStage and causeErrno are deliberately unexported, diagnostic-only
+	// metadata for package tests. They let native stress tests distinguish an
+	// OS race from a document error without exposing raw OS messages or paths.
+	causeStage string
+	causeErrno uintptr
 }
 
 func (e *Error) Error() string { return fmt.Sprintf("%s: path=%q offset=%d", e.Code, e.Path, e.Offset) }
+
+func sanitizedError(code Code, path string, offset int64, stage string, cause error) *Error {
+	e := &Error{Code: code, Path: path, Offset: offset, causeStage: stage}
+	var errno syscall.Errno
+	if errors.As(cause, &errno) {
+		e.causeErrno = uintptr(errno)
+	}
+	return e
+}
 
 type Diagnostic struct {
 	Code Code   `json:"code"`

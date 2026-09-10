@@ -235,7 +235,7 @@ func EnsureInitialized(ctx context.Context, r InitRequest) (Result, error) {
 				_, e = d.Effective(r.Assets)
 			}
 			if e != nil {
-				return Result{Selection: selected}, pathError(selected.Path, e)
+				return Result{Selection: selected}, pathErrorAt(selected.Path, "init-parse-effective", e)
 			}
 			// Selection can change while this read-only snapshot is taken (for
 			// example, a legacy file appears while neutral was selected).
@@ -255,7 +255,7 @@ func EnsureInitialized(ctx context.Context, r InitRequest) (Result, error) {
 		if !os.IsNotExist(e) {
 			var ce *Error
 			if !errors.As(e, &ce) || ce.Code != ConfigChanged {
-				return Result{Selection: selected}, pathError(selected.Path, e)
+				return Result{Selection: selected}, pathErrorAt(selected.Path, "init-read-snapshot", e)
 			}
 		}
 	}

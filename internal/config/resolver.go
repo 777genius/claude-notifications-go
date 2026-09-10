@@ -117,7 +117,7 @@ func candidate(e EnvSnapshot, p, source string) (Selection, error) {
 	if e.Canonicalize != nil {
 		physical, err := e.Canonicalize(p)
 		if err != nil {
-			return s, pathError(p, err)
+			return s, pathErrorAt(p, "resolve-canonicalize", err)
 		}
 		p = physical
 		s.Path = p
@@ -138,12 +138,12 @@ func candidate(e EnvSnapshot, p, source string) (Selection, error) {
 		return s, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
-		return s, pathError(p, err)
+		return s, pathErrorAt(p, "resolve-lstat", err)
 	}
 	dir, base := splitPath(e.GOOS, p)
 	entries, err := e.ReadDir(dir)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return s, pathError(p, err)
+		return s, pathErrorAt(p, "resolve-readdir", err)
 	}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -159,7 +159,7 @@ func candidate(e EnvSnapshot, p, source string) (Selection, error) {
 			if _, aliasErr := e.Lstat(alias); aliasErr == nil {
 				return s, &Error{Code: ConfigRecoveryRequired, Path: p}
 			} else if !errors.Is(aliasErr, fs.ErrNotExist) {
-				return s, pathError(alias, aliasErr)
+				return s, pathErrorAt(alias, "resolve-recovery-lstat", aliasErr)
 			}
 		}
 	}
@@ -183,15 +183,24 @@ func recoverySuffix(name string) (string, bool) {
 	return name[last:], true
 }
 func pathError(p string, err error) error {
+	return pathErrorAt(p, "path", err)
+}
+
+func pathErrorAt(p, stage string, err error) error {
 	var ce *Error
 	if errors.As(err, &ce) {
-		return &Error{Code: ce.Code, Path: p, Offset: ce.Offset}
+		if ce.causeStage != "" {
+			stage = ce.causeStage
+		}
+		copy := sanitizedError(ce.Code, p, ce.Offset, stage, nil)
+		copy.causeErrno = ce.causeErrno
+		return copy
 	}
 	code := ConfigInvalid
 	if errors.Is(err, fs.ErrPermission) {
 		code = ConfigPermissionDenied
 	}
-	return &Error{Code: code, Path: p}
+	return sanitizedError(code, p, 0, stage, err)
 }
 func neutralPath(e EnvSnapshot, home string) (string, []Diagnostic, error) {
 	var root string

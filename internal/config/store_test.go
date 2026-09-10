@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -107,6 +108,18 @@ func TestStoreImportLinksAndRecovery(t *testing.T) {
 	}
 }
 func TestStoreConcurrentInit(t *testing.T) {
+	rounds := 1
+	if SnapshotEnv().GOOS == "windows" {
+		rounds = 20
+	}
+	for round := 0; round < rounds; round++ {
+		t.Run(fmt.Sprintf("round-%02d", round), func(t *testing.T) {
+			testStoreConcurrentInit(t)
+		})
+	}
+}
+
+func testStoreConcurrentInit(t *testing.T) {
 	env := storeEnv(t)
 	start := make(chan struct{})
 	errs := make(chan error, 20)
@@ -128,7 +141,12 @@ func TestStoreConcurrentInit(t *testing.T) {
 	close(changed)
 	for e := range errs {
 		if e != nil {
-			t.Fatal(e)
+			var ce *Error
+			if errors.As(e, &ce) {
+				t.Errorf("%v [stage=%s win32=%d]", e, ce.causeStage, ce.causeErrno)
+				continue
+			}
+			t.Errorf("%v", e)
 		}
 	}
 	n := 0
