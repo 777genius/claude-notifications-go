@@ -298,7 +298,7 @@ func TestCorruptionAndLostState(t *testing.T) {
 	}
 }
 func TestBoundsAndCounterOverflow(t *testing.T) {
-	s, c := fixture(t, Limits{Bytes: 1024})
+	s, _ := fixture(t, Limits{Bytes: 1024})
 	a := admission("large")
 	a.Decision.Target.Application = strings.Repeat("x", 1024)
 	if _, e := s.Admit(testContext(t), a); !errors.Is(e, ErrFull) {
@@ -308,7 +308,7 @@ func TestBoundsAndCounterOverflow(t *testing.T) {
 	if e != nil || r.Found {
 		t.Fatal(r, e)
 	}
-	s, c = fixture(t, Limits{})
+	s, c := fixture(t, Limits{})
 	if e = s.transaction(testContext(t), func(d *disk) (bool, error) { d.Clock.Logical = math.MaxUint64; return true, nil }); e != nil {
 		t.Fatal(e)
 	}
@@ -356,7 +356,7 @@ func TestUnsafePathsAndLockCancellation(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer dir.Close()
+	defer func() { requireNoError(t, dir.Close()) }()
 	l, e := lock(testContext(t), dir, false)
 	if e != nil {
 		t.Fatal(e)
@@ -366,7 +366,7 @@ func TestUnsafePathsAndLockCancellation(t *testing.T) {
 	if _, e = s.Admit(ctx, admission("R")); !errors.Is(e, context.DeadlineExceeded) {
 		t.Fatal(e)
 	}
-	l.Close()
+	requireNoError(t, l.Close())
 	if _, e = s.Lookup(context.Background(), admission("R").Key, Digest{}); !errors.Is(e, ErrInvalid) {
 		t.Fatal(e)
 	}
@@ -381,15 +381,15 @@ func TestUnsafePathsAndLockCancellation(t *testing.T) {
 			p := filepath.Join(s.root, "journal.json")
 			switch kind {
 			case "symlink":
-				os.Rename(p, p+".old")
-				os.Symlink(p+".old", p)
+				requireNoError(t, os.Rename(p, p+".old"))
+				requireNoError(t, os.Symlink(p+".old", p))
 			case "hardlink":
-				os.Link(p, p+".link")
+				requireNoError(t, os.Link(p, p+".link"))
 			case "mode":
-				os.Chmod(p, 0644)
+				requireNoError(t, os.Chmod(p, 0644))
 			case "fifo":
-				os.Remove(p)
-				unix.Mkfifo(p, 0600)
+				requireNoError(t, os.Remove(p))
+				requireNoError(t, unix.Mkfifo(p, 0600))
 			}
 			if _, e := s.Admit(testContext(t), admission("R")); !errors.Is(e, ErrRepair) {
 				t.Fatal(e)
@@ -398,11 +398,11 @@ func TestUnsafePathsAndLockCancellation(t *testing.T) {
 	}
 	root := t.TempDir()
 	link := filepath.Join(root, "link")
-	os.Symlink(s.root, link)
+	requireNoError(t, os.Symlink(s.root, link))
 	if _, e = Open(testContext(t), Options{Root: link}); !errors.Is(e, ErrRepair) {
 		t.Fatal(e)
 	}
-	os.Chmod(s.root, 0777)
+	requireNoError(t, os.Chmod(s.root, 0777))
 	if _, e = s.Admit(testContext(t), admission("R")); !errors.Is(e, ErrRepair) {
 		t.Fatal(e)
 	}
@@ -499,7 +499,7 @@ func TestJournalProcess(t *testing.T) {
 	if e = f.Sync(); e != nil {
 		t.Fatal(e)
 	}
-	f.Close()
+	requireNoError(t, f.Close())
 	if phase == "after_effect" {
 		os.Exit(71)
 	}
@@ -610,13 +610,14 @@ func TestActualCrashBoundaries(t *testing.T) {
 				if effects(t, s) != want {
 					t.Fatalf("effects=%d want=%d output=%s", effects(t, s), want, b)
 				}
-				dir, _ := openRoot(s.root)
+				dir, e := openRoot(s.root)
+				requireNoError(t, e)
 				l, e := lock(testContext(t), dir, false)
 				if e != nil {
 					t.Fatal("dead process retained lock", e)
 				}
-				l.Close()
-				dir.Close()
+				requireNoError(t, l.Close())
+				requireNoError(t, dir.Close())
 			})
 		}
 	}
@@ -627,7 +628,7 @@ func TestStrictJSON(t *testing.T) {
 			t.Fatal(b)
 		}
 	}
-	for _, b := range []string{`{"emoji":"\ud83d\ude00"}`, `{"x":"\\ud800"}`, `{"x":"a‍b"}`} {
+	for _, b := range []string{`{"emoji":"\ud83d\ude00"}`, `{"x":"\\ud800"}`, "{\"x\":\"a\u200db\"}"} {
 		if e := strictJSON([]byte(b)); e != nil {
 			t.Fatal(b, e)
 		}
@@ -647,8 +648,8 @@ func TestActualLookupAdmitRace(t *testing.T) {
 		}
 		t.Cleanup(func() {
 			if cmd.ProcessState == nil {
-				cmd.Process.Kill()
-				cmd.Wait()
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
 			}
 		})
 	}
@@ -833,7 +834,7 @@ func TestMissingFieldsAndStateInvariants(t *testing.T) {
 			}
 			if change == "missing-clock" {
 				var fields map[string]json.RawMessage
-				json.Unmarshal(b, &fields)
+				requireNoError(t, json.Unmarshal(b, &fields))
 				delete(fields, "clock")
 				b, e = json.Marshal(fields)
 				if e != nil {
@@ -937,5 +938,13 @@ func TestLimitsAndReadOnlyLookup(t *testing.T) {
 		if e != nil || !bytes.Equal(b, before[p]) {
 			t.Fatal("lookup wrote state", p, e)
 		}
+	}
+}
+
+// Fail on fixture setup errors so a safety test cannot pass without its intended mutation.
+func requireNoError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

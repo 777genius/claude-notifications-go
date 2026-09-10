@@ -31,22 +31,22 @@ func openRoot(path string) (*os.File, error) {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	for i, p := range parts {
 		next, e := unix.Openat(fd, p, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		if e != nil {
 			return nil, wrap(e)
 		}
 		fd = next
 		var st unix.Stat_t
 		if e = unix.Fstat(fd, &st); e != nil {
-			unix.Close(fd)
+			_ = unix.Close(fd)
 			return nil, e
 		}
 		last := i == len(parts)-1
 		uid := uint32(os.Geteuid())
 		safeOwner := st.Uid == uid || st.Uid == 0
-		unsafeWrite := st.Mode&0022 != 0 && !(safeOwner && st.Mode&unix.S_ISVTX != 0)
+		unsafeWrite := st.Mode&0022 != 0 && (!safeOwner || st.Mode&unix.S_ISVTX == 0)
 		if !safeOwner || unsafeWrite || (last && (st.Uid != uid || st.Mode&0777 != 0700)) {
-			unix.Close(fd)
+			_ = unix.Close(fd)
 			return nil, ErrRepair
 		}
 	}
@@ -59,11 +59,11 @@ func openFile(dir *os.File, name string, flags int) (*os.File, error) {
 	}
 	var st unix.Stat_t
 	if e = unix.Fstat(fd, &st); e != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return nil, e
 	}
 	if st.Mode&unix.S_IFMT != unix.S_IFREG || st.Uid != uint32(os.Geteuid()) || st.Nlink != 1 || st.Mode&0777 != 0600 {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return nil, ErrRepair
 	}
 	return os.NewFile(uintptr(fd), name), nil
@@ -85,7 +85,7 @@ func lock(ctx context.Context, dir *os.File, create bool) (*os.File, error) {
 	}
 	for {
 		if e = ctx.Err(); e != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, e
 		}
 		e = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
@@ -93,14 +93,14 @@ func lock(ctx context.Context, dir *os.File, create bool) (*os.File, error) {
 			break
 		}
 		if e != unix.EAGAIN && e != unix.EWOULDBLOCK {
-			f.Close()
+			_ = f.Close()
 			return nil, e
 		}
 		timer := time.NewTimer(5 * time.Millisecond)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			f.Close()
+			_ = f.Close()
 			return nil, ctx.Err()
 		case <-timer.C:
 		}
@@ -112,7 +112,7 @@ func lock(ctx context.Context, dir *os.File, create bool) (*os.File, error) {
 		e = unix.Fstatat(int(dir.Fd()), "lock", &b, unix.AT_SYMLINK_NOFOLLOW)
 	}
 	if e != nil || a.Ino != b.Ino || a.Dev != b.Dev || a.Nlink != 1 {
-		f.Close()
+		_ = f.Close()
 		return nil, ErrRepair
 	}
 	return f, nil // close releases kernel flock, including process death
@@ -122,7 +122,7 @@ func readBounded(dir *os.File, name string, max int) ([]byte, error) {
 	if e != nil {
 		return nil, wrap(e)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	st, e := f.Stat()
 	if e != nil {
 		return nil, e
@@ -181,12 +181,12 @@ func (s *Store) transaction(ctx context.Context, fn func(*disk) (bool, error)) e
 	if e != nil {
 		return e
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	l, e := lock(ctx, dir, false)
 	if e != nil {
 		return e
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	d, e := s.read(dir)
 	if e != nil {
 		return e
@@ -249,7 +249,7 @@ func (s *Store) write(ctx context.Context, dir *os.File, d *disk) error {
 	// One fixed, validated orphan slot bounds disk use after repeated crashes.
 	old, e := openFile(dir, "snapshot.tmp", unix.O_RDONLY)
 	if e == nil {
-		old.Close()
+		_ = old.Close()
 		if e = unix.Unlinkat(int(dir.Fd()), "snapshot.tmp", 0); e != nil {
 			return e
 		}
@@ -260,8 +260,8 @@ func (s *Store) write(ctx context.Context, dir *os.File, d *disk) error {
 	if e != nil {
 		return e
 	}
-	defer f.Close()
-	defer unix.Unlinkat(int(dir.Fd()), "snapshot.tmp", 0)
+	defer func() { _ = f.Close() }()
+	defer func() { _ = unix.Unlinkat(int(dir.Fd()), "snapshot.tmp", 0) }()
 	half := len(b) / 2
 	if _, e = f.Write(b[:half]); e != nil {
 		return e
@@ -306,7 +306,7 @@ func (s *Store) bootstrap(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 	// Refuse existing or interrupted state before allowing lock creation.
 	// In particular, Initialize must not recreate a lost expected lock inode.
 	for _, name := range []string{"namespace", "journal.json", "snapshot.tmp"} {
@@ -323,7 +323,7 @@ func (s *Store) bootstrap(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	names, e := dir.Readdirnames(-1)
 	if e != nil {
 		return e
@@ -341,7 +341,7 @@ func (s *Store) bootstrap(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, e = f.WriteString(ns + "\n"); e != nil {
 		return e
 	}

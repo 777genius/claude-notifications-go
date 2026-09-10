@@ -24,7 +24,7 @@ func (c PlatformClock) Sample() Sample {
 		return Sample{}
 	}
 	f := os.NewFile(uintptr(fd), c.BootIDPath)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	st, e := f.Stat()
 	if e != nil || !st.Mode().IsRegular() {
 		return Sample{}
