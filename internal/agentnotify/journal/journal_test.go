@@ -436,6 +436,9 @@ func TestJournalProcess(t *testing.T) {
 		t.Fatal(e)
 	}
 	a := admission(os.Getenv("JOURNAL_KEY"))
+	if raw := os.Getenv("JOURNAL_RATES"); raw != "" {
+		requireNoError(t, json.Unmarshal([]byte(raw), &a.Rates))
+	}
 	if os.Getenv("JOURNAL_DIGEST") == "other" {
 		a.Digest = sha256.Sum256([]byte("conflict"))
 	}
@@ -891,7 +894,8 @@ func TestActualBootstrapCrashBoundaries(t *testing.T) {
 			if e = os.Chmod(root, 0700); e != nil {
 				t.Fatal(e)
 			}
-			s, _ := newStore(Options{Root: root})
+			s, e := newStore(Options{Root: root})
+			requireNoError(t, e)
 			b, e := child(s, "R", "bootstrap", stage, "").CombinedOutput()
 			var exit *exec.ExitError
 			if !errors.As(e, &exit) || exit.ExitCode() != 71 {
