@@ -1324,9 +1324,20 @@ func main() {
 	ps, err := powershellPath()
 	if err != nil { fmt.Fprintf(os.Stderr, "resolver_error=%v\n", err); os.Exit(2) }
 	shCommand := "INSTALL_TARGET_DIR=" + shQuote(filepath.ToSlash(os.Args[3])) + " " + shQuote(filepath.ToSlash(os.Args[4])) + " --force"
-	psCommand := "$ErrorActionPreference = 'SilentlyContinue'; Start-Sleep -Milliseconds 750; for ($i = 0; $i -lt 6; $i++) { & " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + " *> $null; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 5 }"
+	breadcrumbs := os.Args[5] + ".breadcrumbs"
+	mark := func(label string) string {
+		return "[System.IO.File]::AppendAllText(" + psQuote(breadcrumbs) + ", " + psQuote(label) + " + [Environment]::NewLine); "
+	}
+	loop := mark("entering-loop") + "for ($i = 0; $i -lt 6; $i++) { " + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; " + mark("after-fake") + "if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 5 }"
+	psCommand := "$ErrorActionPreference = 'Stop'; " + mark("before-start-sleep") + "Start-Sleep -Milliseconds 750; " + mark("after-start-sleep") + loop
 	if mode == "stop" {
 		psCommand = "$ErrorActionPreference = 'Stop'; & " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; exit $LASTEXITCODE"
+	} else if mode == "start-sleep" {
+		psCommand = "$ErrorActionPreference = 'Stop'; " + mark("before-start-sleep") + "Start-Sleep -Milliseconds 750; " + mark("after-start-sleep") + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; " + mark("after-fake")
+	} else if mode == "thread-sleep" {
+		psCommand = "$ErrorActionPreference = 'Stop'; " + mark("before-thread-sleep") + "[System.Threading.Thread]::Sleep(750); " + mark("after-thread-sleep") + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; " + mark("after-fake")
+	} else if mode == "loop-no-sleep" {
+		psCommand = "$ErrorActionPreference = 'Stop'; " + mark("entering-loop") + "for ($i = 0; $i -lt 1; $i++) { " + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; " + mark("after-fake") + "}"
 	} else if mode != "exact" {
 		fmt.Fprintf(os.Stderr, "unknown mode %q\n", mode); os.Exit(2)
 	}
@@ -1435,7 +1446,7 @@ LAUNCH_PROBE_GO_EOF
         echo "lazy-update diagnostic: direct fake status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$direct_log" ] && echo present || echo missing)"
 
         local ps_log ps_stdout ps_stderr ps_log_for_windows ps_stdout_for_windows ps_stderr_for_windows probe_mode
-        for probe_mode in exact stop; do
+        for probe_mode in exact start-sleep thread-sleep loop-no-sleep stop; do
             ps_log="$TEST_DIR/fake-bash-go-launch-$probe_mode.log"
             ps_stdout="$TEST_DIR/go-launch-$probe_mode.stdout"
             ps_stderr="$TEST_DIR/go-launch-$probe_mode.stderr"
@@ -1454,6 +1465,12 @@ LAUNCH_PROBE_GO_EOF
             diagnostic_status=$?
             diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
             echo "lazy-update diagnostic: go-native original-env mode=$probe_mode status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$ps_log" ] && echo present || echo missing)"
+            if [ -f "$ps_stdout.breadcrumbs" ]; then
+                echo "lazy-update diagnostic: go-native mode=$probe_mode breadcrumbs:"
+                cat "$ps_stdout.breadcrumbs"
+            else
+                echo "lazy-update diagnostic: go-native mode=$probe_mode breadcrumbs=missing"
+            fi
             for diagnostic_stream in stdout stderr; do
                 diagnostic_file="$TEST_DIR/go-launch-$probe_mode.$diagnostic_stream"
                 echo "lazy-update diagnostic: go-native mode=$probe_mode $diagnostic_stream (decoded, max 4KiB):"
