@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Collect Linux click-to-focus diagnostics for Claude Notifications.
+# Collect Linux click-to-focus diagnostics for Agent Notifications.
 
 set -uo pipefail
 
-REPO="777genius/claude-notifications-go"
+REPO="777genius/agent-notifications"
 RAW_URL="https://raw.githubusercontent.com/${REPO}/main/scripts/linux-focus-debug.sh"
 MARKETPLACE_NAME="claude-notifications-go"
 PLUGIN_NAME="claude-notifications-go"
@@ -359,7 +359,7 @@ INSTALL_PATH="$(get_install_path)"
 MARKETPLACE_SOURCE="$(get_marketplace_source)"
 PLUGIN_LOG_PATH="$(resolve_plugin_log_path "$INSTALL_PATH")"
 
-write_line "Claude Notifications Linux Focus Debug Report"
+write_line "Agent Notifications Linux Focus Debug Report"
 write_line "Generated at: $(date -Is 2>/dev/null || date)"
 write_line "Hostname: $(hostname 2>/dev/null || echo unknown)"
 

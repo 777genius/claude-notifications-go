@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/777genius/claude-notifications/internal/analyzer"
-	"github.com/777genius/claude-notifications/internal/codexsource"
-	"github.com/777genius/claude-notifications/internal/config"
+	"github.com/777genius/agent-notifications/internal/analyzer"
+	"github.com/777genius/agent-notifications/internal/codexsource"
+	"github.com/777genius/agent-notifications/internal/config"
 )
 
 func codexTestConfig() *config.Config {

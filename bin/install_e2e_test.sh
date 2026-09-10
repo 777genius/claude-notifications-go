@@ -2495,7 +2495,7 @@ main() {
         # /releases/latest may have switched to the new release (without binaries yet).
         RELEASE_BINARY_AVAILABLE=false
         if real_network_tests_supported; then
-            local _check_url="https://github.com/777genius/claude-notifications-go/releases/latest/download"
+            local _check_url="https://github.com/777genius/agent-notifications/releases/latest/download"
             local _check_bin
             case "$(uname -s)-$(uname -m)" in
                 Linux-x86_64)       _check_bin="claude-notifications-linux-amd64" ;;
@@ -2514,7 +2514,7 @@ main() {
                 _our_version=$(grep '"version"' "$_plugin_json" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
             fi
             local _latest_tag=""
-            _latest_tag=$(curl -sI -o /dev/null -w "%{redirect_url}" --connect-timeout 5 "https://github.com/777genius/claude-notifications-go/releases/latest" 2>/dev/null | sed 's|.*/tag/v||')
+            _latest_tag=$(curl -sI -o /dev/null -w "%{redirect_url}" --connect-timeout 5 "https://github.com/777genius/agent-notifications/releases/latest" 2>/dev/null | sed 's|.*/tag/v||')
 
             if [ -n "$_our_version" ] && [ -n "$_latest_tag" ] && [ "$_our_version" != "$_latest_tag" ]; then
                 echo -e "  ${YELLOW}⚠${NC} Release version mismatch: ours=v${_our_version}, latest=v${_latest_tag} — download tests will be skipped"

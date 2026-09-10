@@ -13,8 +13,8 @@ Telegram integration uses the Bot API to send HTML-formatted messages directly t
 1. Open Telegram and search for **@BotFather**
 2. Start a chat and send `/newbot`
 3. Follow the prompts:
-   - **Bot name:** Choose a display name (e.g., "Claude Notifications")
-   - **Username:** Choose a unique username ending in `bot` (e.g., `claude_notify_bot`)
+   - **Bot name:** Choose a display name (e.g., "Agent Notifications")
+   - **Username:** Choose a unique username ending in `bot` (e.g., `agent_notify_bot`)
 4. BotFather will give you an **API token** like:
    ```
    123456789:ABCdefGHIjklMNOpqrsTUVwxyz
@@ -227,7 +227,7 @@ Configure rate limiting:
 
 ## Best Practices
 
-1. **Dedicated bot** - Create a separate bot for Claude notifications
+1. **Dedicated bot** - Create a separate bot for Agent Notifications
 2. **Secure token** - Never commit bot token to git
 3. **Private chats** - Use personal chat or private groups for sensitive notifications
 4. **Enable retry** - Telegram is reliable but network issues can occur

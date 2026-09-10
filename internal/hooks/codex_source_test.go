@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/777genius/claude-notifications/internal/codexsource"
+	"github.com/777genius/agent-notifications/internal/codexsource"
 )
 
 func stubCodexDecode(decoded codexsource.Decoded) CodexDecodeFunc {

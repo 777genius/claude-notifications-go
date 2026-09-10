@@ -1,5 +1,5 @@
 {
-  "name": "claude-notifications-landing",
+  "name": "agent-notifications-landing",
   "private": true,
   "type": "module",
   "engines": {

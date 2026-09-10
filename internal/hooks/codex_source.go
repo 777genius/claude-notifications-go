@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/777genius/claude-notifications/internal/codexsource"
+	"github.com/777genius/agent-notifications/internal/codexsource"
 )
 
 // CodexDecodeFunc is the narrow DTO-returning seam between this package and

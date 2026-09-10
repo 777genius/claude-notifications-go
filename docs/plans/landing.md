@@ -7,7 +7,7 @@ Deliver a static English landing with product hero and notification preview, hon
 
 ## Critique and corrections before implementation
 - Existing Pages is legacy gh-pages hosting: do not silently overwrite existing content. Inspect gh-pages and preserve existing paths or deploy only after collision audit. Build preview artifact before publishing website. Website deployment is user-authorized; product releases are not.
-- Project Pages base /claude-notifications-go/ must work for assets, navigation and reload. Test production static output, not only dev server.
+- Project Pages base /agent-notifications/ must work for assets, navigation and reload. Test production static output, not only dev server.
 - Browser OS is a suggestion, not runtime authority. Keep architecture decisions in installer. Windows instructions explicitly Git Bash, not WSL or PowerShell curl pipe.
 - Do not copy the source landing wholesale with signed registry build dependencies. Narrow copied shell/components, preserve licenses; audit absence of irrelevant branding/links.
 - Release state must not depend on unreliable client GitHub API or claim draft publicly installable. Static explicit beta/prerequisite message and release link.

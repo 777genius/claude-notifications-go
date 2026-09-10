@@ -37,7 +37,7 @@ CURL_EXTRA_OPTS=()
 CURL_COMPAT_OPTS=()
 
 # GitHub repository (can be overridden via env for testing)
-REPO="777genius/claude-notifications-go"
+REPO="777genius/agent-notifications"
 RELEASES_BASE_URL="${RELEASES_BASE_URL:-https://github.com/${REPO}/releases}"
 LATEST_RELEASE_API_URL="${LATEST_RELEASE_API_URL:-https://api.github.com/repos/${REPO}/releases/latest}"
 DEFAULT_RELEASE_URL="${RELEASES_BASE_URL}/latest/download"
@@ -1367,7 +1367,7 @@ create_claude_notifications_app() {
     <key>CFBundleIdentifier</key>
     <string>com.claude.notifications</string>
     <key>CFBundleName</key>
-    <string>Claude Notifications</string>
+    <string>Agent Notifications</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
@@ -1599,7 +1599,7 @@ install_linux_notification_desktop_entry() {
 
     cat > "$tmp_file" << EOF
 [Desktop Entry]
-Name=Claude Notifications
+Name=Agent Notifications
 Type=Application
 Icon=utilities-terminal
 Exec=/usr/bin/true
@@ -1691,7 +1691,7 @@ stage_and_promote_runtime() (
 main() {
     echo ""
     echo -e "${BOLD}========================================${NC}"
-    echo -e "${BOLD} Claude Notifications - Binary Setup${NC}"
+    echo -e "${BOLD} Agent Notifications - Binary Setup${NC}"
     echo -e "${BOLD}========================================${NC}"
     echo ""
 

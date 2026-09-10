@@ -4,7 +4,7 @@ disable-model-invocation: true
 allowed-tools: Bash, AskUserQuestion, Write, Read
 ---
 
-# 🎵 Claude Notifications Settings
+# 🎵 Agent Notifications Settings
 
 Welcome! This interactive wizard will help you configure notification sounds for Claude Code.
 

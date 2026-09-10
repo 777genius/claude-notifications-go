@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/777genius/claude-notifications/internal/codexsetup"
+	"github.com/777genius/agent-notifications/internal/codexsetup"
 )
 
 type setupCodexOptions struct {

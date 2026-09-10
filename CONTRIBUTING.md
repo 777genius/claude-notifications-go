@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for your interest in contributing to Claude Notifications!
+Thank you for your interest in contributing to Agent Notifications!
 
 ## Prerequisites
 
@@ -13,8 +13,8 @@ Thank you for your interest in contributing to Claude Notifications!
 ### 1. Clone and build
 
 ```bash
-git clone https://github.com/777genius/claude-notifications-go
-cd claude-notifications-go
+git clone https://github.com/777genius/agent-notifications
+cd agent-notifications
 make build
 ```
 
@@ -170,4 +170,4 @@ See **[Release Checklist](docs/RELEASE.md)** for the full step-by-step guide.
 
 ## Reporting Issues
 
-Found a bug or have a feature request? [Open an issue](https://github.com/777genius/claude-notifications-go/issues).
+Found a bug or have a feature request? [Open an issue](https://github.com/777genius/agent-notifications/issues).

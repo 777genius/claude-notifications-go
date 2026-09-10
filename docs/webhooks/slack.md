@@ -98,7 +98,7 @@ Messages use Slack's **Attachments API**:
       "color": "#28a745",
       "title": "✅ Task Completed",
       "text": "[bold-cat] Created new authentication system with JWT tokens",
-      "footer": "Session: abc-123 | Claude Notifications",
+      "footer": "Session: abc-123 | Agent Notifications",
       "ts": 1729353045
     }
   ]

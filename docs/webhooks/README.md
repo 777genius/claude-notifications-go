@@ -118,7 +118,7 @@ The system automatically detects and formats these statuses:
 ## Support
 
 For issues, questions, or contributions:
-- GitHub Issues: https://github.com/777genius/claude-notifications-go/issues
+- GitHub Issues: https://github.com/777genius/agent-notifications/issues
 - Main Documentation: [README.md](../../README.md)
 
 ---

@@ -72,7 +72,7 @@ Clicking a notification focuses the wrong terminal window, a stale Terminator wi
 Reproduce the failed click first, then run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/scripts/linux-focus-debug.sh | bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/scripts/linux-focus-debug.sh | bash
 ```
 
 The script generates a report file in the current directory with:
@@ -103,13 +103,13 @@ PowerShell and Windows Terminal can resolve `bash` to WSL. In that case the inst
 Open Git Bash from the Start menu and run the bootstrap command there. Do not run the bootstrap `curl ... | bash` command from PowerShell if it opens WSL.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash
 ```
 
 If you intentionally use Claude Code inside WSL, opt in explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | env CLAUDE_NOTIFICATIONS_ALLOW_WSL=1 bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | env CLAUDE_NOTIFICATIONS_ALLOW_WSL=1 bash
 ```
 
 ## Windows: install issues related to `%TEMP%` / `%TMP%` location
@@ -223,7 +223,7 @@ If you cannot run `windows-hooks`, replace the installed plugin's `hooks/hooks.j
 }
 ```
 
-This workaround is based on confirmed Windows 11 behavior from [issue #73](https://github.com/777genius/claude-notifications-go/issues/73#issuecomment-4364271319).
+This workaround is based on confirmed Windows 11 behavior from [issue #73](https://github.com/777genius/agent-notifications/issues/73#issuecomment-4364271319).
 
 ### Note about beeep logs
 

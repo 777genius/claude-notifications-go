@@ -5,7 +5,7 @@ test("verified bootstrap contract for each product and supported target", () => 
   for (const product of ["claude", "codex", "both"] as const)
     for (const target of ["macos", "linux", "windows"] as const) {
       const expected =
-        "curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash -s -- --product " +
+        "curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash -s -- --product " +
         product;
       assert.equal(command(product, target, "install"), expected);
       assert.equal(command(product, target, "update"), expected);

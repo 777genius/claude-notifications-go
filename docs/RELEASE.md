@@ -200,9 +200,9 @@ Description of what was added and why.
 
 ---
 
-📦 **[Installation](https://github.com/777genius/claude-notifications-go#installation)** · 🔄 **[Updating](https://github.com/777genius/claude-notifications-go#updating)**
+📦 **[Installation](https://github.com/777genius/agent-notifications#installation)** · 🔄 **[Updating](https://github.com/777genius/agent-notifications#updating)**
 
-**Full Changelog**: https://github.com/777genius/claude-notifications-go/compare/vPREV...vX.Y.Z
+**Full Changelog**: https://github.com/777genius/agent-notifications/compare/vPREV...vX.Y.Z
 NOTES_EOF
 )"
 ```
@@ -212,8 +212,8 @@ NOTES_EOF
 Comment on fixed issues and merged PRs with a link to the release:
 
 ```bash
-gh issue comment N --body "Fixed in [vX.Y.Z](https://github.com/777genius/claude-notifications-go/releases/tag/vX.Y.Z)."
-gh pr comment N --body "Released in [vX.Y.Z](https://github.com/777genius/claude-notifications-go/releases/tag/vX.Y.Z)."
+gh issue comment N --body "Fixed in [vX.Y.Z](https://github.com/777genius/agent-notifications/releases/tag/vX.Y.Z)."
+gh pr comment N --body "Released in [vX.Y.Z](https://github.com/777genius/agent-notifications/releases/tag/vX.Y.Z)."
 ```
 
 ## How auto-update works

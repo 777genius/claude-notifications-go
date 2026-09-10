@@ -225,7 +225,7 @@ echo ""
 
 # Test 8: GitHub repo URL format
 echo "--- Test: GitHub Repo URL ---"
-repo="777genius/claude-notifications-go"
+repo="777genius/agent-notifications"
 release_url="https://github.com/${repo}/releases/latest/download"
 
 if [[ "$release_url" == "https://github.com/"* ]] && [[ "$release_url" == *"/releases/"* ]]; then

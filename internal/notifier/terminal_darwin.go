@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/777genius/claude-notifications/internal/config"
-	"github.com/777genius/claude-notifications/internal/platform"
+	"github.com/777genius/agent-notifications/internal/config"
+	"github.com/777genius/agent-notifications/internal/platform"
 )
 
 // terminalBundleIDMap maps TERM_PROGRAM values to macOS bundle identifiers
@@ -217,7 +217,7 @@ func EnsureClaudeNotificationsApp() error {
     <key>CFBundleIdentifier</key>
     <string>com.claude.notifications</string>
     <key>CFBundleName</key>
-    <string>Claude Notifications</string>
+    <string>Agent Notifications</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>

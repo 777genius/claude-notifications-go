@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/777genius/claude-notifications/internal/audio"
-	"github.com/777genius/claude-notifications/internal/codexsource"
-	"github.com/777genius/claude-notifications/internal/errorhandler"
-	"github.com/777genius/claude-notifications/internal/hooks"
-	"github.com/777genius/claude-notifications/internal/logging"
-	"github.com/777genius/claude-notifications/internal/notifier"
-	"github.com/777genius/claude-notifications/internal/winfocus"
+	"github.com/777genius/agent-notifications/internal/audio"
+	"github.com/777genius/agent-notifications/internal/codexsource"
+	"github.com/777genius/agent-notifications/internal/errorhandler"
+	"github.com/777genius/agent-notifications/internal/hooks"
+	"github.com/777genius/agent-notifications/internal/logging"
+	"github.com/777genius/agent-notifications/internal/notifier"
+	"github.com/777genius/agent-notifications/internal/winfocus"
 )
 
 const version = "1.41.0"

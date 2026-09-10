@@ -349,7 +349,7 @@ func RegisterProtocolHandler(exe string) error {
 		return err
 	}
 	defer root.Close()
-	if err := root.SetStringValue("", "URL:Claude Notifications Focus"); err != nil {
+	if err := root.SetStringValue("", "URL:Agent Notifications Focus"); err != nil {
 		return err
 	}
 	if err := root.SetStringValue("URL Protocol", ""); err != nil {

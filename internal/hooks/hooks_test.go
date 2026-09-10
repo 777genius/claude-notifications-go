@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/777genius/claude-notifications/internal/analyzer"
-	"github.com/777genius/claude-notifications/internal/config"
-	"github.com/777genius/claude-notifications/internal/dedup"
-	"github.com/777genius/claude-notifications/internal/state"
-	"github.com/777genius/claude-notifications/internal/teamstate"
-	"github.com/777genius/claude-notifications/internal/webhook"
-	"github.com/777genius/claude-notifications/pkg/jsonl"
+	"github.com/777genius/agent-notifications/internal/analyzer"
+	"github.com/777genius/agent-notifications/internal/config"
+	"github.com/777genius/agent-notifications/internal/dedup"
+	"github.com/777genius/agent-notifications/internal/state"
+	"github.com/777genius/agent-notifications/internal/teamstate"
+	"github.com/777genius/agent-notifications/internal/webhook"
+	"github.com/777genius/agent-notifications/pkg/jsonl"
 )
 
 // setTestHome sets HOME (and USERPROFILE on Windows) so that
