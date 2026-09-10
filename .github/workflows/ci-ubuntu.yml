@@ -10,11 +10,13 @@ jobs:
     name: Test on Ubuntu
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: local
 
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.22', '1.26']
+        go: ['1.25', '1.26']
 
     steps:
       - name: Checkout code
