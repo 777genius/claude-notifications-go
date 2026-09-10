@@ -108,7 +108,37 @@ type Receipt struct {
 	KeyKind    KeyKind  `json:"key_kind"`
 	Decision   Snapshot `json:"decision"`
 }
+
+// MaxRate is the existing maximum record/JSON-array budget. Rate capacity does
+// not reserve storage: the independent record, byte and retention limits apply.
+const MaxRate = 10000
+
+// RatePolicy is a trusted configuration snapshot, never model payload. Windows
+// are fixed at 60 seconds (session/runtime) and 2 seconds (runtime burst).
+// The whole-zero value selects defaults; individual zero values never disable
+// a limiter. Enablement and configuration generation fencing belong to callers.
+type RatePolicy struct {
+	SessionPerMinute int
+	RuntimePerMinute int
+	Burst            int
+}
+
+// Normalize validates a snapshot and resolves the backward-compatible default.
+// Session and burst limits cannot exceed the enclosing runtime minute limit.
+func (p RatePolicy) Normalize() (RatePolicy, error) {
+	if p == (RatePolicy{}) {
+		return RatePolicy{6, 30, 3}, nil
+	}
+	if p.SessionPerMinute < 1 || p.RuntimePerMinute < 1 || p.Burst < 1 ||
+		p.SessionPerMinute > MaxRate || p.RuntimePerMinute > MaxRate || p.Burst > MaxRate ||
+		p.SessionPerMinute > p.RuntimePerMinute || p.Burst > p.RuntimePerMinute {
+		return p, ErrInvalid
+	}
+	return p, nil
+}
+
 type Admission struct {
+	Rates      RatePolicy
 	Key        Key
 	Digest     Digest
 	TrackingID string
@@ -285,7 +315,7 @@ func lookup(d *disk, k Key, digest Digest) (Result, error) {
 	return result(k.scoped(d.Namespace), r, false), nil
 }
 func (s *Store) Admit(ctx context.Context, a Admission) (out Result, err error) {
-	if !a.Key.valid() || !validText(a.TrackingID, 256, true) || !validSnapshot(a.Decision) {
+	if !a.Key.valid() {
 		return out, ErrInvalid
 	}
 	err = s.transaction(ctx, func(d *disk) (bool, error) {
@@ -293,6 +323,11 @@ func (s *Store) Admit(ctx context.Context, a Admission) (out Result, err error) 
 		out, e = lookup(d, a.Key, a.Digest)
 		if e != nil || out.Found {
 			return false, e
+		}
+		// Replay precedes all mutable admission policy/decision validation.
+		rates, e := a.Rates.Normalize()
+		if e != nil || !validText(a.TrackingID, 256, true) || !validSnapshot(a.Decision) {
+			return false, ErrInvalid
 		}
 		proven, e := s.advance(d)
 		if e != nil {
@@ -324,7 +359,7 @@ func (s *Store) Admit(ctx context.Context, a Admission) (out Result, err error) 
 				}
 			}
 		}
-		if len(events) >= 30 || perSession >= 6 || burst >= 3 {
+		if len(events) >= rates.RuntimePerMinute || perSession >= rates.SessionPerMinute || burst >= rates.Burst {
 			return false, ErrRate
 		}
 		d.Events = append(events, event{now, session})
@@ -398,7 +433,7 @@ func validSnapshot(s Snapshot) bool {
 	return true
 }
 func (d *disk) validate(s *Store) error {
-	if d.Version != 1 || !isHex(d.Namespace) || d.Limits != s.limits || d.Records == nil || d.Events == nil || len(d.Records) > d.Limits.Records || len(d.Events) > 30 || !validText(d.Clock.Boot, 256, false) || (d.Clock.Boot == "" && d.Clock.Seconds != 0) {
+	if d.Version != 1 || !isHex(d.Namespace) || d.Limits != s.limits || d.Records == nil || d.Events == nil || len(d.Records) > d.Limits.Records || len(d.Events) > d.Limits.Records || !validText(d.Clock.Boot, 256, false) || (d.Clock.Boot == "" && d.Clock.Seconds != 0) {
 		return ErrRepair
 	}
 	for _, v := range d.Events {
@@ -458,20 +493,9 @@ func (d *disk) validate(s *Store) error {
 			return ErrRepair
 		}
 	}
-	for i, v := range d.Events {
-		session, burst := 0, 0
-		for _, previous := range d.Events[:i+1] {
-			if v.At-previous.At < 60 && v.Session == previous.Session {
-				session++
-			}
-			if v.At-previous.At < 2 {
-				burst++
-			}
-		}
-		if session > 6 || burst > 3 {
-			return ErrRepair
-		}
-	}
+	// Policy is mutable and is not persisted in the v1 representation. Validate
+	// structural budgets and the exact live event/record multiset above, never
+	// today's quotas against yesterday's admissions. This is O(records+events).
 	return nil
 }
 func wrap(e error) error {
