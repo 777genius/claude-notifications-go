@@ -148,12 +148,12 @@ func TestWindowsPrivateCreationAndACLReplacement(t *testing.T) {
 		f.Close()
 		t.Fatal(e)
 	}
-	sd, e := windows.GetSecurityInfo(windows.Handle(f.Fd()), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	before, e := windowsDACLEvidence(f)
 	f.Close()
 	if e != nil {
 		t.Fatal(e)
 	}
-	before := sd.String()
+	t.Logf("DACL before ReplaceFileW: SDDL=%q control=%#x protected=%t ACEs=%x", before.sddl, before.control, before.protected, before.aces)
 	// The shared cross-platform Store tests exercise actual ReplaceFileW edits;
 	// this assertion captures the DACL independently for the native CI gate.
 	m, e := beginMutation(context.Background(), env)
@@ -177,10 +177,74 @@ func TestWindowsPrivateCreationAndACLReplacement(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer f.Close()
-	after, e := windows.GetSecurityInfo(windows.Handle(f.Fd()), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if e != nil || after.String() != before {
-		t.Fatalf("DACL changed: %v", e)
+	after, e := windowsDACLEvidence(f)
+	if e != nil {
+		t.Fatalf("read DACL after ReplaceFileW: %v (before SDDL=%q)", e, before.sddl)
 	}
+	t.Logf("DACL after ReplaceFileW: SDDL=%q control=%#x protected=%t ACEs=%x", after.sddl, after.control, after.protected, after.aces)
+	// SECURITY_DESCRIPTOR.String also renders incidental DACL control flags
+	// (for example, auto-inheritance bookkeeping). ReplaceFileW may update those
+	// without changing either the effective ACE list or inheritance protection.
+	if before.protected != after.protected || !equalWindowsACEs(before.aces, after.aces) {
+		t.Fatalf("DACL changed: before SDDL=%q control=%#x protected=%t ACEs=%x; after SDDL=%q control=%#x protected=%t ACEs=%x",
+			before.sddl, before.control, before.protected, before.aces, after.sddl, after.control, after.protected, after.aces)
+	}
+}
+
+type windowsDACLSnapshot struct {
+	sddl      string
+	control   uint16
+	protected bool
+	aces      [][]byte
+}
+
+func windowsDACLEvidence(f *os.File) (windowsDACLSnapshot, error) {
+	sd, err := windows.GetSecurityInfo(windows.Handle(f.Fd()), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return windowsDACLSnapshot{}, err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return windowsDACLSnapshot{}, err
+	}
+	if dacl == nil {
+		return windowsDACLSnapshot{}, errors.New("null DACL")
+	}
+	control, _, err := sd.Control()
+	if err != nil {
+		return windowsDACLSnapshot{}, err
+	}
+	snapshot := windowsDACLSnapshot{
+		sddl:      sd.String(),
+		control:   uint16(control),
+		protected: control&windows.SE_DACL_PROTECTED != 0,
+		aces:      make([][]byte, 0, dacl.AceCount),
+	}
+	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &ace); err != nil {
+			return windowsDACLSnapshot{}, err
+		}
+		size := int(ace.Header.AceSize)
+		if size < int(unsafe.Sizeof(ace.Header)) {
+			return windowsDACLSnapshot{}, fmt.Errorf("invalid ACE size %d", size)
+		}
+		raw := unsafe.Slice((*byte)(unsafe.Pointer(ace)), size)
+		snapshot.aces = append(snapshot.aces, append([]byte(nil), raw...))
+	}
+	return snapshot, nil
+}
+
+func equalWindowsACEs(a, b [][]byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !bytes.Equal(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestWindowsInitialLockAppearanceRereads(t *testing.T) {

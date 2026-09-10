@@ -20,8 +20,8 @@ async function changeLanguage(event: Event) {
   const previousLocale = locale.value;
   try {
     await setLocale(value);
-    if (!te("seo.title", value))
-      throw new Error(`Locale messages for ${value} were not loaded`);
+    if (locale.value !== value || !te("seo.title", value))
+      throw new Error(`Locale ${value} was not activated`);
   } catch {
     if (locale.value !== previousLocale) {
       try {
