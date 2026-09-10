@@ -945,6 +945,13 @@ verify_binary() {
 # nominally successful download, which can happen when a proxy/CDN returns an
 # unexpected payload with HTTP 200.
 download_and_verify_binary() {
+    if [ -n "${INSTALL_STAGED_ASSETS:-}" ] && [ -f "$INSTALL_STAGED_ASSETS/$BINARY_NAME" ]; then
+        cp "$INSTALL_STAGED_ASSETS/$BINARY_NAME" "$BINARY_PATH" || return 1
+        cp "$INSTALL_STAGED_ASSETS/checksums.txt" "$CHECKSUMS_PATH" || return 1
+        REQUIRE_CHECKSUM=true
+        verify_binary
+        return $?
+    fi
     local attempt=1
 
     while [ $attempt -le $MAX_RETRIES ]; do
@@ -1717,7 +1724,7 @@ main() {
     echo ""
 
     # Offline forced updates must stop before any installation work.
-    if [ "$FORCE_UPDATE" = true ]; then
+    if [ "$FORCE_UPDATE" = true ] && [ -z "${INSTALL_STAGED_ASSETS:-}" ]; then
         if ! check_github_availability || [ "$OFFLINE_MODE" = true ]; then
             echo ""
             echo -e "${YELLOW}⚠ Keeping existing installation (GitHub unreachable)${NC}"
@@ -1757,7 +1764,7 @@ main() {
     fi
 
     # Check GitHub availability (may set OFFLINE_MODE=true if binary exists)
-    if ! check_github_availability; then
+    if [ -z "${INSTALL_STAGED_ASSETS:-}" ] && ! check_github_availability; then
         echo ""
         exit 1
     fi

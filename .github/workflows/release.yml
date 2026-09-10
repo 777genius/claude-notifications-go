@@ -38,7 +38,7 @@ jobs:
             fi
           }
 
-          check_version "Go binary" "$(sed -n 's/^const version = "\([^"]*\)"$/\1/p' cmd/claude-notifications/main.go)"
+          check_version "Go binary" "$(sed -n 's/^var ConsumerVersion = "\([^"]*\)"$/\1/p' internal/config/runtime.go)"
           check_version "Plugin manifest" "$(jq -er '.version' .claude-plugin/plugin.json)"
           check_version "Codex plugin manifest" "$(jq -er '.version' .codex-plugin/plugin.json)"
           check_version "Marketplace metadata" "$(jq -er '.metadata.version' .claude-plugin/marketplace.json)"

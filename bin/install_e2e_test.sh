@@ -1,4 +1,6 @@
 #!/bin/bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-env.sh"
+test_env_enter "$0" "$@"
 # install_e2e_test.sh - End-to-end tests for install.sh
 #
 # Usage:
@@ -58,11 +60,7 @@ done
 # All generated fixtures and user state belong to this disposable suite run.
 SUITE_DIR=$(mktemp -d)
 FIXTURES_DIR="$SUITE_DIR/fixtures"
-export HOME="$SUITE_DIR/home"
-export TMPDIR="$SUITE_DIR/tmp" TEMP="$SUITE_DIR/tmp" TMP="$SUITE_DIR/tmp"
-export XDG_CONFIG_HOME="$HOME/.config" XDG_CACHE_HOME="$HOME/.cache" XDG_DATA_HOME="$HOME/.local/share"
-export CLAUDE_CONFIG_DIR="$HOME/.claude" CODEX_HOME="$HOME/.codex"
-mkdir -p "$HOME" "$TMPDIR"
+test_env_setup "$SUITE_DIR"
 
 # Offline tests must never inherit public release endpoints or user proxies.
 if [ "$RUN_REAL_NETWORK" != true ]; then
@@ -132,6 +130,8 @@ run_bootstrap_install_plugin() {
         claude() {
             printf "%s\n" "$*" >> "$COMMAND_LOG"
         }
+        # Registry-only adapter test; protected preflight has dedicated local HTTP fixtures.
+        config_preflight() { :; }
         install_plugin
     ' _ "$sourceable_bootstrap"
 }

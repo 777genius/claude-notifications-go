@@ -15,6 +15,7 @@ import (
 
 	"github.com/777genius/agent-notifications/internal/audio"
 	"github.com/777genius/agent-notifications/internal/codexsource"
+	"github.com/777genius/agent-notifications/internal/config"
 	"github.com/777genius/agent-notifications/internal/errorhandler"
 	"github.com/777genius/agent-notifications/internal/hooks"
 	"github.com/777genius/agent-notifications/internal/logging"
@@ -22,7 +23,8 @@ import (
 	"github.com/777genius/agent-notifications/internal/winfocus"
 )
 
-const version = "1.41.0"
+var version = config.ConsumerVersion
+
 const windowsLazyUpdateRetryAfter = time.Hour
 
 var (
@@ -52,6 +54,8 @@ func main() {
 	command := os.Args[1]
 
 	switch command {
+	case "config":
+		os.Exit(configCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	case "handle-hook":
 		if len(os.Args) < 3 {
 			fmt.Fprintf(os.Stderr, "Error: hook event name required\n")
@@ -757,6 +761,7 @@ func printUsage() {
 	fmt.Println("                          Does not modify ~/.claude/settings.json")
 	fmt.Println("  setup-codex             Register Codex CLI hooks (macOS, Linux, Windows)")
 	fmt.Println("                          [--print] [--dry-run] [--codex-home <dir>] [--plugin-root <dir>]")
+	fmt.Println("  config                  Shared configuration path/inspect/init/edit/preflight-update")
 	fmt.Println("  version                 Show version information")
 	fmt.Println("  help                    Show this help message")
 	fmt.Println()

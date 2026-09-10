@@ -1,5 +1,7 @@
 # Фаза 3: тестирование и валидация
 
+> Superseded configuration policy: this historical plan predates shared E → existing L → N selection and revision-checked edits. See [current configuration and compatibility](../../../README.md#manual-configuration); historical path/copy guidance below is not an active recipe.
+
 > [!WARNING]
 > **ИСТОРИЧЕСКИЙ ДОКУМЕНТ. НЕ ИСПОЛЬЗОВАТЬ КАК АКТУАЛЬНЫЙ TEST PLAN.** Нормативная герметичная
 > матрица находится в `00-overview-and-decisions.md`: отдельные temp `HOME`/`CODEX_HOME`, только

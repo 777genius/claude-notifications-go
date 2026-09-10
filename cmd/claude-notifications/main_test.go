@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"github.com/777genius/agent-notifications/internal/testenv"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -211,9 +212,7 @@ func withIsolatedLazyUpdateGlobals(t *testing.T) {
 	t.Helper()
 
 	root := t.TempDir()
-	t.Setenv("HOME", root)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, ".cache"))
-	t.Setenv("LOCALAPPDATA", filepath.Join(root, "LocalAppData"))
+	testenv.Set(t, root)
 
 	oldGOOS := currentGOOS
 	oldSchedule := scheduleWindowsLazyUpdate

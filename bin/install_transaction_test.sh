@@ -1,14 +1,15 @@
 #!/bin/bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-env.sh"
+test_env_enter "$0" "$@"
 # Focused runtime promotion regressions. No network, builds, or real profiles.
 # Match installer nounset behavior: Bash 3.2 treats empty arrays as unset.
 set -eo pipefail
 root=$(cd "$(dirname "$0")" && pwd)
 sandbox=$(mktemp -d)
 trap 'result=$?; if [ "$result" != 0 ]; then echo "FAILED: ${scenario:-utility} (status $result)" >&2; [ ! -f "${case_dir:-}/output" ] || tail -n 25 "$case_dir/output" >&2; fi; rm -rf "$sandbox"' EXIT
-export HOME="$sandbox/home" XDG_DATA_HOME="$sandbox/home/data" TMPDIR="$sandbox"
-mkdir -p "$HOME"
+test_env_setup "$sandbox"
 sed '/^main "\$@"$/d' "$root/install.sh" > "$sandbox/functions.sh"
-for scenario in offline fresh_offline download checksum missing_checksum executable interrupt desktop fresh_desktop success fresh_success optional_interrupt legacy_fallback retained_legacy failed_fallback; do
+for scenario in staged staged_corrupt offline fresh_offline download checksum missing_checksum executable interrupt desktop fresh_desktop success fresh_success optional_interrupt legacy_fallback retained_legacy failed_fallback; do
     case_dir="$sandbox/$scenario"
     mkdir -p "$case_dir"
     (
@@ -98,11 +99,24 @@ for scenario in offline fresh_offline download checksum missing_checksum executa
         }
         create_claude_notifications_app() { :; }
         setup_iterm2_venv() { :; }
+        if [[ "$scenario" == staged* ]]; then
+            download_checksums
+            mkdir "$case_dir/assets"
+            cp "$SCRIPT_DIR/payload" "$case_dir/assets/$BINARY_NAME"
+            cp "$CHECKSUMS_PATH" "$case_dir/assets/checksums.txt"
+            export INSTALL_STAGED_ASSETS="$case_dir/assets"
+            [ "$scenario" != staged_corrupt ] || printf corrupt >> "$INSTALL_STAGED_ASSETS/$BINARY_NAME"
+            # A staged main binary must not be fetched a second time or silently
+            # skipped merely because the release server went offline afterward.
+            download_binary() { echo 'unexpected binary download' >&2; return 97; }
+            download_checksums() { echo 'unexpected checksum download' >&2; return 97; }
+            check_github_availability() { echo 'unexpected connectivity probe' >&2; return 97; }
+        fi
         main
     ) > "$case_dir/output" 2>&1 && status=0 || status=$?
     binary="$case_dir/claude-notifications-darwin-amd64"
     case "$scenario" in
-        success|fresh_success|optional_interrupt)
+        staged|success|fresh_success|optional_interrupt)
             "$binary" | grep -q new-version
             [ -x "$case_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ] ;;
         legacy_fallback|retained_legacy)
@@ -117,6 +131,7 @@ for scenario in offline fresh_offline download checksum missing_checksum executa
         *) "$binary" | grep -q old-version
            "$case_dir/claude-notifications" | grep -q old-version ;;
     esac
+    [ "$scenario" != staged_corrupt ] || [ "$status" != 0 ]
     [ "$(cat "$case_dir/sound-preview")" = utility ]
     if [[ "$scenario" != fresh_* && "$scenario" != desktop && "$scenario" != *legacy* && "$scenario" != *fallback ]]; then
         [ "$("$case_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern")" = old-notifier ]

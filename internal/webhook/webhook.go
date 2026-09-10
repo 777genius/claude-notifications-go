@@ -124,7 +124,7 @@ func (s *Sender) SendWithContext(sendCtx SendContext) error {
 	start := time.Now()
 
 	// Execute with retry and circuit breaker
-	err := s.sendWithRetryAndCircuitBreaker(requestID, sendCtx)
+	err := safeWebhookError(s.sendWithRetryAndCircuitBreaker(requestID, sendCtx))
 
 	// Record result
 	latency := time.Since(start)

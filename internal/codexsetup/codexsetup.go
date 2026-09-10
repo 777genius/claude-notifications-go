@@ -360,6 +360,10 @@ func Run(opts Options) (Result, error) {
 		return result, nil
 	}
 
+	if err := preflightConfig(source, destination, !self); err != nil {
+		return result, err
+	}
+
 	rollback := func() error { return nil }
 	finish := func() {}
 	if !self {
@@ -378,6 +382,9 @@ func Run(opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("%w; bundle rollback: %v", err, rollback())
 	}
 	result.BackupPath = backup
+	if err := initializeConfig(source); err != nil {
+		return result, err
+	}
 	return result, nil
 }
 

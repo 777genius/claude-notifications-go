@@ -1,5 +1,7 @@
 # Фаза 2: Инсталлятор (codex-install / codex-uninstall)
 
+> Superseded configuration policy: this historical plan predates shared E → existing L → N selection and revision-checked edits. See [current configuration and compatibility](../../../README.md#manual-configuration); historical path/copy guidance below is not an active recipe.
+
 > [!WARNING]
 > **ИСТОРИЧЕСКИЙ ДОКУМЕНТ. НЕ РЕАЛИЗОВЫВАТЬ БУКВАЛЬНО.** Manual merge в
 > `~/.codex/hooks.json`, изменение `config.toml`, frozen CLI ниже и pointer-file installer отменены.

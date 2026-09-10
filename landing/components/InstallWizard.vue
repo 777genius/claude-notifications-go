@@ -164,8 +164,8 @@ async function copy() {
         command, not a shell command.
       </p>
       <p v-if="product !== 'claude'">
-        For Codex, edit the shared settings file
-        <code>~/.claude/claude-notifications-go/config.json</code> using the
+        For Codex, locate the shared settings file with
+        <code>config path</code> and apply edits using the
         <a :href="repo + '#manual-configuration'"
           >documented manual configuration</a
         >. Claude Code is not required for Codex-only setup.
