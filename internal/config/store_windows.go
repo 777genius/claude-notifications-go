@@ -433,6 +433,13 @@ func (p *storeParent) publish(ctx context.Context, temp, name string, exists boo
 		}
 		return &Error{Code: ConfigRecoveryRequired, Path: targetPath}
 	}
+	// ReplaceFileW makes the replacement stream the visible file. Copy the
+	// selected file's DACL (including its inheritance protection state) onto
+	// that stream first, so a successful content update cannot silently change
+	// an administrator-customized but still-private ACL.
+	if e := preserveWindowsDACL(targetPath, tempPath); e != nil {
+		return e
+	}
 	backup, e := uniqueStoreName(name, "backup")
 	if e != nil {
 		return e
@@ -449,6 +456,29 @@ func (p *storeParent) publish(ctx context.Context, temp, name string, exists boo
 		}
 		return callErr
 	})
+}
+
+func preserveWindowsDACL(source, destination string) error {
+	sd, err := windows.GetNamedSecurityInfo(extendedWindowsPath(source), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil || dacl == nil {
+		if err != nil {
+			return err
+		}
+		return &Error{Code: ConfigPermissionDenied, Path: source}
+	}
+	control, _, err := sd.Control()
+	if err != nil {
+		return err
+	}
+	info := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.UNPROTECTED_DACL_SECURITY_INFORMATION)
+	if control&windows.SE_DACL_PROTECTED != 0 {
+		info = windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION
+	}
+	return windows.SetNamedSecurityInfo(extendedWindowsPath(destination), windows.SE_FILE_OBJECT, info, nil, nil, dacl, nil)
 }
 
 // replaceWithRecovery is the narrow native-call boundary, allowing tests to

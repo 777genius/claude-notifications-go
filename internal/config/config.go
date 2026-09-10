@@ -381,15 +381,11 @@ func LoadFromPluginRootQuiet(pluginRoot string) (*Config, error) {
 
 func loadFromPluginRoot(pluginRoot string, warn func(string)) (*Config, error) {
 	env := SnapshotEnv()
-	selection, err := Resolve(env)
-	if err != nil {
-		return nil, err
-	}
+	assets, legacy := ConsumerContext(pluginRoot)
+	_, cfg, selection, err := ReadDocumentSelection(ReadRequest{Env: env, Assets: assets, Legacy: legacy, ReadSnapshot: ReadFileSnapshot})
 	for _, diagnostic := range append(selection.Diagnostics, ConsumerDiagnostics()...) {
 		warn(string(diagnostic.Code))
 	}
-	assets, legacy := ConsumerContext(pluginRoot)
-	_, cfg, err := ReadDocument(ReadRequest{Env: env, Assets: assets, Legacy: legacy, ReadSnapshot: ReadFileSnapshot})
 	return cfg, err
 }
 

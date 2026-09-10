@@ -107,12 +107,8 @@ func configCommand(args []string, in io.Reader, out, stderr io.Writer) int {
 		}
 		return 0
 	case "inspect":
-		s, err := config.Resolve(env)
-		if err != nil {
-			return fail(err)
-		}
+		d, _, s, err := config.ReadDocumentSelection(config.ReadRequest{Env: env, Assets: assets, Legacy: legacy, ReadSnapshot: config.ReadFileSnapshot})
 		s.Diagnostics = append(s.Diagnostics, config.ConsumerDiagnostics()...)
-		d, _, err := config.ReadDocument(config.ReadRequest{Env: env, Assets: assets, Legacy: legacy, ReadSnapshot: config.ReadFileSnapshot})
 		if err != nil {
 			var ce *config.Error
 			code := config.ConfigInvalid

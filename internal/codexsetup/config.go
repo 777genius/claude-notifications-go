@@ -3,13 +3,15 @@ package codexsetup
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"runtime"
 
 	"github.com/777genius/agent-notifications/internal/config"
 )
 
 // preflightConfig runs against the old destination before bundle staging can
 // replace it. Source and destination remain historical inputs, never selectors.
-func preflightConfig(source, destination string, refresh bool) error {
+func preflightConfig(source, destination string, refresh bool, protectedPaths ...string) error {
 	_, legacy := config.ConsumerContext(source)
 	assets := config.ValidationAssets(source)
 	_, previous := config.ConsumerContext(destination)
@@ -26,6 +28,7 @@ func preflightConfig(source, destination string, refresh bool) error {
 		}
 	}
 	request := config.UpdatePreflightRequest{Env: config.SnapshotEnv(), Assets: assets, HistoricalCandidates: legacy.Candidates}
+	request.ProtectedPaths = append(request.ProtectedPaths, protectedPaths...)
 	request.ActiveBundleRoots = []string{destination}
 	if refresh {
 		request.RefreshDirs = []string{destination}
@@ -49,7 +52,7 @@ func (e *InitializationError) Unwrap() error { return e.Err }
 
 // initializeConfig runs only after registration has committed. An error here
 // must not roll back working assets, hooks, or a concurrently created config.
-func initializeConfig(source string) error {
+func initializeConfig(source string, retryExecutable ...string) error {
 	_, legacy := config.ConsumerContext(source)
 	assets := config.ValidationAssets(source)
 	result, err := config.EnsureInitialized(context.Background(), config.InitRequest{Env: config.SnapshotEnv(), Assets: assets, Legacy: legacy})
@@ -62,5 +65,16 @@ func initializeConfig(source string) error {
 			path = selected.Path
 		}
 	}
-	return &InitializationError{Err: fmt.Errorf("registration succeeded; configuration initialization failed at %q: %w; retry only: claude-notifications config init", path, err)}
+	executable := filepath.Join(source, "bin", "claude-notifications-"+runtime.GOOS+"-"+runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		executable += ".exe"
+	}
+	if len(retryExecutable) > 0 {
+		executable = retryExecutable[0]
+	}
+	quoted := posixQuote(executable)
+	if runtime.GOOS == "windows" {
+		quoted = windowsQuote(executable)
+	}
+	return &InitializationError{Err: fmt.Errorf("registration succeeded; configuration initialization failed at %q: %w; retry only: %s config init", path, err, quoted)}
 }

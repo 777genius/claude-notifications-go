@@ -17,6 +17,7 @@ type UpdatePreflightRequest struct {
 	Assets               AssetContext          `json:"-"`
 	ActiveBundleRoots    []string              `json:"activeBundleRoots"`
 	RefreshDirs          []string              `json:"refreshDirs"`
+	ProtectedPaths       []string              `json:"protectedPaths"`
 	HistoricalCandidates []HistoricalCandidate `json:"historicalCandidates"`
 }
 type UpdatePreflightResult struct {
@@ -99,6 +100,22 @@ func preflightOnce(r UpdatePreflightRequest) (UpdatePreflightResult, error) {
 	}
 	if err != nil {
 		return fail("invalid-config", err)
+	}
+	for _, protected := range r.ProtectedPaths {
+		if !validAbsolute(r.Env.GOOS, protected) {
+			return fail("unsafe-target", &Error{Code: ConfigUnsafeTarget, Path: protected})
+		}
+		physical, e := canonicalParent(protected)
+		if e != nil {
+			return fail("unsafe-target", pathError(protected, e))
+		}
+		target := s.Path
+		if resolved, e := filepath.EvalSymlinks(s.Path); e == nil {
+			target = resolved
+		}
+		if (r.Env.GOOS == "windows" && strings.EqualFold(physical, target)) || (r.Env.GOOS != "windows" && physical == target) {
+			return fail("unsafe-target", &Error{Code: ConfigUnsafeTarget, Path: s.Path})
+		}
 	}
 	// Check overlap before existing/explicit shortcuts. Canonicalizing ancestors
 	// handles relocated bundles and aliases without deriving selection from them.

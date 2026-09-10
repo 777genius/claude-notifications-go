@@ -35,72 +35,80 @@ type ReadRequest struct {
 // legacy production API). It performs no writes, migration, or runtime effects.
 // Managed Windows snapshots acquire existing shared locks without creating them.
 func ReadDocument(r ReadRequest) (Document, *Config, error) {
+	d, c, _, err := ReadDocumentSelection(r)
+	return d, c, err
+}
+
+// ReadDocumentSelection returns the selection which was revalidated around
+// the returned bytes. Consumers that display a path and revision must use this
+// value instead of resolving separately.
+func ReadDocumentSelection(r ReadRequest) (Document, *Config, Selection, error) {
 	if r.ReadSnapshot == nil {
-		return Document{}, nil, &Error{Code: ConfigInvalid}
+		return Document{}, nil, Selection{}, &Error{Code: ConfigInvalid}
 	}
 	selectedPreviously := false
 	for attempt := 0; attempt < 3; attempt++ {
 		s, err := resolveForRead(r.Env)
 		if err != nil {
-			return Document{}, nil, err
+			return Document{}, nil, s, err
 		}
 		if !s.Exists {
 			if selectedPreviously {
-				return Document{}, nil, &Error{Code: ConfigChanged, Path: s.Path}
+				return Document{}, nil, s, &Error{Code: ConfigChanged, Path: s.Path}
 			}
 			if s.Source == "explicit" {
-				return Document{}, nil, &Error{Code: ConfigMissing, Path: s.Path}
+				return Document{}, nil, s, &Error{Code: ConfigMissing, Path: s.Path}
 			}
 			if err := CheckHistorical(r.Legacy, r.ReadSnapshot); err != nil {
-				return Document{}, nil, err
+				return Document{}, nil, s, err
 			}
 			next, err := resolveForRead(r.Env)
 			if err != nil {
-				return Document{}, nil, err
+				return Document{}, nil, next, err
 			}
 			if next.Path != s.Path || next.Exists {
 				continue
 			}
 			d, err := SeedDocument(s.Path)
 			if err != nil {
-				return Document{}, nil, err
+				return Document{}, nil, s, err
 			}
 			c, err := d.Effective(r.Assets)
-			return d, c, err
+			return d, c, s, err
 		}
 		selectedPreviously = true
 		snap, err := r.ReadSnapshot(s.Path, MaxDocumentBytes)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return Document{}, nil, &Error{Code: ConfigChanged, Path: s.Path}
+				return Document{}, nil, s, &Error{Code: ConfigChanged, Path: s.Path}
 			}
 			var ce *Error
 			if errors.As(err, &ce) && ce.Code == ConfigChanged {
 				continue
 			}
-			return Document{}, nil, pathError(s.Path, err)
+			return Document{}, nil, s, pathError(s.Path, err)
 		}
 		d, err := ParseDocument(snap.Bytes, snap.PhysicalPath, true)
 		if err != nil {
-			return Document{}, nil, err
+			return Document{}, nil, s, err
 		}
 		c, err := d.Effective(r.Assets)
 		if err != nil {
-			return Document{}, nil, &Error{Code: ConfigInvalid, Path: s.Path}
+			return Document{}, nil, s, &Error{Code: ConfigInvalid, Path: s.Path}
 		}
 		next, err := resolveForRead(r.Env)
 		if err != nil {
-			return Document{}, nil, err
+			return Document{}, nil, next, err
 		}
 		if !next.Exists {
-			return Document{}, nil, &Error{Code: ConfigChanged, Path: s.Path}
+			return Document{}, nil, s, &Error{Code: ConfigChanged, Path: s.Path}
 		}
 		if next.Path != s.Path {
 			continue
 		}
-		return d, c, nil
+		return d, c, s, nil
 	}
-	return Document{}, nil, &Error{Code: ConfigChanged}
+	return Document{}, nil, Selection{}, &Error{Code: ConfigChanged}
 }
 
 // readFileSnapshotUnmanaged permits final links to regular files and verifies
