@@ -1,5 +1,10 @@
 #!/bin/bash
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-env.sh"
+# Native Windows fixtures build the real Go executable. Preserve only Go's
+# pre-populated module cache across env -i so those builds remain offline.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) TEST_ENV_HANDOFF_GOMODCACHE=1 ;;
+esac
 test_env_enter "$0" "$@"
 # install_e2e_test.sh - End-to-end tests for install.sh
 #
