@@ -133,15 +133,15 @@ print(json.dumps(dict(selected,changed=changed)))
 for tag in ['v1.42.0', 'v1.43.0']:
     with tarfile.open(web / (tag + '.tar.gz'), 'w:gz') as archive:
         for name, data in {'bin/install.sh': installer, '.claude-plugin/plugin.json': '{"version":"'+tag[1:]+'"}'}.items():
-            data = data.encode(); entry = tarfile.TarInfo('bundle/' + name); entry.size = len(data); entry.mode = 0o755
+            data = data.encode('utf-8'); entry = tarfile.TarInfo('bundle/' + name); entry.size = len(data); entry.mode = 0o755
             archive.addfile(entry, io.BytesIO(data))
     dest = web / 'download' / tag; dest.mkdir(parents=True)
-    payload=binary.replace('v1.42.0', tag)
-    (dest / 'binary').write_text(payload)
-    (dest / asset_name).write_text(payload)
+    payload=binary.replace('v1.42.0', tag).encode('utf-8')
+    (dest / 'binary').write_bytes(payload)
+    (dest / asset_name).write_bytes(payload)
     import hashlib
-    (dest / 'checksums.txt').write_text(hashlib.sha256(payload.encode()).hexdigest()+'  '+asset_name+'\n')
-(web/'install.sh').write_text(installer)
+    (dest / 'checksums.txt').write_text(hashlib.sha256(payload).hexdigest()+'  '+asset_name+'\n')
+(web/'install.sh').write_bytes(installer.encode('utf-8'))
 request_paths=[]
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
@@ -161,7 +161,7 @@ env_keys = (
 env = {key: os.environ[key] for key in env_keys if key in os.environ}
 env.update(INSTALL_SCRIPT_URL=base+'/install.sh', BOOTSTRAP_LATEST_RELEASE_API_URL=base+'/latest', BOOTSTRAP_SOURCE_BASE_URL=base, BOOTSTRAP_RELEASES_BASE_URL=base)
 cli = sandbox / 'clis'; cli.mkdir()
-(cli / 'codex').write_text('#!/bin/sh\nexit 99\n'); (cli / 'codex').chmod(0o755)
+(cli / 'codex').write_bytes(b'#!/bin/sh\nexit 99\n'); (cli / 'codex').chmod(0o755)
 bash = shutil.which('bash'); assert bash
 env['PATH'] = str(cli) + os.pathsep + (os.environ['PATH'] if os.name == 'nt' else '/usr/bin:/bin')
 script = str(root / 'bin/bootstrap.sh')
@@ -180,11 +180,11 @@ registration = pathlib.Path(env['CODEX_HOME']) / 'fixture-registration'
 before = registration.read_bytes()
 # Reject mixed binary/source releases before registration and retain live state.
 payload_file = web / 'download/v1.42.0' / asset_name
-valid_payload = payload_file.read_text()
-payload_file.write_text(valid_payload.replace('v1.42.0', 'v1.41.0'))
+valid_payload = payload_file.read_bytes()
+payload_file.write_bytes(valid_payload.replace(b'v1.42.0', b'v1.41.0'))
 run(['--product', 'codex'], 1)
 assert registration.read_bytes() == before
-payload_file.write_text(valid_payload)
+payload_file.write_bytes(valid_payload)
 
 run(['--product', 'codex'], 1, {'FAIL_REGISTER':'1'})
 run(['--product', 'codex'], 1, {'BOOTSTRAP_SOURCE_BASE_URL':base+'/missing'})
@@ -192,7 +192,7 @@ assert registration.read_bytes() == before
 # Matching Claude manifest with stale runtime must force a fresh staged binary.
 live = sandbox / 'live claude'; (live / 'bin').mkdir(parents=True); (live / '.claude-plugin').mkdir()
 (live / '.claude-plugin/plugin.json').write_text('{"version":"1.42.0"}')
-(live / 'bin/install.sh').write_text(installer)
+(live / 'bin/install.sh').write_bytes(installer.encode('utf-8'))
 (live / 'bin/claude-notifications').write_text('stale')
 command = 'source '+shlex.quote(str(sandbox/'functions.sh'))+'; PRODUCT=both; PLUGIN_ROOT='+shlex.quote(str(live))+'; BOOTSTRAP_TAG=v1.42.0; install_cleanup_traps; stage_config_helper; config_preflight; install_codex'
 r = subprocess.run([bash,'-c',command],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20)
@@ -202,7 +202,7 @@ assert (live/'bin/claude-notifications').read_text() == 'stale'
 # the complete bootstrap HTTP/staging path with fake runtime assets.
 dispatch = (root / 'bin/bootstrap.sh').read_text(encoding='utf-8').replace('main "$@"', '')
 dispatch += '\ncheck_prerequisites() { :; }\nresolve_bootstrap_release() { :; }\nstage_historical_baselines() { :; }\nstage_config_helper() { :; }\nconfig_preflight() { :; }\ninitialize_config() { :; }\ninstall_claude() { echo CLAUDE_ADAPTER; }\ninstall_codex() { echo CODEX_ADAPTER; }\nmain "$@"\n'
-(web / 'dispatch.sh').write_text(dispatch, encoding='utf-8')
+(web / 'dispatch.sh').write_bytes(dispatch.encode('utf-8'))
 for choice, success in ([('1',True), ('2',True), ('3',True), ('invalid',False)] if os.name != 'nt' else []):
     entry = '/dispatch.sh' if choice in ['1', '3'] else '/bootstrap.sh'
     pid, fd = pty.fork()
@@ -247,7 +247,7 @@ root=home/'plugins/cache/claude-notifications-go/claude-notifications-go/1.42.0'
 registry=home/'plugins/installed_plugins.json'
 registry.write_text(json.dumps({'plugins':{'claude-notifications-go@claude-notifications-go':[{'installPath':str(root),'version':'1.42.0'}]}}))
 '''
-(cli/'claude').write_text(claude_script); (cli/'claude').chmod(0o755)
+(cli/'claude').write_bytes(claude_script.encode('utf-8')); (cli/'claude').chmod(0o755)
 def events():
     return [json.loads(line) for line in trace.read_text().splitlines()] if trace.exists() else []
 def reset_case():
