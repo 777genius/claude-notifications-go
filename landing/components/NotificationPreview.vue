@@ -1,48 +1,31 @@
 <script setup lang="ts">
-const notifications = [
-  {
-    agent: "claude",
-    title: "❓ Question",
-    body: "What would you like to name the test file in /tmp/?",
-  },
-  {
-    agent: "claude",
-    title: "📋 Plan",
-    body: "Plan: Create test file in /tmp/",
-  },
-  {
-    agent: "codex",
-    title: "✅ Completed",
-    body: "Done. Installation now comes right after the hero.",
-    detail: "✏️ 3 edited  ⏱ 35s",
-  },
-  {
-    agent: "claude",
-    title: "🔍 Review",
-    body: "Review complete. No issues found in the updated installer.",
-  },
-  {
-    agent: "codex",
-    title: "🔐 Permission Request",
-    body: "Approval required: shell",
-  },
-  {
-    agent: "claude",
-    title: "⏱️ Session Limit Reached",
-    body: "Session limit reached. Please wait before continuing.",
-  },
-  {
-    agent: "codex",
-    title: "🔴 API Error: 401",
-    body: "Authentication expired. Please sign in again.",
-  },
+const { t } = useI18n();
+const notificationDefinitions = [
+  { key: "question", agent: "claude" },
+  { key: "plan", agent: "claude" },
+  { key: "completed", agent: "codex", detail: true },
+  { key: "review", agent: "claude" },
+  { key: "permission", agent: "codex" },
+  { key: "limit", agent: "claude" },
+  { key: "error", agent: "codex" },
 ] as const;
+const notifications = computed(() =>
+  notificationDefinitions.map((item) => ({
+    agent: item.agent,
+    title: t(`preview.items.${item.key}.title`),
+    body: t(`preview.items.${item.key}.body`),
+    ...("detail" in item
+      ? { detail: t(`preview.items.${item.key}.detail`) }
+      : {}),
+  })),
+);
 const cursor = ref(0);
 const paused = ref(false);
 const reduced = ref(false);
 const visible = computed(() =>
   [0, 1, 2].map((offset) => ({
-    item: notifications[(cursor.value + offset) % notifications.length]!,
+    item:
+      notifications.value[(cursor.value + offset) % notifications.value.length]!,
     id: cursor.value + offset,
   })),
 );
@@ -67,19 +50,19 @@ onUnmounted(() => {
 <template>
   <section
     class="notification-preview"
-    aria-label="Agent notification examples"
+    :aria-label="t('preview.ariaLabel')"
   >
     <div class="preview-heading">
-      <span>YOUR AGENT HAS AN UPDATE</span>
+      <span>{{ t("preview.heading") }}</span>
       <button
         v-if="!reduced"
         class="preview-control"
         :aria-pressed="paused"
         @click="paused = !paused"
       >
-        {{ paused ? "Resume" : "Pause" }}
+        {{ paused ? t("preview.resume") : t("preview.pause") }}
       </button>
-      <button v-else class="preview-control" @click="cursor++">Next</button>
+      <button v-else class="preview-control" @click="cursor++">{{ t("preview.next") }}</button>
     </div>
     <TransitionGroup :css="!reduced" name="notification" tag="div" class="notification-stack">
       <article
@@ -91,9 +74,9 @@ onUnmounted(() => {
         <div class="notification-copy">
           <div class="notification-title">
             <h3>{{ item.title }}</h3>
-            <span>now</span>
+            <span>{{ t("common.now") }}</span>
           </div>
-          <strong>main · notification_plugin_go</strong>
+          <strong>{{ t("preview.workspace") }}</strong>
           <p>{{ item.body }}</p>
           <span v-if="'detail' in item" class="notification-detail">{{
             item.detail

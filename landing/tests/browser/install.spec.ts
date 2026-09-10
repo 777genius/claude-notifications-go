@@ -180,6 +180,45 @@ test("assets load, hydration is clean and reduced motion disables background ani
   ).not.toBe("32px");
   expect(errors).toEqual([]);
 });
+test("language switch localizes content, URL, metadata and persists the choice", async ({
+  page,
+}) => {
+  await page.goto("?source=i18n#features");
+  await page.getByRole("button", { name: "Codex CLI · beta", exact: true }).click();
+  await chooseOS(page, "windows");
+  await expect(page.getByLabel("Install command")).toHaveValue(/--product codex$/);
+  const language = page.getByRole("combobox", { name: /Current language/ });
+  await language.selectOption("zh");
+  await expect(page).toHaveURL(/\/agent-notifications\/zh\/?\?source=i18n#features$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("保持专注");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page).toHaveTitle("Agent Notifications - 专注工作，及时获知进展");
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    "content",
+    /桌面通知/,
+  );
+  await expect(page.getByLabel("安装命令")).toHaveValue(/--product codex$/);
+  await expect(page.getByText("请在 Windows 的 Git Bash 中运行。", { exact: true })).toBeVisible();
+  expect((await page.context().cookies()).find((cookie) => cookie.name === "agent_notifications_locale")?.value).toBe("zh");
+
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("保持专注");
+  await page.getByRole("combobox", { name: /当前语言/ }).selectOption("en");
+  await expect(page).toHaveURL(/\/agent-notifications\/?\?source=i18n#features$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Stay in flow");
+});
+test("failed locale payload keeps the working language and reports the error", async ({
+  page,
+}) => {
+  await page.route("**/_i18n/**/zh/messages.json", (route) => route.abort());
+  await page.goto("");
+  await page.getByRole("combobox", { name: /Current language/ }).selectOption("zh");
+  await expect(page.getByRole("alert")).toContainText(
+    "Unable to change language",
+  );
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Stay in flow");
+  await expect(page).toHaveURL(/\/agent-notifications\/?$/);
+});
 test("notification sequence covers statuses and agents, pause and reduced motion", async ({
   page,
 }) => {
