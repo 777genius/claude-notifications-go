@@ -100,13 +100,14 @@ type Snapshot struct {
 	Navigation Navigation `json:"navigation"`
 }
 type Receipt struct {
-	Status     string   `json:"status"`
-	Reason     string   `json:"reason"`
-	Backend    string   `json:"backend"`
-	RequestID  *string  `json:"request_id"`
-	TrackingID string   `json:"tracking_id"`
-	KeyKind    KeyKind  `json:"key_kind"`
-	Decision   Snapshot `json:"decision"`
+	Status            string      `json:"status"`
+	Reason            string      `json:"reason"`
+	Backend           string      `json:"backend"`
+	RequestID         *string     `json:"request_id"`
+	TrackingID        string      `json:"tracking_id"`
+	KeyKind           KeyKind     `json:"key_kind"`
+	Decision          Snapshot    `json:"decision"`
+	OutcomeNavigation *Navigation `json:"outcome_navigation,omitempty"`
 }
 
 // MaxRate is the existing maximum record/JSON-array budget. Rate capacity does
@@ -387,6 +388,22 @@ func (s *Store) Admit(ctx context.Context, a Admission) (out Result, err error) 
 // are immutable. On any error after the effect the caller reports unknown and
 // must not retry delivery. A completed token cannot be finalized twice.
 func (s *Store) Finalize(ctx context.Context, k Key, attempt, status, reason, backend string) error {
+	return s.FinalizeOutcome(ctx, k, attempt, status, reason, backend, nil)
+}
+
+// FinalizeOutcome atomically records terminal navigation separately from the
+// immutable admission. Nil preserves the legacy Finalize representation.
+// This is draft unreleased v1 state: existing records remain readable, but old
+// readers reject the optional field/new suppressed enum. Activation must fence
+// older writers and rollback paths; never reset history or change namespace.
+func (s *Store) FinalizeOutcome(ctx context.Context, k Key, attempt, status, reason, backend string, navigation *Navigation) error {
+	if navigation != nil {
+		n := *navigation
+		navigation = &n
+		if !validOutcomeNavigation(n) {
+			return ErrInvalid
+		}
+	}
 	if !k.valid() || !isHex(attempt) || !validTerminal(status) || !validText(reason, 128, true) || !validText(backend, 128, false) {
 		return ErrInvalid
 	}
@@ -396,6 +413,10 @@ func (s *Store) Finalize(ctx context.Context, k Key, attempt, status, reason, ba
 		if !ok || r.Attempt != attempt || r.State != "dispatching" {
 			return false, ErrCAS
 		}
+		if navigation != nil && !validNavigationTransition(r.Receipt.Decision.Navigation, *navigation) {
+			return false, ErrInvalid
+		}
+		r.Receipt.OutcomeNavigation = navigation
 		r.State = status
 		r.Receipt.Status = status
 		r.Receipt.Reason = reason
@@ -423,7 +444,18 @@ func (s *Store) Collect(ctx context.Context) error {
 		return true, nil
 	})
 }
-func validTerminal(s string) bool { return s == "submitted" || s == "rejected" || s == "unknown" }
+func validTerminal(s string) bool {
+	return s == "submitted" || s == "rejected" || s == "unknown" || s == "suppressed"
+}
+func validOutcomeNavigation(n Navigation) bool {
+	if !validText(n.Scope, 1024, false) || !validText(n.Reason, 1024, false) {
+		return false
+	}
+	return (n.Capability == "available" && n.Precision == "chat_id" && n.Scope != "") || ((n.Capability == "unavailable" || n.Capability == "disabled") && n.Precision == "none")
+}
+func validNavigationTransition(before, after Navigation) bool {
+	return after.Capability != "available" || (before.Capability == "available" && before.Precision == after.Precision && before.Scope == after.Scope)
+}
 func validSnapshot(s Snapshot) bool {
 	for _, v := range []string{s.Target.Kind, s.Target.ID, s.Target.Application, s.Target.Identity, s.Policy, s.Navigation.Capability, s.Navigation.Precision, s.Navigation.Scope, s.Navigation.Reason} {
 		if !validText(v, 1024, false) {
@@ -473,6 +505,9 @@ func (d *disk) validate(s *Store) error {
 		if !isHex(r.Session) || !isHex(k) || !isHex(r.Digest) || !isHex(r.Attempt) || r.Created > d.Clock.Logical || !validKind(p.KeyKind) || !validText(p.TrackingID, 256, true) || !validSnapshot(p.Decision) || !validText(p.Reason, 128, true) || !validText(p.Backend, 128, false) {
 			return ErrRepair
 		}
+		if p.OutcomeNavigation != nil && (!validOutcomeNavigation(*p.OutcomeNavigation) || !validNavigationTransition(p.Decision.Navigation, *p.OutcomeNavigation)) {
+			return ErrRepair
+		}
 		if p.KeyKind == Explicit {
 			if p.RequestID == nil || !validText(*p.RequestID, 256, true) {
 				return ErrRepair
@@ -481,7 +516,7 @@ func (d *disk) validate(s *Store) error {
 			return ErrRepair
 		}
 		if r.State == "dispatching" {
-			if p.Status != "unknown" || p.Reason != "pending_submission" || p.Backend != "" {
+			if p.Status != "unknown" || p.Reason != "pending_submission" || p.Backend != "" || p.OutcomeNavigation != nil {
 				return ErrRepair
 			}
 		} else if !validTerminal(r.State) || p.Status != r.State {
