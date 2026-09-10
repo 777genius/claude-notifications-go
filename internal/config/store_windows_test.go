@@ -135,7 +135,7 @@ func TestWindowsManagedReaderWaits(t *testing.T) {
 	}
 }
 
-func TestWindowsInitDefersResolveSharingViolationToGuard(t *testing.T) {
+func TestWindowsInitRetriesResolveSharingViolationBeforeGuard(t *testing.T) {
 	for _, explicit := range []bool{false, true} {
 		name := "automatic"
 		if explicit {
@@ -157,18 +157,8 @@ func TestWindowsInitDefersResolveSharingViolationToGuard(t *testing.T) {
 				}
 				if calls == 2 {
 					guardPath := filepath.Join(env.Vars["USERPROFILE"], ".agent-notifications-config.lock")
-					f, err := winOpen(guardPath, windows.GENERIC_READ|windows.GENERIC_WRITE, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, false)
-					if err != nil {
-						t.Fatalf("selection guard was not published before Resolve: %v", err)
-					}
-					defer f.Close()
-					var ov windows.Overlapped
-					err = windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &ov)
-					if !errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
-						if err == nil {
-							_ = windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, &ov)
-						}
-						t.Fatalf("Resolve ran without the selection guard held: %v", err)
+					if _, err := os.Lstat(guardPath); !os.IsNotExist(err) {
+						t.Fatalf("selection guard published before Resolve completed: %v", err)
 					}
 				}
 				return originalReadDir(path)
@@ -178,7 +168,7 @@ func TestWindowsInitDefersResolveSharingViolationToGuard(t *testing.T) {
 				t.Fatal(err)
 			}
 			if calls < 2 {
-				t.Fatal("initial sharing violation was not resolved again under the guard")
+				t.Fatal("initial sharing violation was not retried")
 			}
 		})
 	}

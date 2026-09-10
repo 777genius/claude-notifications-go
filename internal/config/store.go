@@ -113,6 +113,34 @@ func rememberStoreLock(ctx context.Context, f *os.File) error {
 	return nil
 }
 
+// resolveForMutation keeps the public resolver a single, read-only snapshot,
+// while allowing a mutation to wait out the brief Windows directory-sharing
+// gap created by another initializer's MoveFileEx publication. The private
+// errno survives sanitization specifically so no other resolver failure is
+// retried.
+func resolveForMutation(ctx context.Context, env EnvSnapshot) (Selection, error) {
+	for {
+		if ctx.Err() != nil {
+			return Selection{}, &Error{Code: ConfigLockTimeout}
+		}
+		selected, err := Resolve(env)
+		if ctx.Err() != nil {
+			return Selection{}, &Error{Code: ConfigLockTimeout, Path: selected.Path}
+		}
+		var ce *Error
+		if env.GOOS != "windows" || !errors.As(err, &ce) || ce.causeErrno != 32 {
+			return selected, err
+		}
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return Selection{}, &Error{Code: ConfigLockTimeout, Path: selected.Path}
+		case <-timer.C:
+		}
+	}
+}
+
 func beginMutation(ctx context.Context, env EnvSnapshot) (*mutation, error) {
 	ctx = context.WithValue(ctx, heldStoreLocksKey{}, &heldStoreLocks{})
 	guard := func() {}
@@ -157,27 +185,10 @@ func beginMutation(ctx context.Context, env EnvSnapshot) (*mutation, error) {
 		return nil
 	}
 
-	// Windows publishes newly private directories with MoveFileEx. A concurrent
-	// os.ReadDir can receive ERROR_SHARING_VIOLATION while that rename owns its
-	// transient DELETE handle (Go's directory open does not share DELETE). For
-	// the guard path is known from USERPROFILE alone, so serialize resolution
-	// before any directory enumeration. A portable explicit target keeps the
-	// existing target-lock fallback when USERPROFILE cannot host the guard.
-	if env.GOOS == "windows" {
-		preselection := Selection{}
-		if override, explicit := env.Vars[OverrideEnv]; explicit {
-			// Resolve owns override validation. In particular, an invalid override
-			// must remain a side-effect-free error and must not publish a guard.
-			if !validAbsolute(env.GOOS, override) {
-				return nil, &Error{Code: ConfigOverrideInvalid}
-			}
-			preselection = Selection{Path: cleanPath(env.GOOS, override), Source: "explicit"}
-		}
-		if err := acquireGuard(preselection); err != nil {
-			return nil, err
-		}
-	}
-	initial, err := Resolve(env)
+	// Resolve before creating either lock. Besides invalid overrides, this keeps
+	// an unavailable Windows config base side-effect free. Existing legacy
+	// selection still succeeds when APPDATA is unavailable.
+	initial, err := resolveForMutation(ctx, env)
 	if err != nil {
 		var ce *Error
 		if !errors.As(err, &ce) || ce.Code != ConfigRecoveryRequired {
@@ -196,7 +207,7 @@ func beginMutation(ctx context.Context, env EnvSnapshot) (*mutation, error) {
 		}
 	}
 	fail := func(e error) (*mutation, error) { guard(); return nil, e }
-	selected, err := Resolve(env)
+	selected, err := resolveForMutation(ctx, env)
 	if err != nil {
 		var ce *Error
 		if !errors.As(err, &ce) || ce.Code != ConfigRecoveryRequired {
@@ -217,7 +228,7 @@ func beginMutation(ctx context.Context, env EnvSnapshot) (*mutation, error) {
 		parent.close()
 		return fail(pathError(selected.Path, err))
 	}
-	next, err := Resolve(env)
+	next, err := resolveForMutation(ctx, env)
 	if err == nil && next.Path != selected.Path {
 		err = &Error{Code: ConfigConflict, Path: selected.Path}
 	}
@@ -254,7 +265,7 @@ func EnsureInitialized(ctx context.Context, r InitRequest) (Result, error) {
 	}
 	// Existing valid initialization is a read-only snapshot. It need not
 	// create lock files in a read-only deployment or adjust any permissions.
-	if selected, e := Resolve(r.Env); e == nil && selected.Exists {
+	if selected, e := resolveForMutation(ctx, r.Env); e == nil && selected.Exists {
 		if e := validateStoreTarget(selected.Path); e != nil {
 			return Result{Selection: selected}, e
 		}
@@ -271,7 +282,7 @@ func EnsureInitialized(ctx context.Context, r InitRequest) (Result, error) {
 			// Selection can change while this read-only snapshot is taken (for
 			// example, a legacy file appears while neutral was selected).
 			// Never report initialization of a silently retargeted selection.
-			next, e := Resolve(r.Env)
+			next, e := resolveForMutation(ctx, r.Env)
 			if e != nil {
 				return Result{Selection: selected}, e
 			}
@@ -372,7 +383,7 @@ func commitDocument(ctx context.Context, env EnvSnapshot, m *mutation, old, next
 		if ctx.Err() != nil {
 			return &Error{Code: ConfigLockTimeout, Path: m.selection.Path}
 		}
-		s, e := Resolve(env)
+		s, e := resolveForMutation(ctx, env)
 		if e != nil {
 			return e
 		}
