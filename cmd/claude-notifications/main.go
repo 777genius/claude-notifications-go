@@ -542,15 +542,14 @@ func scheduleWindowsLazyUpdateImpl(pluginRoot string) error {
 }
 
 func windowsLazyUpdatePowerShellCommand(bashPath, shCommand string) string {
-	// The PowerShell process already inherits NUL for all three standard
-	// streams. WinPS native-command redirection here is redundant and can keep
-	// the detached pipeline alive instead of starting bash.
+	// Thread.Sleep remains reliable in the detached, NUL-backed Windows
+	// PowerShell process where Start-Sleep can stall before launching bash.
 	return "$ErrorActionPreference = 'SilentlyContinue'; " +
-		"Start-Sleep -Milliseconds 750; " +
+		"[System.Threading.Thread]::Sleep(750); " +
 		"for ($i = 0; $i -lt 6; $i++) { " +
 		"& " + powershellSingleQuoted(bashPath) + " -lc " + powershellSingleQuoted(shCommand) + "; " +
 		"if ($LASTEXITCODE -eq 0) { break }; " +
-		"Start-Sleep -Seconds 5 }"
+		"[System.Threading.Thread]::Sleep(5000) }"
 }
 
 func findWindowsPowerShell() (string, error) {
