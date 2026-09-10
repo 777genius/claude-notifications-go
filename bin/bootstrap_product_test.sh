@@ -110,6 +110,7 @@ if args[1]=='preflight-update':
     request=json.load(sys.stdin)
     status='safe'
     if any(p.resolve().is_relative_to(pathlib.Path(d).resolve()) for d in request['refreshDirs']): status='unsafe-target'
+    if any(p.resolve()==pathlib.Path(d).resolve() for d in request.get('protectedPaths',[])): status='unsafe-target'
     def customized(c):
         candidate=pathlib.Path(c['path'])
         if not candidate.exists(): return False
@@ -266,6 +267,16 @@ for product in ['claude','codex','both']:
     neutral.write_bytes(b'{ "future": [1, 2], "secret": "canary" }\n')
     before=neutral.read_bytes(); trace.write_text('')
     run(['--product',product]); assert neutral.read_bytes()==before and len(init_events())==1
+
+# Claude's registry is strict preflight input and must be rejected before the
+# mocked Claude CLI can mutate it or any plugin state.
+reset_case()
+registry=pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'plugins/installed_plugins.json'
+registry.parent.mkdir(parents=True); original=b'{"plugins":{},"canary":true}'
+registry.write_bytes(original)
+output=run(['--product','claude'],1,{'AGENT_NOTIFICATIONS_CONFIG':str(registry)})
+assert not any(e[:1]==['claude'] for e in events()) and registry.read_bytes()==original
+assert json.loads(request.read_text())['protectedPaths']==[str(registry)]
 reset_case()
 legacy=pathlib.Path(env['HOME'])/'.claude/claude-notifications-go/config.json'
 legacy.parent.mkdir(parents=True); legacy.write_bytes(b'{ "future": {"x":1} }\n')

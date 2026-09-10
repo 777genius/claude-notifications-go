@@ -3,11 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/777genius/agent-notifications/internal/testenv"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/777genius/agent-notifications/internal/testenv"
 )
 
 func TestConfigRejectsUnsafeInputWithoutDisclosure(t *testing.T) {
@@ -41,6 +42,23 @@ func TestConfigRejectsUnsafeInputWithoutDisclosure(t *testing.T) {
 				t.Fatalf("unsafe error: %q", stderr.String())
 			}
 		})
+	}
+}
+
+func TestConfigPreflightAcceptsProtectedPaths(t *testing.T) {
+	testenv.Set(t, t.TempDir())
+	protected := filepath.Join(t.TempDir(), "installed_plugins.json")
+	t.Setenv("AGENT_NOTIFICATIONS_CONFIG", protected)
+	input, err := json.Marshal(map[string]any{"protectedPaths": []string{protected}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, stderr bytes.Buffer
+	if code := configCommand([]string{"preflight-update", "--stdin", "--json"}, bytes.NewReader(input), &out, &stderr); code == 0 {
+		t.Fatal("protected registration path was accepted as configuration")
+	}
+	if !strings.Contains(out.String()+stderr.String(), "ConfigUnsafeTarget") {
+		t.Fatalf("field was not passed to preflight: stdout=%q stderr=%q", out.String(), stderr.String())
 	}
 }
 

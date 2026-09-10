@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -40,6 +41,24 @@ func TestRecoveryArtifactsDoNotInventCaseAliases(t *testing.T) {
 	}
 	if _, err := Resolve(e); err != nil {
 		t.Fatalf("case-sensitive volume alias invented: %v", err)
+	}
+}
+
+func TestRecoveryArtifactsUseNativeUnicodeNormalization(t *testing.T) {
+	e := fakeEnv("darwin", map[string]string{OverrideEnv: "/fixture/caf\u00e9.json"}, nil)
+	e.ReadDir = func(string) ([]fs.DirEntry, error) {
+		return []fs.DirEntry{fakeEntry{"cafe\u0301.json.backup-interrupted", 0}}, nil
+	}
+	e.Lstat = func(p string) (fs.FileInfo, error) {
+		if p == "/fixture/caf\u00e9.json.backup-interrupted" {
+			return fakeEntry{name: filepath.Base(p), mode: 0600}, nil
+		}
+		return nil, fs.ErrNotExist
+	}
+	_, err := Resolve(e)
+	var configErr *Error
+	if !errors.As(err, &configErr) || configErr.Code != ConfigRecoveryRequired {
+		t.Fatalf("normalization alias hid recovery evidence: %v", err)
 	}
 }
 

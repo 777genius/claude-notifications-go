@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/777genius/agent-notifications/internal/config"
 )
@@ -72,9 +73,13 @@ func initializeConfig(source string, retryExecutable ...string) error {
 	if len(retryExecutable) > 0 {
 		executable = retryExecutable[0]
 	}
-	quoted := posixQuote(executable)
+	retry := posixQuote(executable) + " config init"
 	if runtime.GOOS == "windows" {
-		quoted = windowsQuote(executable)
+		retry = powershellCommand(executable)
 	}
-	return &InitializationError{Err: fmt.Errorf("registration succeeded; configuration initialization failed at %q: %w; retry only: %s config init", path, err, quoted)}
+	return &InitializationError{Err: fmt.Errorf("registration succeeded; configuration initialization failed at %q: %w; retry only: %s", path, err, retry)}
+}
+
+func powershellCommand(executable string) string {
+	return "& '" + strings.ReplaceAll(executable, "'", "''") + "' config init"
 }

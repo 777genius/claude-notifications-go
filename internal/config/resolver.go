@@ -151,23 +151,30 @@ func candidate(e EnvSnapshot, p, source string) (Selection, error) {
 		if name == base+".tmp" || legacyTemp || strings.HasPrefix(name, base+".backup-") || strings.HasPrefix(name, base+".tmp-") {
 			return s, &Error{Code: ConfigRecoveryRequired, Path: p}
 		}
-		// Ask the filesystem whether a differently-cased spelling names this
-		// artifact. This catches aliases on Windows and case-insensitive macOS
-		// volumes without inventing aliases on a case-sensitive macOS volume.
-		if (e.GOOS == "windows" || e.GOOS == "darwin") && len(name) >= len(base) && strings.EqualFold(name[:len(base)], base) {
-			suffix := name[len(base):]
-			folded := strings.ToLower(suffix)
-			if folded == ".tmp" || strings.HasPrefix(folded, ".backup-") || strings.HasPrefix(folded, ".tmp-") {
-				alias := joinPath(e.GOOS, dir, base+suffix)
-				if _, aliasErr := e.Lstat(alias); aliasErr == nil {
-					return s, &Error{Code: ConfigRecoveryRequired, Path: p}
-				} else if !errors.Is(aliasErr, fs.ErrNotExist) {
-					return s, pathError(alias, aliasErr)
-				}
+		// Derive only the writer-owned suffix from the directory entry, then
+		// ask the native filesystem about requested-basename+suffix. This covers
+		// case and Unicode normalization aliases without inventing either.
+		if suffix, ok := recoverySuffix(name); ok {
+			alias := joinPath(e.GOOS, dir, base+suffix)
+			if _, aliasErr := e.Lstat(alias); aliasErr == nil {
+				return s, &Error{Code: ConfigRecoveryRequired, Path: p}
+			} else if !errors.Is(aliasErr, fs.ErrNotExist) {
+				return s, pathError(alias, aliasErr)
 			}
 		}
 	}
 	return s, nil
+}
+
+func recoverySuffix(name string) (string, bool) {
+	for _, marker := range []string{".backup-", ".tmp-", ".tmp"} {
+		for i := 0; i+len(marker) <= len(name); i++ {
+			if strings.EqualFold(name[i:i+len(marker)], marker) && (marker != ".tmp" || i+len(marker) == len(name)) {
+				return name[i:], true
+			}
+		}
+	}
+	return "", false
 }
 func pathError(p string, err error) error {
 	var ce *Error

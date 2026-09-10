@@ -56,3 +56,11 @@ func TestInitializationRetryUsesConcreteInstalledBinary(t *testing.T) {
 		t.Fatalf("retry command is not concrete: %v", err)
 	}
 }
+
+func TestPowerShellRetryCommandEscapesLiteralPath(t *testing.T) {
+	got := powershellCommand(`C:\Users\O'Brien\bin\notify.exe`)
+	want := `& 'C:\Users\O''Brien\bin\notify.exe' config init`
+	if got != want {
+		t.Fatalf("PowerShell retry = %q, want %q", got, want)
+	}
+}

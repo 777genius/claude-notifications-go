@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,15 +106,11 @@ func preflightOnce(r UpdatePreflightRequest) (UpdatePreflightResult, error) {
 		if !validAbsolute(r.Env.GOOS, protected) {
 			return fail("unsafe-target", &Error{Code: ConfigUnsafeTarget, Path: protected})
 		}
-		physical, e := canonicalParent(protected)
+		same, e := sameNativePath(r.Env.GOOS, protected, s.Path)
 		if e != nil {
 			return fail("unsafe-target", pathError(protected, e))
 		}
-		target := s.Path
-		if resolved, e := filepath.EvalSymlinks(s.Path); e == nil {
-			target = resolved
-		}
-		if (r.Env.GOOS == "windows" && strings.EqualFold(physical, target)) || (r.Env.GOOS != "windows" && physical == target) {
+		if same {
 			return fail("unsafe-target", &Error{Code: ConfigUnsafeTarget, Path: s.Path})
 		}
 	}
@@ -123,24 +120,12 @@ func preflightOnce(r UpdatePreflightRequest) (UpdatePreflightResult, error) {
 		if !validAbsolute(r.Env.GOOS, dir) {
 			return fail("unsafe-target", &Error{Code: ConfigUnsafeTarget, Path: dir})
 		}
-		physical, e := canonicalParent(filepath.Join(dir, ".preflight-entry"))
+		within, e := withinNativePath(r.Env.GOOS, dir, s.Path)
 		if e != nil {
 			return fail("unsafe-target", pathError(dir, e))
 		}
-		root := filepath.Dir(physical)
-		targets := []string{s.Path}
-		if resolved, e := filepath.EvalSymlinks(s.Path); e == nil {
-			targets = append(targets, resolved)
-		}
-		for _, target := range targets {
-			if r.Env.GOOS == "windows" {
-				root = strings.ToLower(root)
-				target = strings.ToLower(target)
-			}
-			rel, e := filepath.Rel(root, target)
-			if e == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				return fail("unsafe-target", &Error{Code: ConfigUnsafeTarget, Path: s.Path})
-			}
+		if within {
+			return fail("unsafe-target", &Error{Code: ConfigUnsafeTarget, Path: s.Path})
 		}
 	}
 	if s.Exists {
@@ -181,4 +166,122 @@ func preflightOnce(r UpdatePreflightRequest) (UpdatePreflightResult, error) {
 		return fail("import-required", e)
 	}
 	return out, nil
+}
+
+type nativeAncestor struct {
+	path   string
+	info   fs.FileInfo
+	suffix []string
+}
+
+// deepestNativeAncestor finds only the nearest existing ancestor. Preflight is
+// read-only: uncertainty about missing names is handled conservatively below.
+func deepestNativeAncestor(p string) (nativeAncestor, error) {
+	p = filepath.Clean(p)
+	var suffix []string
+	for {
+		info, err := os.Stat(p)
+		if err == nil {
+			physical, evalErr := filepath.EvalSymlinks(p)
+			if evalErr != nil {
+				return nativeAncestor{}, evalErr
+			}
+			return nativeAncestor{path: physical, info: info, suffix: suffix}, nil
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return nativeAncestor{}, err
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return nativeAncestor{}, fs.ErrNotExist
+		}
+		suffix = append([]string{filepath.Base(p)}, suffix...)
+		p = parent
+	}
+}
+
+func sameNativePath(goos, a, b string) (bool, error) {
+	aa, err := deepestNativeAncestor(a)
+	if err != nil {
+		return false, err
+	}
+	bb, err := deepestNativeAncestor(b)
+	if err != nil {
+		return false, err
+	}
+	if !os.SameFile(aa.info, bb.info) {
+		return false, nil
+	}
+	return nativeSuffixEqual(goos, aa.suffix, bb.suffix), nil
+}
+
+func nativeSuffixEqual(goos string, a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] == b[i] {
+			continue
+		}
+		// Windows and macOS may resolve absent spellings to the same future
+		// entry. With no file to query, fail closed only for their case aliases.
+		if (goos != "windows" && goos != "darwin") || !strings.EqualFold(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func withinNativePath(goos, root, target string) (bool, error) {
+	rr, err := deepestNativeAncestor(root)
+	if err != nil {
+		return false, err
+	}
+	tt, err := deepestNativeAncestor(target)
+	if err != nil {
+		return false, err
+	}
+	if os.SameFile(rr.info, tt.info) {
+		return nativeHasPathPrefix(goos, tt.suffix, rr.suffix), nil
+	}
+	// If target's deepest existing ancestor is below root's, query exactly the
+	// corresponding prefix identity instead of scanning unrelated ancestors.
+	candidate := tt.path
+	var below []string
+	for nativeDepth(candidate) > nativeDepth(rr.path) {
+		below = append([]string{filepath.Base(candidate)}, below...)
+		candidate = filepath.Dir(candidate)
+	}
+	if nativeDepth(candidate) != nativeDepth(rr.path) {
+		return false, nil
+	}
+	prefixInfo, statErr := os.Stat(candidate)
+	if statErr != nil {
+		return false, statErr
+	}
+	if !os.SameFile(rr.info, prefixInfo) {
+		return false, nil
+	}
+	components := append(below, tt.suffix...)
+	return nativeHasPathPrefix(goos, components, rr.suffix), nil
+}
+
+func nativeDepth(p string) int {
+	depth := 0
+	for parent := filepath.Dir(p); parent != p; parent = filepath.Dir(p) {
+		depth++
+		p = parent
+	}
+	return depth
+}
+
+func nativeHasPathPrefix(goos string, path, prefix []string) bool {
+	if len(prefix) > len(path) {
+		return false
+	}
+	for i := range prefix {
+		if !nativeSuffixEqual(goos, path[i:i+1], prefix[i:i+1]) {
+			return false
+		}
+	}
+	return true
 }

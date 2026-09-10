@@ -159,7 +159,7 @@ func configCommand(args []string, in io.Reader, out, stderr io.Writer) int {
 		keys := envelope.Raw()
 		allowedKeys := map[string]bool{"set": true, "remove": true}
 		if op == "preflight-update" {
-			allowedKeys = map[string]bool{"activeBundleRoots": true, "refreshDirs": true, "historicalCandidates": true}
+			allowedKeys = map[string]bool{"activeBundleRoots": true, "refreshDirs": true, "protectedPaths": true, "historicalCandidates": true}
 		}
 		for key, value := range keys {
 			if !allowedKeys[key] || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {

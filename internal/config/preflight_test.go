@@ -101,3 +101,59 @@ func TestPreflightMissingExplicitOverlapAndCanonicalHistoryBypass(t *testing.T) 
 		t.Fatalf("canonical bypassed overlap: %v", err)
 	}
 }
+
+func TestPreflightUsesNativeCaseAliases(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "bundle")
+	if err := os.Mkdir(bundle, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "BUNDLE")
+	if _, err := os.Stat(alias); err != nil {
+		t.Skip("filesystem is case-sensitive")
+	}
+	env := storeEnv(t)
+	env.Vars[OverrideEnv] = filepath.Join(alias, "config", "config.json")
+	out, err := PreflightUpdate(UpdatePreflightRequest{Env: env, RefreshDirs: []string{bundle}})
+	if err == nil || out.Status != "unsafe-target" {
+		t.Fatalf("native alias escaped refresh protection: %+v %v", out, err)
+	}
+}
+
+func TestPreflightDoesNotFoldDistinctNativePaths(t *testing.T) {
+	root := t.TempDir()
+	lower := filepath.Join(root, "bundle")
+	upper := filepath.Join(root, "BUNDLE")
+	if err := os.Mkdir(lower, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(upper, 0700); err != nil {
+		t.Skip("filesystem is case-insensitive")
+	}
+	env := storeEnv(t)
+	env.Vars[OverrideEnv] = filepath.Join(upper, "config.json")
+	out, err := PreflightUpdate(UpdatePreflightRequest{Env: env, RefreshDirs: []string{lower}})
+	if err != nil || out.Status != "safe" {
+		t.Fatalf("distinct native path was folded: %+v %v", out, err)
+	}
+}
+
+func TestPreflightProtectsAbsentNativeCaseAlias(t *testing.T) {
+	root := t.TempDir()
+	probe := filepath.Join(root, "case-probe")
+	if err := os.WriteFile(probe, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "CASE-PROBE")); err != nil {
+		t.Skip("filesystem is case-sensitive")
+	}
+	if err := os.Remove(probe); err != nil {
+		t.Fatal(err)
+	}
+	env := storeEnv(t)
+	env.Vars[OverrideEnv] = filepath.Join(root, "hooks.json")
+	out, err := PreflightUpdate(UpdatePreflightRequest{Env: env, ProtectedPaths: []string{filepath.Join(root, "HOOKS.JSON")}})
+	if err == nil || out.Status != "unsafe-target" {
+		t.Fatalf("absent native alias escaped protection: %+v %v", out, err)
+	}
+}

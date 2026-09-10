@@ -1153,7 +1153,8 @@ if product!='claude':
 if venv_refresh: refresh.append(venv_refresh)
 assert all(os.path.isabs(p) for p in refresh), 'Refresh roots must be absolute'
 # Baselines come only from checksum-verified artifacts of the recorded version.
-json.dump(dict(activeBundleRoots=roots,refreshDirs=refresh,historicalCandidates=historical),sys.stdout)
+protected=[current_registry] if product!='codex' else []
+json.dump(dict(activeBundleRoots=roots,refreshDirs=refresh,protectedPaths=protected,historicalCandidates=historical),sys.stdout)
 PYINPUT
     if "$_CONFIG_HELPER" config preflight-update --stdin --json < "$_CONFIG_STAGE/preflight-input.json" > "$_CONFIG_STAGE/preflight.json"; then
         if python3 -I - "$_CONFIG_STAGE/preflight.json" <<'PYSAFE'

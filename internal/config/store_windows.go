@@ -49,12 +49,19 @@ type storeParent struct {
 	dirty     map[string]bool
 }
 
-func privateSecurity() (*windows.SecurityAttributes, error) {
+func privateSecurity(directory bool) (*windows.SecurityAttributes, error) {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return nil, err
 	}
-	sd, err := windows.SecurityDescriptorFromString("O:" + user.User.Sid.String() + "D:P(A;OICI;FA;;;" + user.User.Sid.String() + ")(A;OICI;FA;;;SY)")
+	// Object/container inheritance flags belong on directories, where they
+	// propagate the private ACL to descendants. They are meaningless on a
+	// regular file and ReplaceFileW normalizes them away.
+	inheritance := ""
+	if directory {
+		inheritance = "OICI"
+	}
+	sd, err := windows.SecurityDescriptorFromString("O:" + user.User.Sid.String() + "D:P(A;" + inheritance + ";FA;;;" + user.User.Sid.String() + ")(A;" + inheritance + ";FA;;;SY)")
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +74,7 @@ func winOpen(path string, access, creation, flags uint32, private bool) (*os.Fil
 	}
 	var sa *windows.SecurityAttributes
 	if private {
-		sa, err = privateSecurity()
+		sa, err = privateSecurity(false)
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +173,7 @@ func openStoreParent(path string, create bool) (*storeParent, error) {
 			if !create {
 				return fail(e)
 			}
-			sa, e := privateSecurity()
+			sa, e := privateSecurity(true)
 			if e != nil {
 				return fail(e)
 			}
