@@ -432,7 +432,15 @@ func TestStoreImportIsCreateOnlyAndValidatesSource(t *testing.T) {
 
 func TestStoreDistinctExplicitTargets(t *testing.T) {
 	env := storeEnv(t)
-	targets := []string{filepath.Join(t.TempDir(), "first.json"), filepath.Join(t.TempDir(), "second.json")}
+	first, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := []string{filepath.Join(first, "first.json"), filepath.Join(second, "second.json")}
 	for _, target := range targets {
 		env.Vars[OverrideEnv] = target
 		r, err := EnsureInitialized(context.Background(), InitRequest{Env: env})

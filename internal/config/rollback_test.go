@@ -19,7 +19,10 @@ func TestRollbackExistingCanonicalSharedLoader(t *testing.T) {
 			name = "explicit"
 		}
 		t.Run(name, func(t *testing.T) {
-			home := t.TempDir()
+			home, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
 			testenv.Set(t, home)
 			path, _, err := neutralPath(SnapshotEnv(), home)
 			if err != nil {

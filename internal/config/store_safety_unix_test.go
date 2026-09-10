@@ -102,7 +102,11 @@ func TestStoreUnsafeParentsAndLocks(t *testing.T) {
 }
 func TestStorePortableLockDeadlineAndParentSwap(t *testing.T) {
 	env := storeEnv(t)
-	target := filepath.Join(t.TempDir(), "portable.json")
+	root, e := filepath.EvalSymlinks(t.TempDir())
+	if e != nil {
+		t.Fatal(e)
+	}
+	target := filepath.Join(root, "portable.json")
 	env.Vars = map[string]string{OverrideEnv: target}
 	r, e := EnsureInitialized(context.Background(), InitRequest{Env: env})
 	if e != nil {
@@ -211,7 +215,10 @@ func prepareTestRoot(string) error { return nil }
 
 func TestStoreCaseInsensitiveGuardIdentity(t *testing.T) {
 	env := storeEnv(t)
-	home := env.Vars["HOME"]
+	home, err := filepath.EvalSymlinks(env.Vars["HOME"])
+	if err != nil {
+		t.Fatal(err)
+	}
 	guardPath := filepath.Join(home, ".agent-notifications-config.lock")
 	if err := os.WriteFile(guardPath, nil, 0600); err != nil {
 		t.Fatal(err)

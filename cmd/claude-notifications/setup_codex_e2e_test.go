@@ -44,7 +44,11 @@ func e2eRead(t *testing.T, path string) []byte {
 }
 func newSetupE2E(t *testing.T) setupE2E {
 	t.Helper()
-	f := setupE2E{root: t.TempDir()}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := setupE2E{root: root}
 	f.home = filepath.Join(f.root, "home space")
 	f.bundle = filepath.Join(f.root, "bundle space")
 	f.env = testenv.Env(t, f.home)
