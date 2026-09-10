@@ -1,4 +1,4 @@
-<h1 align="center">Agent Notifications</h1>
+<h1 align="center"><a href="https://777genius.github.io/agent-notifications/">Agent Notifications</a></h1>
 
 [![Ubuntu CI](https://github.com/777genius/agent-notifications/workflows/Ubuntu%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
 [![macOS CI](https://github.com/777genius/agent-notifications/workflows/macOS%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
@@ -18,8 +18,6 @@
 
 Notifications for Claude Code and Codex CLI (beta), with sounds, git branch display, and webhook integrations. See [Codex support and limitations](#codex-cli-support-beta) for differences between products.
 
-> **Compatibility:** the product and repository are now named **Agent Notifications** / `agent-notifications`. Existing executable names, Claude plugin commands, installation directories, environment variables, and configuration paths keep their `claude-notifications*` names during the migration, so current installations continue to update without manual changes.
->
 > **Boost your productivity** — check out the [advanced task manager for Claude with a convenient UI](https://github.com/777genius/claude_agent_teams_ui), from the creator of this plugin.
 
 ## Table of Contents
