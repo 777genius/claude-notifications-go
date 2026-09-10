@@ -19,7 +19,7 @@ export default defineNuxtConfig({
   css: ["~/assets/main.css"],
   nitro: {
     preset: "static",
-    prerender: { routes: ["/", "/zh/"] },
+    prerender: { routes: ["/", ...supportedLocales.filter((locale) => locale.code !== "en").map((locale) => `/${locale.code}/`)] },
   },
   i18n: {
     restructureDir: ".",

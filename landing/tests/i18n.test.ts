@@ -59,7 +59,7 @@ test("locale manifest accepts only published locale codes", () => {
   assert.equal(isLocaleCode("en"), true);
   assert.equal(isLocaleCode("zh"), true);
   assert.equal(isLocaleCode("zh-CN"), false);
-  assert.equal(isLocaleCode("ru"), false);
+  assert.equal(isLocaleCode("ru"), true);
   assert.equal(isLocaleCode(null), false);
 });
 
@@ -69,8 +69,9 @@ test("crawler files publish every localized route", async () => {
     readFile(new URL("../public/sitemap.xml", import.meta.url), "utf8"),
   ]);
   assert.match(robots, /Sitemap: https:\/\/777genius\.github\.io\/agent-notifications\/sitemap\.xml/);
-  for (const path of ["agent-notifications/", "agent-notifications/zh/"])
+  for (const path of ["agent-notifications/", ...supportedLocales.filter((locale) => locale.code !== "en").map((locale) => `agent-notifications/${locale.code}/`)])
     assert.match(sitemap, new RegExp(`<loc>https://777genius\\.github\\.io/${path}</loc>`));
   assert.match(sitemap, /hreflang="x-default"/);
-  assert.match(sitemap, /hreflang="zh-CN"/);
+  for (const locale of supportedLocales)
+    assert.match(sitemap, new RegExp(`hreflang="${locale.code === "en" ? "en" : locale.language}"`));
 });
