@@ -36,9 +36,11 @@ done
     _CONFIG_HELPER=capture_preflight
     config_preflight
     python3 - "$_CONFIG_STAGE/request.json" "$HOME" <<'PYRESOURCE'
-import json,os,sys
+import json,pathlib,sys
 v=json.load(open(sys.argv[1]))
-assert os.path.join(sys.argv[2],'.claude','claude-notifications-go','iterm2-venv') in v['refreshDirs']
+expected=(pathlib.Path(sys.argv[2])/'.claude'/'claude-notifications-go'/'iterm2-venv').resolve()
+actual=[pathlib.Path(entry).resolve() for entry in v['refreshDirs']]
+assert expected in actual, f'expected refresh dir {expected!s}; got {[str(path) for path in actual]!r}'
 PYRESOURCE
 )
 # Dispatch tests preserve shared bundle state and isolate CN_PRODUCT.
