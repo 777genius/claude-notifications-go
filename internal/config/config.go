@@ -361,13 +361,8 @@ func GetStableConfigPath() (string, error) {
 	return filepath.Join(dir, "config.json"), nil
 }
 
-// LoadFromPluginRoot loads configuration with a resilient fallback chain:
-// 1. Stable path (~/.claude/claude-notifications-go/config.json) — preferred
-// 2. Old path (pluginRoot/config/config.json) — fallback, auto-migrates to stable
-// 3. Default config — if neither path has valid config
-//
-// Corrupted config files are non-fatal: a warning is printed to stderr and
-// logged, then the next source in the chain is tried.
+// LoadFromPluginRoot reads the shared canonical Store. Bundle paths are
+// resources and historical evidence only; selected errors never fall back.
 func LoadFromPluginRoot(pluginRoot string) (*Config, error) {
 	return loadFromPluginRoot(pluginRoot, func(msg string) {
 		fmt.Fprintln(os.Stderr, msg)
@@ -385,83 +380,13 @@ func LoadFromPluginRootQuiet(pluginRoot string) (*Config, error) {
 }
 
 func loadFromPluginRoot(pluginRoot string, warn func(string)) (*Config, error) {
-	// 1. Try stable path
-	stablePath, stableErr := GetStableConfigPath()
-	if stableErr != nil {
-		warn(fmt.Sprintf("warning: cannot resolve stable config path: %v, using legacy path only", stableErr))
+	env := SnapshotEnv()
+	assets, legacy := ConsumerContext(pluginRoot)
+	_, cfg, selection, err := ReadDocumentSelection(ReadRequest{Env: env, Assets: assets, Legacy: legacy, ReadSnapshot: ReadFileSnapshot})
+	for _, diagnostic := range append(selection.Diagnostics, ConsumerDiagnostics()...) {
+		warn(string(diagnostic.Code))
 	}
-	if stableErr == nil {
-		if platform.FileExists(stablePath) {
-			cfg, err := load(stablePath, pluginRoot)
-			if err != nil {
-				// Corrupted stable config — warn and fall through to old path
-				warn(fmt.Sprintf("warning: failed to load config from %s: %v, trying legacy path", stablePath, err))
-			} else {
-				return cfg, nil
-			}
-		}
-	}
-
-	// 2. Try old path (pluginRoot/config/config.json)
-	oldPath := filepath.Join(pluginRoot, "config", "config.json")
-	if platform.FileExists(oldPath) {
-		cfg, err := load(oldPath, pluginRoot)
-		if err != nil {
-			// Corrupted old config — warn, return defaults (non-fatal)
-			warn(fmt.Sprintf("warning: corrupted config at %s, using defaults", oldPath))
-			return defaultConfig(pluginRoot), nil
-		}
-
-		// Migrate to stable path (best-effort)
-		if stableErr == nil && stablePath != "" {
-			if migErr := migrateConfig(oldPath, stablePath); migErr != nil {
-				warn(fmt.Sprintf("warning: config migration failed: %v", migErr))
-			}
-		}
-
-		return cfg, nil
-	}
-
-	// 3. Neither path has config — return defaults
-	return defaultConfig(pluginRoot), nil
-}
-
-// migrateConfig copies config from oldPath to stablePath atomically.
-// Uses temp file + rename in the same directory for safe atomic write.
-func migrateConfig(oldPath, stablePath string) error {
-	data, err := os.ReadFile(oldPath)
-	if err != nil {
-		return err
-	}
-
-	dir := filepath.Dir(stablePath)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-
-	// Create temp file in same dir — guarantees same filesystem for safe os.Rename
-	tmpFile, err := os.CreateTemp(dir, "config-*.json.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	defer func() { _ = os.Remove(tmpPath) }() // cleanup on any error path
-
-	if _, err := tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpPath, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, stablePath)
+	return cfg, err
 }
 
 // ApplyDefaults fills in missing fields with default values

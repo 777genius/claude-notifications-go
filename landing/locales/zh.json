@@ -159,8 +159,8 @@
       "title": "打造适合你的提示方式",
       "claudeBefore": "在 Claude Code 对话中运行",
       "claudeAfter": "这是 Claude 斜杠命令，不是 shell 命令。",
-      "codexBefore": "对于 Codex，请编辑共享设置文件",
-      "codexMiddle": "具体方法请参阅",
+      "codexBefore": "对于 Codex，请使用以下命令查找共享设置文件：",
+      "codexMiddle": "然后按照以下文档修改：",
       "codexLink": "手动配置文档",
       "codexAfter": "仅配置 Codex 时不需要 Claude Code。",
       "shared": "两个智能体共享此配置。更新时会保留你的设置。"

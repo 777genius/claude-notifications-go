@@ -625,7 +625,10 @@ download_utility() (
     local util_name="$1"
     local util_path="$2"
     local url="${RELEASE_URL}/${util_name}"
-    local temp_path
+    # The EXIT trap must retain this pathname after a TERM/INT exits the
+    # function. Bash 3.2 can discard function-local variables before running
+    # that trap, so keep the trap state in this subshell's global scope.
+    temp_path=''
 
     if [ "$FORCE_UPDATE" != true ] && utility_usable "$util_path"; then
         echo -e "${GREEN}✓${NC} ${util_name} already installed"
@@ -945,6 +948,13 @@ verify_binary() {
 # nominally successful download, which can happen when a proxy/CDN returns an
 # unexpected payload with HTTP 200.
 download_and_verify_binary() {
+    if [ -n "${INSTALL_STAGED_ASSETS:-}" ] && [ -f "$INSTALL_STAGED_ASSETS/$BINARY_NAME" ]; then
+        cp "$INSTALL_STAGED_ASSETS/$BINARY_NAME" "$BINARY_PATH" || return 1
+        cp "$INSTALL_STAGED_ASSETS/checksums.txt" "$CHECKSUMS_PATH" || return 1
+        REQUIRE_CHECKSUM=true
+        verify_binary
+        return $?
+    fi
     local attempt=1
 
     while [ $attempt -le $MAX_RETRIES ]; do
@@ -1633,7 +1643,11 @@ desktop_runtime_usable() {
 stage_and_promote_runtime() (
     local live_dir="$SCRIPT_DIR"
     local live_binary="$BINARY_PATH"
-    local stage
+    # Keep this pathname in the subshell's global scope. Bash 3.2 can discard a
+    # function-local variable before running an EXIT trap when the function
+    # terminates via `exit` (for example, after a staged checksum failure).
+    # The trap must still know which disposable staging directory to remove.
+    stage=''
     stage=$(mktemp -d "$SCRIPT_DIR/.install-stage.XXXXXX") || exit 1
     trap 'rm -rf "$stage"' EXIT
     trap 'exit 130' INT
@@ -1717,7 +1731,7 @@ main() {
     echo ""
 
     # Offline forced updates must stop before any installation work.
-    if [ "$FORCE_UPDATE" = true ]; then
+    if [ "$FORCE_UPDATE" = true ] && [ -z "${INSTALL_STAGED_ASSETS:-}" ]; then
         if ! check_github_availability || [ "$OFFLINE_MODE" = true ]; then
             echo ""
             echo -e "${YELLOW}⚠ Keeping existing installation (GitHub unreachable)${NC}"
@@ -1757,7 +1771,7 @@ main() {
     fi
 
     # Check GitHub availability (may set OFFLINE_MODE=true if binary exists)
-    if ! check_github_availability; then
+    if [ -z "${INSTALL_STAGED_ASSETS:-}" ] && ! check_github_availability; then
         echo ""
         exit 1
     fi

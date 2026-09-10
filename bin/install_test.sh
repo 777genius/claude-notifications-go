@@ -1,4 +1,6 @@
 #!/bin/bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-env.sh"
+test_env_enter "$0" "$@"
 # install_test.sh - Tests for install.sh functions
 # Run with: bash bin/install_test.sh
 

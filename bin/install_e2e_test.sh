@@ -1,4 +1,11 @@
 #!/bin/bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-env.sh"
+# Native Windows fixtures build the real Go executable. Preserve only Go's
+# pre-populated module cache across env -i so those builds remain offline.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) TEST_ENV_HANDOFF_GOMODCACHE=1 ;;
+esac
+test_env_enter "$0" "$@"
 # install_e2e_test.sh - End-to-end tests for install.sh
 #
 # Usage:
@@ -58,11 +65,7 @@ done
 # All generated fixtures and user state belong to this disposable suite run.
 SUITE_DIR=$(mktemp -d)
 FIXTURES_DIR="$SUITE_DIR/fixtures"
-export HOME="$SUITE_DIR/home"
-export TMPDIR="$SUITE_DIR/tmp" TEMP="$SUITE_DIR/tmp" TMP="$SUITE_DIR/tmp"
-export XDG_CONFIG_HOME="$HOME/.config" XDG_CACHE_HOME="$HOME/.cache" XDG_DATA_HOME="$HOME/.local/share"
-export CLAUDE_CONFIG_DIR="$HOME/.claude" CODEX_HOME="$HOME/.codex"
-mkdir -p "$HOME" "$TMPDIR"
+test_env_setup "$SUITE_DIR"
 
 # Offline tests must never inherit public release endpoints or user proxies.
 if [ "$RUN_REAL_NETWORK" != true ]; then
@@ -132,6 +135,8 @@ run_bootstrap_install_plugin() {
         claude() {
             printf "%s\n" "$*" >> "$COMMAND_LOG"
         }
+        # Registry-only adapter test; protected preflight has dedicated local HTTP fixtures.
+        config_preflight() { :; }
         install_plugin
     ' _ "$sourceable_bootstrap"
 }
@@ -1280,15 +1285,28 @@ FAKE_BASH_GO_EOF
 
     local fake_bash_for_windows="$fake_bash"
     local fake_bash_log_for_windows="$fake_bash_log"
+    local fixture_config="$TEST_DIR/config.json"
+    local fixture_config_for_windows="$fixture_config"
     if command -v cygpath >/dev/null 2>&1; then
         fake_bash_for_windows="$(cygpath -w "$fake_bash" 2>/dev/null || printf '%s' "$fake_bash")"
         fake_bash_log_for_windows="$(cygpath -w "$fake_bash_log" 2>/dev/null || printf '%s' "$fake_bash_log")"
+        fixture_config_for_windows="$(cygpath -w "$fixture_config" 2>/dev/null || printf '%s' "$fixture_config")"
+    fi
+
+    # Keep the real hook fixture independent of arbitrary bundle or user
+    # configuration; this test exercises updater scheduling, not recovery.
+    if ! AGENT_NOTIFICATIONS_CONFIG="$fixture_config_for_windows" \
+        "$exe_path" config init --json >/dev/null; then
+        fail_test "Initialize config for Windows lazy update" "config init failed"
+        cleanup_test_dir
+        return
     fi
 
     local output exit_code
     set +e
     output=$(printf '{"session_id":"ci-win","transcript_path":"","cwd":""}\n' | \
-        env CLAUDE_NOTIFICATIONS_BASH="$fake_bash_for_windows" \
+        env AGENT_NOTIFICATIONS_CONFIG="$fixture_config_for_windows" \
+            CLAUDE_NOTIFICATIONS_BASH="$fake_bash_for_windows" \
             FAKE_BASH_LOG="$fake_bash_log_for_windows" \
             CLAUDE_HOOK_JUDGE_MODE=true \
             "$exe_path" handle-hook Stop 2>&1)

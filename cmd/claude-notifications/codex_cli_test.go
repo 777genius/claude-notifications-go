@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/777genius/agent-notifications/internal/testenv"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,8 @@ func buildCLIBinary(t *testing.T) string {
 			name += ".exe"
 		}
 		cliBinaryPath = filepath.Join(dir, name)
-		cmd := exec.Command("go", "build", "-o", cliBinaryPath, ".")
+		cmd := exec.Command("go", "build", "-p", "2", "-buildvcs=false", "-o", cliBinaryPath, ".")
+		cmd.Env = testenv.Build(t, filepath.Join(dir, "build-home"))
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			cliBinaryErr = err
@@ -66,14 +68,7 @@ func codexCLIEnv(t *testing.T) []string {
 		t.Fatalf("write config: %v", err)
 	}
 
-	env := []string{
-		"HOME=" + home,
-		"USERPROFILE=" + home,
-		"PLUGIN_ROOT=" + pluginRoot,
-		"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"),
-		"PATH=" + os.Getenv("PATH"),
-		"TMPDIR=" + t.TempDir(),
-	}
+	env := append(testenv.Env(t, home), "PLUGIN_ROOT="+pluginRoot)
 	return env
 }
 

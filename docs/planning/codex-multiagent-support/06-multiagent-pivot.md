@@ -1,5 +1,7 @@
 # Архитектурный поворот: multi-agent с самого начала, host-detection в plugin-kit-ai
 
+> Superseded configuration policy: this historical plan predates shared E → existing L → N selection and revision-checked edits. See [current configuration and compatibility](../../../README.md#manual-configuration); historical path/copy guidance below is not an active recipe.
+
 > [!WARNING]
 > **ИСТОРИЧЕСКИЙ ДОКУМЕНТ. НЕ РЕАЛИЗОВЫВАТЬ БУКВАЛЬНО.** Актуальные repo boundaries,
 > host-detection API, supported hosts и scope находятся в `00-overview-and-decisions.md`.

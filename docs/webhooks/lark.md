@@ -1,5 +1,8 @@
 # Lark/Feishu Webhook Integration
 
+Use the installed config-capable executable as `$NOTIFICATIONS_BIN`. Locate settings with `config path` and use [revision-checked leaf edits](../../commands/settings.md). JSON examples below illustrate fields, not whole-file replacements. Keep unrequested fields and literal environment templates unchanged. `config inspect --json` is the safe support output; it intentionally omits URLs, headers, payloads, free-form sounds and unknown fields. Never share raw config or assume omitted values are unset. Keep diagnostic files private and review logs for credentials before sharing.
+
+
 Send Claude Code notifications to Lark (飞书) with rich interactive cards.
 
 ## Overview
@@ -34,7 +37,7 @@ https://open.larksuite.com/open-apis/bot/v2/hook/XXXXXXXXXXXXXXXXXXXX
 
 ### 3. Configure Plugin
 
-Edit `~/.claude/claude-notifications-go/config.json`:
+Edit the shared file selected by `config path`:
 
 ```json
 {
@@ -199,7 +202,7 @@ Messages use Lark's **Interactive Card API**:
 
 3. **Verify config:**
    ```bash
-   cat ~/.claude/claude-notifications-go/config.json | grep -A 5 "webhook"
+   "$NOTIFICATIONS_BIN" config inspect --json
    ```
 
 ### Wrong Group

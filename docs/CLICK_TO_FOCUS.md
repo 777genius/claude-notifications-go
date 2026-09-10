@@ -1,10 +1,12 @@
 # Click-to-Focus
 
+Use [shared OS path selection](../README.md#manual-configuration) and the [revision-checked settings recipe](../commands/settings.md). Examples show fields, not replacement documents. Keep unchanged by default, submit only requested leaf edits through private stdin, and ask for an explicit decision after CAS conflicts. Safe inspect omits free-form values; omission is not an instruction to reset them.
+
 Clicking a notification activates your terminal window — no more hunting for the right window.
 
 ## Configuration
 
-In `~/.claude/claude-notifications-go/config.json`:
+In the shared file selected by `config path`:
 
 ```json
 {

@@ -58,8 +58,9 @@ Notifications for Claude Code and Codex CLI (beta), with sounds, git branch disp
 ### Prerequisites
 
 - Claude Code and/or Codex CLI for the products you select
-- **Windows users:** Git Bash (included with [Git for Windows](https://git-scm.com/download/win))
-- **macOS/Linux users:** No additional software required
+- Python **3.6 or newer**, available as the `python3` command on PATH, is required for installer metadata and checksum validation. Check with `python3 --version`.
+- **Windows users:** Git Bash (included with [Git for Windows](https://git-scm.com/download/win)) and native Windows Python available as `python3` from Git Bash. A `python` or `py` command alone is insufficient; use native Python, not WSL Python.
+- **macOS/Linux users:** Ensure `python3` is installed and available in the shell running the installer.
 
 ### Quick Install (Recommended)
 
@@ -122,7 +123,7 @@ Run the same command and choose the product(s) you want to update:
 curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash
 ```
 
-For Claude, restart Claude Code. For Codex, restart Codex and inspect `/hooks`; changed hook definitions may need trust approval again. The installer refreshes the Codex runtime and registration automatically. Existing foreign hooks and shared settings in `~/.claude/claude-notifications-go/config.json` are preserved.
+For Claude, restart Claude Code. For Codex, restart Codex and inspect `/hooks`; changed hook definitions may need trust approval again. The installer refreshes the Codex runtime and registration automatically. Existing foreign hooks and shared settings in the file selected by `config path` are preserved.
 
 <details>
 <summary>Manual Claude update (if bootstrap didn't work)</summary>
@@ -197,7 +198,7 @@ Unchanged hook definitions retain trust; changed definitions require review agai
 The one-command installer handles this registration step automatically.
 
 Claude Code installation and updates continue to use the [existing installation steps](#installation).
-Both products share settings at `~/.claude/claude-notifications-go/config.json`; installing
+Both products share settings at the shared file selected by `config path`; installing
 Codex does not require installing Claude Code. Keep your existing settings file when updating.
 
 <details>
@@ -240,7 +241,7 @@ Known limitations:
 - Windows support for the Codex route is not declared until the Windows launcher is proven.
 - Codex hooks require a trust review (`/hooks` inside Codex); changed definitions require review again.
 
-Both products share one config file (`~/.claude/claude-notifications-go/config.json`).
+Both products share one config file (the shared file selected by `config path`).
 
 ## Platform Support
 
@@ -295,19 +296,49 @@ See **[Click-to-Focus Guide](docs/CLICK_TO_FOCUS.md)** for configuration details
 
 ## Configuration
 
+The following workflow requires the coordinated config-capable runtime and installer; older releases may not provide these commands. Do not use a legacy full-file writer as a fallback.
+
 Run `/claude-notifications-go:settings` to configure sounds, volume, webhooks, and other options via an interactive wizard. You can re-run it anytime to reconfigure.
 
 ### Manual Configuration
 
-Config file location:
+Use the installed config-capable executable (shown as `$NOTIFICATIONS_BIN` in recipes):
 
-| Platform | Path |
-|----------|------|
-| macOS / Linux | `~/.claude/claude-notifications-go/config.json` |
-| Windows (Git Bash) | `~/.claude/claude-notifications-go/config.json` |
-| Windows (PowerShell) | `$env:USERPROFILE\.claude\claude-notifications-go\config.json` |
+```bash
+"$NOTIFICATIONS_BIN" config path --json
+"$NOTIFICATIONS_BIN" config inspect --json
+```
 
-Edit the config file directly:
+One file is selected per environment context: explicit **E**, otherwise existing **L**, otherwise **N**. Existing L is preserved; there is no automatic migration, copy, merge or synchronization.
+
+| Selection | Native file path |
+|---|---|
+| E: `AGENT_NOTIFICATIONS_CONFIG` | An absolute **file**, not a directory |
+| L: existing legacy file, macOS/Linux | `$HOME/.claude/claude-notifications-go/config.json` |
+| L: existing legacy file, Windows | `%USERPROFILE%\.claude\claude-notifications-go\config.json` |
+| N: fresh macOS | `$HOME/Library/Application Support/agent-notifications/config.json` |
+| N: fresh Linux | Absolute nonempty `$XDG_CONFIG_HOME/agent-notifications/config.json`, otherwise `$HOME/.config/agent-notifications/config.json` |
+| N: fresh Windows | `%APPDATA%\agent-notifications\config.json` |
+
+Relative XDG_CONFIG_HOME is ignored with a diagnostic. Windows uses USERPROFILE for L, not Git Bash HOME; missing/relative APPDATA without L is an error. macOS ignores XDG_CONFIG_HOME. Missing home in automatic mode is an error; a valid explicit E supports portable contexts without HOME/APPDATA.
+
+Unset E enables automatic selection; set-empty, whitespace-only, relative, `~/file` and invalid native paths are errors, never fallback. The resolver does not expand variables or tilde in E. Expand them in the calling shell if intended; Git Bash may use `cygpath -w` to supply a native absolute Windows path. Do not trim legitimate spaces in filenames.
+
+For writable targets, `.lock` filenames and generated `.tmp-<32 hex digits>` / `.backup-<32 hex digits>` names are reserved for coordination and recovery metadata. Choose another filename for a portable config.
+
+If L and N both exist, L wins with a diagnostic even if identical or N is newer. To intentionally select N, set E in **every** new adapter and CLI environment. Unsetting E restores legacy-first selection. Old binaries ignore E. `CODEX_HOME`, `CLAUDE_HOME`, `CLAUDE_CONFIG_DIR`, product, cwd and bundle/install paths do not select notification config. They retain their resource/installation meanings; permission markers, venv and state paths do not move.
+
+`config init` is create-only: existing valid config is a byte/mode/mtime-preserving no-op; invalid existing config is an error. Hooks never write config and use in-memory defaults only for truly missing automatic config after historical recovery checks. Explicit missing E, corrupt/unreadable canonical files and unresolved recovery artifacts are errors, with no bundle/default fallback.
+
+Use the [settings recipe](commands/settings.md) for `config edit --stdin --expect-revision TOKEN`: private input, only requested JSON Pointer leaf edits, raw values, and an explicit user decision after any conflict. A volume plus one status sound edit preserves every other raw field, status, channel, webhook secret/payload and future-agent setting. Inspect is a safe projection, not a replacement document; absent free-form values are not unset.
+
+Before any updater deletes/refreshes cache, personalized or unknown historical cache-only/custom-root settings require explicit import using a verified new helper: stop old writers, inspect the selected destination, then `config init --from FILE` only if that destination is missing. Never auto-copy a bundle, guess the newest cache, overwrite existing canonical config, or treat this as migration/reset. If preflight/helper is unavailable, stop the update and retain the old runtime. For existing invalid config, stop writers and explicitly repair/recover it while preserving damaged bytes; init cannot reset it.
+
+Existing L with v1-shaped JSON remains readable by the old Go reader, which ignores additive unknown fields. The old wizard loses unknown fields and is an unsupported concurrent writer. N/E require a bridge-aware runtime, or explicit stopped-writer recovery to a single legacy canonical file with a private backup and all contexts switched; two live copies are not a workaround. No downloadable bridge release is promised here. Native Windows replacement/ACL, macOS/Linux crash/concurrency and OS E2E qualification remain release gates, not results established by this documentation patch.
+
+For support, share only `config inspect --json`, never `cat` of config; keep saved diagnostics private and review paths before posting. The response includes selection (path/source/exists/diagnostics), revision, schemaVersion, valid, optional errorCode, and safe settings: desktopEnabled, desktopSound, volume and known-status enabled/desktopEnabled/webhookEnabled. It omits free-form sounds, webhook secrets/payloads and unknown fields.
+
+The following JSON illustrates the schema. Do not replace your existing document with it; apply only explicitly requested leaf edits:
 
 ```json
 {
@@ -491,7 +522,7 @@ bin/list-devices
 #   2: Immersed
 ```
 
-Then add the device name to your `~/.claude/claude-notifications-go/config.json`:
+Then add the device name to the shared file selected by `config path`:
 
 ```json
 {

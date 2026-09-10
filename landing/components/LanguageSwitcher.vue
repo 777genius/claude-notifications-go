@@ -46,8 +46,8 @@ async function selectLanguage(value: LocaleCode) {
   const previousLocale = locale.value;
   try {
     await setLocale(value);
-    if (!te("seo.title", value))
-      throw new Error(`Locale messages for ${value} were not loaded`);
+    if (locale.value !== value || !te("seo.title", value))
+      throw new Error(`Locale ${value} was not activated`);
     close();
   } catch {
     if (locale.value !== previousLocale) {

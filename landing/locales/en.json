@@ -159,8 +159,8 @@
       "title": "Make it sound like you",
       "claudeBefore": "Inside Claude Code chat, run",
       "claudeAfter": "This is a Claude slash command, not a shell command.",
-      "codexBefore": "For Codex, edit the shared settings file",
-      "codexMiddle": "using the",
+      "codexBefore": "For Codex, locate the shared settings file with",
+      "codexMiddle": "and apply edits using the",
       "codexLink": "documented manual configuration",
       "codexAfter": "Claude Code is not required for Codex-only setup.",
       "shared": "Both agents share this configuration. Your settings are preserved when updating."

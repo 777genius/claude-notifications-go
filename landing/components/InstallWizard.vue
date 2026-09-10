@@ -172,7 +172,7 @@ async function copy() {
       </p>
       <p v-if="product !== 'claude'">
         {{ t("install.configure.codexBefore") }}
-        <code>~/.claude/claude-notifications-go/config.json</code>
+        <code>config path</code>
         {{ t("install.configure.codexMiddle") }}
         <a :href="repo + '#manual-configuration'"
           >{{ t("install.configure.codexLink") }}</a

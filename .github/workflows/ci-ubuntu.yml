@@ -69,6 +69,12 @@ jobs:
       - name: Run install.sh unit tests
         run: bash bin/install_test.sh
 
+      - name: Qualify real Go config and setup installers (isolated, offline)
+        run: python3 scripts/config_e2e_test.py
+
+      - name: Run config diagnostic and path safety regressions
+        run: bash bin/shell_review_test.sh
+
       - name: Test Codex release gate selection
         run: sh scripts/codex-release-gate_test.sh
 

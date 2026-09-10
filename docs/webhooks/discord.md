@@ -1,5 +1,8 @@
 # Discord Webhook Integration
 
+Use the installed config-capable executable as `$NOTIFICATIONS_BIN`. Locate settings with `config path` and use [revision-checked leaf edits](../../commands/settings.md). JSON examples below illustrate fields, not whole-file replacements. Keep unrequested fields and literal environment templates unchanged. `config inspect --json` is the safe support output; it intentionally omits URLs, headers, payloads, free-form sounds and unknown fields. Never share raw config or assume omitted values are unset. Keep diagnostic files private and review logs for credentials before sharing.
+
+
 Send Claude Code notifications to Discord channels with rich embeds.
 
 ## Overview
@@ -30,7 +33,7 @@ https://discord.com/api/webhooks/1234567890123456789/AbCdEfGhIjKlMnOpQrStUvWxYz-
 
 ### 3. Configure Plugin
 
-Edit `~/.claude/claude-notifications-go/config.json`:
+Edit the shared file selected by `config path`:
 
 ```json
 {

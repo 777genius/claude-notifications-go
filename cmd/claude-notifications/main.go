@@ -15,6 +15,7 @@ import (
 
 	"github.com/777genius/agent-notifications/internal/audio"
 	"github.com/777genius/agent-notifications/internal/codexsource"
+	"github.com/777genius/agent-notifications/internal/config"
 	"github.com/777genius/agent-notifications/internal/errorhandler"
 	"github.com/777genius/agent-notifications/internal/hooks"
 	"github.com/777genius/agent-notifications/internal/logging"
@@ -22,7 +23,8 @@ import (
 	"github.com/777genius/agent-notifications/internal/winfocus"
 )
 
-const version = "1.41.0"
+var version = config.ConsumerVersion
+
 const windowsLazyUpdateRetryAfter = time.Hour
 
 var (
@@ -52,6 +54,8 @@ func main() {
 	command := os.Args[1]
 
 	switch command {
+	case "config":
+		os.Exit(configCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	case "handle-hook":
 		if len(os.Args) < 3 {
 			fmt.Fprintf(os.Stderr, "Error: hook event name required\n")
@@ -511,12 +515,7 @@ func scheduleWindowsLazyUpdateImpl(pluginRoot string) error {
 	targetDir := filepath.ToSlash(filepath.Join(pluginRoot, "bin"))
 	installScript = filepath.ToSlash(installScript)
 	shCommand := "INSTALL_TARGET_DIR=" + shellSingleQuoted(targetDir) + " " + shellSingleQuoted(installScript) + " --force"
-	psCommand := "$ErrorActionPreference = 'SilentlyContinue'; " +
-		"Start-Sleep -Milliseconds 750; " +
-		"for ($i = 0; $i -lt 6; $i++) { " +
-		"& " + powershellSingleQuoted(bashPath) + " -lc " + powershellSingleQuoted(shCommand) + " *> $null; " +
-		"if ($LASTEXITCODE -eq 0) { break }; " +
-		"Start-Sleep -Seconds 5 }"
+	psCommand := windowsLazyUpdatePowerShellCommand(bashPath, shCommand)
 
 	cmd := exec.Command(powershellPath, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psCommand)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
@@ -540,6 +539,17 @@ func scheduleWindowsLazyUpdateImpl(pluginRoot string) error {
 		_ = devNull.Close()
 	}
 	return nil
+}
+
+func windowsLazyUpdatePowerShellCommand(bashPath, shCommand string) string {
+	// Thread.Sleep remains reliable in the detached, NUL-backed Windows
+	// PowerShell process where Start-Sleep can stall before launching bash.
+	return "$ErrorActionPreference = 'SilentlyContinue'; " +
+		"[System.Threading.Thread]::Sleep(750); " +
+		"for ($i = 0; $i -lt 6; $i++) { " +
+		"& " + powershellSingleQuoted(bashPath) + " -lc " + powershellSingleQuoted(shCommand) + "; " +
+		"if ($LASTEXITCODE -eq 0) { break }; " +
+		"[System.Threading.Thread]::Sleep(5000) }"
 }
 
 func findWindowsPowerShell() (string, error) {
@@ -757,6 +767,7 @@ func printUsage() {
 	fmt.Println("                          Does not modify ~/.claude/settings.json")
 	fmt.Println("  setup-codex             Register Codex CLI hooks (macOS, Linux, Windows)")
 	fmt.Println("                          [--print] [--dry-run] [--codex-home <dir>] [--plugin-root <dir>]")
+	fmt.Println("  config                  Shared configuration path/inspect/init/edit/preflight-update")
 	fmt.Println("  version                 Show version information")
 	fmt.Println("  help                    Show this help message")
 	fmt.Println()

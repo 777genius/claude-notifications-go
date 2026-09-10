@@ -2,6 +2,12 @@
 
 This project has three separate local-testing workflows. Use the smallest one that matches the change you are making.
 
+## Configuration isolation and qualification
+
+Notification configuration follows [E / L / N](../README.md#manual-configuration), not CLAUDE_HOME or CODEX_HOME. Before tests, create a private disposable root and isolate HOME, USERPROFILE, APPDATA, LOCALAPPDATA, all XDG CONFIG/CACHE/DATA/STATE/RUNTIME directories, CODEX_HOME, CLAUDE_CONFIG_DIR, CLAUDE_HOME and TMP/TEMP/TMPDIR. Clear E (`AGENT_NOTIFICATIONS_CONFIG`) for automatic resolver fixtures or set it to a unique absolute native fixture file. Child processes should receive an allowlist environment. Do not read real profiles/configs or invoke real agents/notifications for source-only checks.
+
+Inspect via the existing executable's `config inspect --json`; never attach raw JSON, expanded webhook values or unscreened logs. Keep diagnostic files private. Tests of Store CAS/unknown-field preservation and native Windows locks/replacement/ACLs, macOS/Linux crash/concurrency and frozen-old-reader compatibility must run separately in disposable environments. This documentation change does not establish those gates; cross-compilation is not native Windows E2E evidence.
+
 ## Recommended Workflow
 
 1. Use `scripts/dev-local-plugin.sh` first when you are changing install/update behavior.
@@ -19,7 +25,7 @@ make build
 
 ### 2. Isolated local marketplace testing
 
-This is the safest default. It uses an isolated Claude config under `~/.claude-dev/claude-notifications-go` and does not touch your real `~/.claude`.
+This isolates Claude metadata under `~/.claude-dev/claude-notifications-go`; it does not by itself isolate notification config, HOME, XDG or APPDATA. Apply the isolation requirements below before running it.
 
 ```bash
 scripts/dev-local-plugin.sh install
