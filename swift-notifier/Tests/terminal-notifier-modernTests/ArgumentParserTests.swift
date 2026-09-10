@@ -223,3 +223,23 @@ final class ArgumentParserTests: XCTestCase {
         }
     }
 }
+
+
+extension ArgumentParserTests {
+    func testOptionLookingValuesNeverSelectModes() throws {
+        let fields = ["-title", "-message", "-subtitle", "-activate", "-execute", "-group", "-threadID"]
+        for field in fields {
+            for literal in ["--help", "-help", "-title", "-launchedViaLaunchServices", "--capabilities-json", "--send-json"] {
+                let args = [field, literal]
+                XCTAssertEqual(ArgumentParser.optionPositions(args), [field])
+                XCTAssertEqual(ArgumentParser.isSendMode(args), field == "-title")
+                let config = try ArgumentParser.parse(["-title", "title", "-message", "body"] + args)
+                if field == "-title" { XCTAssertEqual(config.title, literal) }
+                if field == "-message" { XCTAssertEqual(config.message, literal) }
+                if field == "-subtitle" { XCTAssertEqual(config.subtitle, literal) }
+            }
+        }
+        XCTAssertEqual(ArgumentParser.optionPositions(["-title", "--help", "--help"]), ["-title", "--help"])
+        XCTAssertEqual(ArgumentParser.optionPositions(["--request-file", "--capabilities-json", "--send-json"]), ["--request-file", "--send-json"])
+    }
+}

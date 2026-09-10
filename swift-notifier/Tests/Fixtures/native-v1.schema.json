@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Native PR1 protocol",
+  "description": "Choose a $defs schema. Runtime also checks UTF-8 byte limits, duplicates, controls, boot deadline and filename correlation. Entire wire request <=16384 bytes.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "correlationID",
+        "nonce",
+        "bootID",
+        "notAfter",
+        "title",
+        "body",
+        "category",
+        "action",
+        "silent"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "correlationID": {
+          "type": "string",
+          "format": "uuid",
+          "maxLength": 36
+        },
+        "nonce": {
+          "type": "string",
+          "format": "uuid",
+          "maxLength": 36
+        },
+        "bootID": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "notAfter": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "title": {
+          "type": "string",
+          "description": "Single line; max 256 UTF-8 bytes; no controls."
+        },
+        "body": {
+          "type": "string",
+          "description": "Max 4096 UTF-8 bytes; no controls except LF and TAB."
+        },
+        "subtitle": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Single line; max 256 UTF-8 bytes; no controls."
+        },
+        "category": {
+          "enum": [
+            "info",
+            "attention",
+            "progress"
+          ]
+        },
+        "action": {
+          "const": "none"
+        },
+        "silent": {
+          "type": "boolean"
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "correlationID",
+        "nonce",
+        "notificationID",
+        "status",
+        "reason",
+        "retrySafe"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "correlationID": {
+          "type": "string",
+          "format": "uuid",
+          "maxLength": 36
+        },
+        "nonce": {
+          "type": "string",
+          "format": "uuid",
+          "maxLength": 36
+        },
+        "notificationID": {
+          "type": "string",
+          "format": "uuid",
+          "maxLength": 36
+        },
+        "status": {
+          "enum": [
+            "rejected",
+            "submitted",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "malformed_request",
+            "unsupported_version",
+            "unsupported_action",
+            "invalid_file",
+            "expired",
+            "activation_required",
+            "permission_denied",
+            "unsupported_notifier",
+            "os_rejected",
+            "os_accepted",
+            "timeout"
+          ]
+        },
+        "retrySafe": {
+          "const": false
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": {
+              "const": "rejected"
+            },
+            "reason": {
+              "enum": [
+                "malformed_request",
+                "unsupported_version",
+                "unsupported_action",
+                "invalid_file",
+                "expired",
+                "activation_required",
+                "permission_denied",
+                "unsupported_notifier",
+                "os_rejected"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "submitted"
+            },
+            "reason": {
+              "const": "os_accepted"
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "unknown"
+            },
+            "reason": {
+              "const": "timeout"
+            }
+          }
+        }
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "protocolVersions",
+        "actionKinds",
+        "receiptSupport",
+        "backend",
+        "explicitFeatureEnabledByDefault"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "protocolVersions": {
+          "const": [
+            1
+          ]
+        },
+        "actionKinds": {
+          "const": [
+            "none"
+          ]
+        },
+        "receiptSupport": {
+          "const": true
+        },
+        "backend": {
+          "const": "macos.usernotifications"
+        },
+        "explicitFeatureEnabledByDefault": {
+          "const": false
+        }
+      }
+    }
+  }
+}
