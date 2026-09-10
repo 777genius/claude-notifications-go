@@ -1319,13 +1319,20 @@ func powershellPath() (string, error) {
 }
 
 func main() {
-	if len(os.Args) != 6 { fmt.Fprintln(os.Stderr, "usage: probe bash target install stdout stderr"); os.Exit(2) }
+	if len(os.Args) != 7 { fmt.Fprintln(os.Stderr, "usage: probe mode bash target install stdout stderr"); os.Exit(2) }
+	mode := os.Args[1]
 	ps, err := powershellPath()
 	if err != nil { fmt.Fprintf(os.Stderr, "resolver_error=%v\n", err); os.Exit(2) }
-	shCommand := "INSTALL_TARGET_DIR=" + shQuote(filepath.ToSlash(os.Args[2])) + " " + shQuote(filepath.ToSlash(os.Args[3])) + " --force"
-	psCommand := "$ErrorActionPreference = 'SilentlyContinue'; Start-Sleep -Milliseconds 750; for ($i = 0; $i -lt 6; $i++) { & " + psQuote(os.Args[1]) + " -lc " + psQuote(shCommand) + " *> $null; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 5 }"
-	out, err := os.Create(os.Args[4]); if err != nil { panic(err) }; defer out.Close()
-	errout, err := os.Create(os.Args[5]); if err != nil { panic(err) }; defer errout.Close()
+	shCommand := "INSTALL_TARGET_DIR=" + shQuote(filepath.ToSlash(os.Args[3])) + " " + shQuote(filepath.ToSlash(os.Args[4])) + " --force"
+	psCommand := "$ErrorActionPreference = 'SilentlyContinue'; Start-Sleep -Milliseconds 750; for ($i = 0; $i -lt 6; $i++) { & " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + " *> $null; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep -Seconds 5 }"
+	if mode == "stop" {
+		psCommand = "$ErrorActionPreference = 'Stop'; & " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; exit $LASTEXITCODE"
+	} else if mode != "exact" {
+		fmt.Fprintf(os.Stderr, "unknown mode %q\n", mode); os.Exit(2)
+	}
+	fmt.Printf("mode=%s fake=%s sh_command=%s ps_command=%s\n", mode, psQuote(os.Args[2]), psQuote(shCommand), psQuote(psCommand))
+	out, err := os.Create(os.Args[5]); if err != nil { panic(err) }; defer out.Close()
+	errout, err := os.Create(os.Args[6]); if err != nil { panic(err) }; defer errout.Close()
 	nul, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); if err != nil { panic(err) }; defer nul.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second); defer cancel()
 	cmd := exec.CommandContext(ctx, ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psCommand)
@@ -1427,24 +1434,30 @@ LAUNCH_PROBE_GO_EOF
         diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
         echo "lazy-update diagnostic: direct fake status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$direct_log" ] && echo present || echo missing)"
 
-        local ps_log="$TEST_DIR/fake-bash-go-launch.log" ps_stdout="$TEST_DIR/go-launch.stdout" ps_stderr="$TEST_DIR/go-launch.stderr"
-        local ps_log_for_windows="$ps_log" ps_stdout_for_windows="$ps_stdout" ps_stderr_for_windows="$ps_stderr"
-        if command -v cygpath >/dev/null 2>&1; then
-            ps_log_for_windows="$(cygpath -w "$ps_log" 2>/dev/null || printf '%s' "$ps_log")"
-            ps_stdout_for_windows="$(cygpath -w "$ps_stdout" 2>/dev/null || printf '%s' "$ps_stdout")"
-            ps_stderr_for_windows="$(cygpath -w "$ps_stderr" 2>/dev/null || printf '%s' "$ps_stderr")"
-        fi
-        diagnostic_start=$(date +%s)
-        env FAKE_BASH_LOG="$ps_log_for_windows" \
-            "$launch_probe" "$fake_bash_for_windows" "$bin_dir_for_windows" "$install_script_for_windows" \
-            "$ps_stdout_for_windows" "$ps_stderr_for_windows"
-        diagnostic_status=$?
-        diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
-        echo "lazy-update diagnostic: go-native original-env status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$ps_log" ] && echo present || echo missing)"
-        for diagnostic_stream in stdout stderr; do
-            diagnostic_file="$TEST_DIR/go-launch.$diagnostic_stream"
-            echo "lazy-update diagnostic: go-native $diagnostic_stream (decoded, max 4KiB):"
-            python - "$diagnostic_file" <<'DECODE_DIAGNOSTIC_EOF'
+        local ps_log ps_stdout ps_stderr ps_log_for_windows ps_stdout_for_windows ps_stderr_for_windows probe_mode
+        for probe_mode in exact stop; do
+            ps_log="$TEST_DIR/fake-bash-go-launch-$probe_mode.log"
+            ps_stdout="$TEST_DIR/go-launch-$probe_mode.stdout"
+            ps_stderr="$TEST_DIR/go-launch-$probe_mode.stderr"
+            ps_log_for_windows="$ps_log"
+            ps_stdout_for_windows="$ps_stdout"
+            ps_stderr_for_windows="$ps_stderr"
+            if command -v cygpath >/dev/null 2>&1; then
+                ps_log_for_windows="$(cygpath -w "$ps_log" 2>/dev/null || printf '%s' "$ps_log")"
+                ps_stdout_for_windows="$(cygpath -w "$ps_stdout" 2>/dev/null || printf '%s' "$ps_stdout")"
+                ps_stderr_for_windows="$(cygpath -w "$ps_stderr" 2>/dev/null || printf '%s' "$ps_stderr")"
+            fi
+            diagnostic_start=$(date +%s)
+            env FAKE_BASH_LOG="$ps_log_for_windows" \
+                "$launch_probe" "$probe_mode" "$fake_bash_for_windows" "$bin_dir_for_windows" "$install_script_for_windows" \
+                "$ps_stdout_for_windows" "$ps_stderr_for_windows"
+            diagnostic_status=$?
+            diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
+            echo "lazy-update diagnostic: go-native original-env mode=$probe_mode status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$ps_log" ] && echo present || echo missing)"
+            for diagnostic_stream in stdout stderr; do
+                diagnostic_file="$TEST_DIR/go-launch-$probe_mode.$diagnostic_stream"
+                echo "lazy-update diagnostic: go-native mode=$probe_mode $diagnostic_stream (decoded, max 4KiB):"
+                python - "$diagnostic_file" <<'DECODE_DIAGNOSTIC_EOF'
 import pathlib
 import sys
 
@@ -1459,8 +1472,9 @@ sys.stdout.write(text[:4096])
 if text and not text[:4096].endswith("\n"):
     sys.stdout.write("\n")
 DECODE_DIAGNOSTIC_EOF
+            done
+            rm -f "$ps_stdout" "$ps_stderr"
         done
-        rm -f "$ps_stdout" "$ps_stderr"
 
         # An observable foreground control removes the product command's inner
         # redirection and retry loop, but still launches the same fixture bash.
