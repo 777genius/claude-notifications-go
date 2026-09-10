@@ -9,6 +9,15 @@ const notificationDefinitions = [
   { key: "limit", agent: "claude" },
   { key: "error", agent: "codex" },
 ] as const;
+const projectNames = [
+  "checkout-service",
+  "patient-portal",
+  "payments-api",
+  "mobile-app",
+  "analytics-pipeline",
+  "customer-dashboard",
+  "design-system",
+] as const;
 const notifications = computed(() =>
   notificationDefinitions.map((item) => ({
     agent: item.agent,
@@ -26,6 +35,7 @@ const visible = computed(() =>
   [0, 1, 2].map((offset) => ({
     item:
       notifications.value[(cursor.value + offset) % notifications.value.length]!,
+    workspace: projectNames[(cursor.value + offset) % projectNames.length]!,
     id: cursor.value + offset,
   })),
 );
@@ -66,7 +76,7 @@ onUnmounted(() => {
     </div>
     <TransitionGroup :css="!reduced" name="notification" tag="div" class="notification-stack">
       <article
-        v-for="{ item, id } in visible"
+        v-for="{ item, workspace, id } in visible"
         :key="id"
         class="notification-card"
       >
@@ -76,7 +86,7 @@ onUnmounted(() => {
             <h3>{{ item.title }}</h3>
             <span>{{ t("common.now") }}</span>
           </div>
-          <strong>{{ t("preview.workspace") }}</strong>
+          <strong>main · {{ workspace }}</strong>
           <p>{{ item.body }}</p>
           <span v-if="'detail' in item" class="notification-detail">{{
             item.detail

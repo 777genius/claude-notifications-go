@@ -182,6 +182,9 @@ test("assets load, hydration is clean and reduced motion disables background ani
   expect(
     await page.locator("h1").evaluate((n) => getComputedStyle(n).fontSize),
   ).not.toBe("32px");
+  await expect(page.locator(".notification-card").first()).toContainText(
+    /main · (checkout-service|patient-portal|payments-api|mobile-app|analytics-pipeline|customer-dashboard|design-system)/,
+  );
   expect(errors).toEqual([]);
 });
 test("language switch localizes content, URL, metadata and persists the choice", async ({
