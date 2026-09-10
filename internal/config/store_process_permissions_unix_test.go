@@ -21,10 +21,10 @@ func captureCrashPermissions(t *testing.T, path string, existing bool) crashPerm
 	return crashPermissions(info.Mode().Perm())
 }
 
-func assertCrashPermissions(t *testing.T, path string, before crashPermissions, existing bool) {
+func assertCrashPermissions(t *testing.T, path string, before crashPermissions, existing, published bool) {
 	t.Helper()
 	want := os.FileMode(0600)
-	if existing {
+	if existing && !published {
 		want = os.FileMode(before)
 	}
 	info, err := os.Stat(path)

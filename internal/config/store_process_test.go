@@ -327,12 +327,12 @@ func TestStoreProcessCrashReleasesLock(t *testing.T) {
 					if readErr != nil || !bytes.Equal(got, nextBytes) {
 						t.Fatalf("published bytes: err=%v got=%q want=%q", readErr, got, nextBytes)
 					}
-					assertCrashPermissions(t, selection.Path, permissions, existing)
+					assertCrashPermissions(t, selection.Path, permissions, existing, published)
 				case existing:
 					if readErr != nil || !bytes.Equal(got, oldBytes) {
 						t.Fatalf("original bytes: err=%v got=%q want=%q", readErr, got, oldBytes)
 					}
-					assertCrashPermissions(t, selection.Path, permissions, true)
+					assertCrashPermissions(t, selection.Path, permissions, true, published)
 				case readErr == nil || !os.IsNotExist(readErr):
 					t.Fatalf("fresh target unexpectedly exists: err=%v bytes=%q", readErr, got)
 				}

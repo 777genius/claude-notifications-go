@@ -30,7 +30,7 @@ func captureCrashPermissions(t *testing.T, path string, existing bool) crashPerm
 	return result
 }
 
-func assertCrashPermissions(t *testing.T, path string, before crashPermissions, existing bool) {
+func assertCrashPermissions(t *testing.T, path string, before crashPermissions, existing, _ bool) {
 	t.Helper()
 	f, err := winOpen(path, windows.GENERIC_READ, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, false)
 	if err != nil {

@@ -209,10 +209,6 @@ run_with_timeout() {
     fi
 }
 
-timeout_provider_available() {
-    command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1
-}
-
 # Use the same executable payload and checksum as the main Windows fixture.
 prepare_focus_fixture() {
     local destination="$1" checksum="$2"
@@ -1239,9 +1235,7 @@ test_windows_real_hook_schedules_lazy_update() {
         return
     fi
 
-    local powershell_path
-    powershell_path=$(command -v powershell.exe 2>/dev/null)
-    if [ -z "$powershell_path" ]; then
+    if ! command -v powershell.exe >/dev/null 2>&1; then
         skip_test "Windows real hook schedules lazy update" "PowerShell not available"
         return
     fi
@@ -1289,92 +1283,13 @@ FAKE_BASH_GO_EOF
         return
     fi
 
-    # A fixture-only launcher mirrors the product's native Go -> PowerShell
-    # boundary while retaining the child so diagnostics can bound and reap it.
-    local launch_probe_go="$TEST_DIR/windows-launch-probe.go"
-    local launch_probe="$TEST_DIR/windows-launch-probe.exe"
-    cat > "$launch_probe_go" <<'LAUNCH_PROBE_GO_EOF'
-package main
-
-import (
-	"context"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"time"
-)
-
-func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
-func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'" }
-
-func powershellPath() (string, error) {
-	if path, err := exec.LookPath("powershell.exe"); err == nil { return path, nil }
-	if root := os.Getenv("SystemRoot"); root != "" {
-		path := filepath.Join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-		if _, err := os.Stat(path); err == nil { return path, nil }
-	}
-	return "", fmt.Errorf("powershell.exe not found")
-}
-
-func main() {
-	if len(os.Args) != 7 { fmt.Fprintln(os.Stderr, "usage: probe mode bash target install stdout stderr"); os.Exit(2) }
-	mode := os.Args[1]
-	ps, err := powershellPath()
-	if err != nil { fmt.Fprintf(os.Stderr, "resolver_error=%v\n", err); os.Exit(2) }
-	shCommand := "INSTALL_TARGET_DIR=" + shQuote(filepath.ToSlash(os.Args[3])) + " " + shQuote(filepath.ToSlash(os.Args[4])) + " --force"
-	breadcrumbs := os.Args[5] + ".breadcrumbs"
-	mark := func(label string) string {
-		return "[System.IO.File]::AppendAllText(" + psQuote(breadcrumbs) + ", " + psQuote(label) + " + [Environment]::NewLine); "
-	}
-	loop := mark("entering-loop") + "for ($i = 0; $i -lt 6; $i++) { " + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; " + mark("after-fake") + "if ($LASTEXITCODE -eq 0) { break }; [System.Threading.Thread]::Sleep(5000) }"
-	psCommand := "$ErrorActionPreference = 'Stop'; " + mark("before-thread-sleep") + "[System.Threading.Thread]::Sleep(750); " + mark("after-thread-sleep") + loop
-	if mode == "stop" {
-		psCommand = "$ErrorActionPreference = 'Stop'; & " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; exit $LASTEXITCODE"
-	} else if mode == "start-sleep" {
-		psCommand = "$ErrorActionPreference = 'Stop'; " + mark("before-start-sleep") + "Start-Sleep -Milliseconds 750; " + mark("after-start-sleep") + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; " + mark("after-fake")
-	} else if mode == "thread-sleep" {
-		psCommand = "$ErrorActionPreference = 'Stop'; " + mark("before-thread-sleep") + "[System.Threading.Thread]::Sleep(750); " + mark("after-thread-sleep") + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; " + mark("after-fake")
-	} else if mode == "loop-no-sleep" {
-		psCommand = "$ErrorActionPreference = 'Stop'; " + mark("entering-loop") + "for ($i = 0; $i -lt 1; $i++) { " + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; " + mark("after-fake") + "}"
-	} else if mode != "exact" {
-		fmt.Fprintf(os.Stderr, "unknown mode %q\n", mode); os.Exit(2)
-	}
-	fmt.Printf("mode=%s fake=%s sh_command=%s ps_command=%s\n", mode, psQuote(os.Args[2]), psQuote(shCommand), psQuote(psCommand))
-	out, err := os.Create(os.Args[5]); if err != nil { panic(err) }; defer out.Close()
-	errout, err := os.Create(os.Args[6]); if err != nil { panic(err) }; defer errout.Close()
-	nul, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); if err != nil { panic(err) }; defer nul.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second); defer cancel()
-	cmd := exec.CommandContext(ctx, ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psCommand)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = nul, out, errout
-	if err := cmd.Start(); err != nil { fmt.Printf("powershell=%q start=error error=%q\n", ps, err.Error()); os.Exit(1) }
-	fmt.Printf("powershell=%q start=ok pid=%d ", ps, cmd.Process.Pid)
-	err = cmd.Wait()
-	exitCode := -1
-	if cmd.ProcessState != nil { exitCode = cmd.ProcessState.ExitCode() }
-	if ctx.Err() != nil { fmt.Printf("exit=%d timeout=%q wait_error=%q\n", exitCode, ctx.Err().Error(), err.Error()); os.Exit(124) }
-	if err == nil { fmt.Printf("exit=%d wait_error=none\n", exitCode) } else { fmt.Printf("exit=%d wait_error=%q\n", exitCode, err.Error()) }
-	if err != nil { os.Exit(1) }
-}
-LAUNCH_PROBE_GO_EOF
-    if ! go build -o "$launch_probe" "$launch_probe_go"; then
-        fail_test "Build native Windows lazy-update launch probe" "go build failed"
-        cleanup_test_dir
-        return
-    fi
-
     local fake_bash_for_windows="$fake_bash"
     local fake_bash_log_for_windows="$fake_bash_log"
-    local bin_dir_for_windows="$bin_dir"
-    local install_script_for_windows="$bin_dir/install.sh"
     local fixture_config="$TEST_DIR/config.json"
     local fixture_config_for_windows="$fixture_config"
     if command -v cygpath >/dev/null 2>&1; then
         fake_bash_for_windows="$(cygpath -w "$fake_bash" 2>/dev/null || printf '%s' "$fake_bash")"
         fake_bash_log_for_windows="$(cygpath -w "$fake_bash_log" 2>/dev/null || printf '%s' "$fake_bash_log")"
-        bin_dir_for_windows="$(cygpath -m "$bin_dir" 2>/dev/null || printf '%s' "$bin_dir")"
-        install_script_for_windows="$(cygpath -m "$bin_dir/install.sh" 2>/dev/null || printf '%s' "$bin_dir/install.sh")"
         fixture_config_for_windows="$(cygpath -w "$fixture_config" 2>/dev/null || printf '%s' "$fixture_config")"
     fi
 
@@ -1387,9 +1302,7 @@ LAUNCH_PROBE_GO_EOF
         return
     fi
 
-    local output exit_code stamp_path="$LOCALAPPDATA/claude-notifications-go/windows-lazy-update-stamp"
-    local stamp_before="missing"
-    if [ -f "$stamp_path" ]; then stamp_before="present:$(cat "$stamp_path" 2>/dev/null)"; fi
+    local output exit_code
     set +e
     output=$(printf '{"session_id":"ci-win","transcript_path":"","cwd":""}\n' | \
         env AGENT_NOTIFICATIONS_CONFIG="$fixture_config_for_windows" \
@@ -1411,129 +1324,7 @@ LAUNCH_PROBE_GO_EOF
         i=$((i + 1))
     done
 
-    if [ ! -f "$fake_bash_log" ]; then
-        # Record the original deadline failure before diagnostics. A delayed
-        # detached child must not turn this failed assertion into a pass.
-        fail_test "Windows hook schedules lazy update through bash" "file not found: $fake_bash_log"
-
-        # Failure-only diagnostics: the product intentionally discards the
-        # detached child's errors, and the fake executable ignores log errors.
-        # Exercise only that fake executable, with fixture paths and a bounded
-        # foreground reproduction; diagnostic success never satisfies the E2E.
-        local stamp_after="missing"
-        if [ -f "$stamp_path" ]; then stamp_after="present:$(cat "$stamp_path" 2>/dev/null)"; fi
-        echo "lazy-update diagnostic: stamp before=$stamp_before after=$stamp_after path=$stamp_path"
-
-        if ! timeout_provider_available; then
-            echo "lazy-update diagnostic: skipped shell probes (timeout/gtimeout unavailable)"
-            cleanup_test_dir
-            return
-        fi
-
-        local direct_log="$TEST_DIR/fake-bash-direct.log"
-        local direct_log_for_windows="$direct_log"
-        if command -v cygpath >/dev/null 2>&1; then
-            direct_log_for_windows="$(cygpath -w "$direct_log" 2>/dev/null || printf '%s' "$direct_log")"
-        fi
-        local diagnostic_start diagnostic_status diagnostic_elapsed
-        diagnostic_start=$(date +%s)
-        run_with_timeout 5 env -i SystemRoot="${SystemRoot:-}" USERPROFILE="$USERPROFILE" \
-            LOCALAPPDATA="$LOCALAPPDATA" TMP="$TMP" TEMP="$TEMP" \
-            FAKE_BASH_LOG="$direct_log_for_windows" \
-            "$fake_bash" -lc "diagnostic" >/dev/null 2>&1
-        diagnostic_status=$?
-        diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
-        echo "lazy-update diagnostic: direct fake status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$direct_log" ] && echo present || echo missing)"
-
-        local ps_log ps_stdout ps_stderr ps_log_for_windows ps_stdout_for_windows ps_stderr_for_windows probe_mode
-        for probe_mode in exact start-sleep thread-sleep loop-no-sleep stop; do
-            ps_log="$TEST_DIR/fake-bash-go-launch-$probe_mode.log"
-            ps_stdout="$TEST_DIR/go-launch-$probe_mode.stdout"
-            ps_stderr="$TEST_DIR/go-launch-$probe_mode.stderr"
-            ps_log_for_windows="$ps_log"
-            ps_stdout_for_windows="$ps_stdout"
-            ps_stderr_for_windows="$ps_stderr"
-            if command -v cygpath >/dev/null 2>&1; then
-                ps_log_for_windows="$(cygpath -w "$ps_log" 2>/dev/null || printf '%s' "$ps_log")"
-                ps_stdout_for_windows="$(cygpath -w "$ps_stdout" 2>/dev/null || printf '%s' "$ps_stdout")"
-                ps_stderr_for_windows="$(cygpath -w "$ps_stderr" 2>/dev/null || printf '%s' "$ps_stderr")"
-            fi
-            diagnostic_start=$(date +%s)
-            env FAKE_BASH_LOG="$ps_log_for_windows" \
-                "$launch_probe" "$probe_mode" "$fake_bash_for_windows" "$bin_dir_for_windows" "$install_script_for_windows" \
-                "$ps_stdout_for_windows" "$ps_stderr_for_windows"
-            diagnostic_status=$?
-            diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
-            echo "lazy-update diagnostic: go-native original-env mode=$probe_mode status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$ps_log" ] && echo present || echo missing)"
-            if [ -f "$ps_stdout.breadcrumbs" ]; then
-                echo "lazy-update diagnostic: go-native mode=$probe_mode breadcrumbs:"
-                cat "$ps_stdout.breadcrumbs"
-            else
-                echo "lazy-update diagnostic: go-native mode=$probe_mode breadcrumbs=missing"
-            fi
-            for diagnostic_stream in stdout stderr; do
-                diagnostic_file="$TEST_DIR/go-launch-$probe_mode.$diagnostic_stream"
-                echo "lazy-update diagnostic: go-native mode=$probe_mode $diagnostic_stream (decoded, max 4KiB):"
-                python - "$diagnostic_file" <<'DECODE_DIAGNOSTIC_EOF'
-import pathlib
-import sys
-
-data = pathlib.Path(sys.argv[1]).read_bytes()[:8192]
-if data.startswith((b"\xff\xfe", b"\xfe\xff")):
-    text = data.decode("utf-16", errors="replace")
-elif b"\x00" in data:
-    text = data.decode("utf-16le", errors="replace")
-else:
-    text = data.decode("utf-8", errors="replace")
-sys.stdout.write(text[:4096])
-if text and not text[:4096].endswith("\n"):
-    sys.stdout.write("\n")
-DECODE_DIAGNOSTIC_EOF
-            done
-            rm -f "$ps_stdout" "$ps_stderr"
-        done
-
-        # An observable foreground control removes the product command's inner
-        # redirection and retry loop, but still launches the same fixture bash.
-        local foreground_log="$TEST_DIR/fake-bash-powershell-foreground.log"
-        local foreground_stdout="$TEST_DIR/powershell-foreground.stdout"
-        local foreground_stderr="$TEST_DIR/powershell-foreground.stderr"
-        local foreground_log_for_windows="$foreground_log"
-        if command -v cygpath >/dev/null 2>&1; then
-            foreground_log_for_windows="$(cygpath -w "$foreground_log" 2>/dev/null || printf '%s' "$foreground_log")"
-        fi
-        local ps_fake=${fake_bash_for_windows//\'/\'\'}
-        diagnostic_start=$(date +%s)
-        run_with_timeout 12 env FAKE_BASH_LOG="$foreground_log_for_windows" \
-            "$powershell_path" -NoProfile -ExecutionPolicy Bypass -Command \
-            "& '$ps_fake' -lc 'diagnostic'; exit \$LASTEXITCODE" \
-            >"$foreground_stdout" 2>"$foreground_stderr"
-        diagnostic_status=$?
-        diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
-        echo "lazy-update diagnostic: powershell foreground status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$foreground_log" ] && echo present || echo missing)"
-        for diagnostic_stream in stdout stderr; do
-            diagnostic_file="$TEST_DIR/powershell-foreground.$diagnostic_stream"
-            echo "lazy-update diagnostic: powershell foreground $diagnostic_stream (decoded, max 4KiB):"
-            python - "$diagnostic_file" <<'DECODE_DIAGNOSTIC_EOF'
-import pathlib
-import sys
-
-data = pathlib.Path(sys.argv[1]).read_bytes()[:8192]
-if data.startswith((b"\xff\xfe", b"\xfe\xff")):
-    text = data.decode("utf-16", errors="replace")
-elif b"\x00" in data:
-    text = data.decode("utf-16le", errors="replace")
-else:
-    text = data.decode("utf-8", errors="replace")
-sys.stdout.write(text[:4096])
-if text and not text[:4096].endswith("\n"):
-    sys.stdout.write("\n")
-DECODE_DIAGNOSTIC_EOF
-        done
-        rm -f "$foreground_stdout" "$foreground_stderr"
-    else
-        assert_file_exists "$fake_bash_log" "Windows hook schedules lazy update through bash"
-    fi
+    assert_file_exists "$fake_bash_log" "Windows hook schedules lazy update through bash"
     if [ -f "$fake_bash_log" ]; then
         local fake_log
         fake_log=$(cat "$fake_bash_log")
