@@ -12,7 +12,7 @@ assert() {
     local message="$1"
     shift
     if ! "$@"; then
-        echo "ASSERTION FAILED: ${scenario:-utility}: $message" >&2
+        echo "ASSERTION FAILED: ${scenario:-utility}${phase:+/$phase}: $message" >&2
         return 1
     fi
 }
@@ -22,11 +22,11 @@ assert_output() {
     shift 2
     local actual
     actual=$("$@") || {
-        echo "ASSERTION FAILED: ${scenario:-utility}: $message (command status $?)" >&2
+        echo "ASSERTION FAILED: ${scenario:-utility}${phase:+/$phase}: $message (command status $?)" >&2
         return 1
     }
     if [ "$actual" != "$expected" ]; then
-        echo "ASSERTION FAILED: ${scenario:-utility}: $message (expected '$expected', got '$actual')" >&2
+        echo "ASSERTION FAILED: ${scenario:-utility}${phase:+/$phase}: $message (expected '$expected', got '$actual')" >&2
         return 1
     fi
 }
@@ -173,10 +173,12 @@ for scenario in staged staged_corrupt offline fresh_offline download checksum mi
 done
 
 # Exercise the real downloader with a curl stub; never touch a live utility.
+scenario=utility_downloader
 (
     export INSTALL_TARGET_DIR="$sandbox/utilities"
     mkdir -p "$INSTALL_TARGET_DIR"
     source "$sandbox/functions.sh"
+    trap 'result=$?; [ "$result" = 0 ] || echo "UTILITY PHASE FAILED: ${phase:-setup} (status $result)" >&2' EXIT
     utility="$INSTALL_TARGET_DIR/sound-preview-test"
     FORCE_UPDATE=true
     transfer=interrupt
@@ -199,37 +201,46 @@ done
         printf '#!/bin/sh\necho new-utility\n' > "$output"
         head -c 100001 /dev/zero >> "$output"
     }
+    phase=initial_interrupt
     download_utility test "$utility" && status=0 || status=$?
-    [ "$status" = 143 ]
-    [ ! -e "$utility" ]
-    [ -z "$(find "$INSTALL_TARGET_DIR" -name '*.download.*')" ]
+    assert 'initial interrupt must return status 143' test "$status" = 143
+    assert 'initial interrupt must not create a live utility' test ! -e "$utility"
+    artifacts=$(find "$INSTALL_TARGET_DIR" -name '*.download.*' -print)
+    assert_output '' 'initial interrupt temp file was not cleaned' printf %s "$artifacts"
+    phase=initial_success
     transfer=success
     download_utility test "$utility"
-    [ "$("$utility")" = new-utility ]
+    assert_output new-utility 'successful download did not install the utility' "$utility"
     cp "$utility" "$INSTALL_TARGET_DIR/expected"
     for transfer in interrupt fail short; do
+        phase="replacement_$transfer"
         download_utility test "$utility" && status=0 || status=$?
-        [ "$status" != 0 ]
-        cmp "$utility" "$INSTALL_TARGET_DIR/expected"
-        [ -z "$(find "$INSTALL_TARGET_DIR" -name '*.download.*')" ]
+        assert "$phase must fail" test "$status" != 0
+        assert "$phase must preserve the live utility" cmp "$utility" "$INSTALL_TARGET_DIR/expected"
+        artifacts=$(find "$INSTALL_TARGET_DIR" -name '*.download.*' -print)
+        assert_output '' "$phase temp file was not cleaned" printf %s "$artifacts"
     done
+    phase=usable_skip
     FORCE_UPDATE=false
     transfer=fail
     download_utility test "$utility" # usable existing file skips download
     for invalid in partial nonexecutable; do
+        phase="repair_$invalid"
         if [ "$invalid" = partial ]; then printf partial > "$utility";
         else head -c 100001 /dev/zero > "$utility"; chmod -x "$utility"; fi
         transfer=success
         download_utility test "$utility"
-        utility_usable "$utility"
+        assert "$phase must install a usable utility" utility_usable "$utility"
     done
+    phase=forced_replacement
     FORCE_UPDATE=true
     printf '#!/bin/sh\necho old-utility\n' > "$utility"
     head -c 100001 /dev/zero >> "$utility"
     chmod +x "$utility"
     download_utility test "$utility"
-    [ "$("$utility")" = new-utility ]
+    assert_output new-utility 'forced replacement did not install the new utility' "$utility"
     # Optional phase must not even request the required Windows focus asset.
+    phase=focus_exclusion
     FOCUS_HANDLER_NAME=focus.exe FOCUS_HANDLER_PATH="$INSTALL_TARGET_DIR/focus.exe"
     SOUND_PREVIEW_NAME=sound LIST_DEVICES_NAME=devices LIST_SOUNDS_NAME=sounds
     SOUND_PREVIEW_PATH="$utility" LIST_DEVICES_PATH="$utility" LIST_SOUNDS_PATH="$utility"

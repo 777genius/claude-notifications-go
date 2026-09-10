@@ -625,7 +625,10 @@ download_utility() (
     local util_name="$1"
     local util_path="$2"
     local url="${RELEASE_URL}/${util_name}"
-    local temp_path
+    # The EXIT trap must retain this pathname after a TERM/INT exits the
+    # function. Bash 3.2 can discard function-local variables before running
+    # that trap, so keep the trap state in this subshell's global scope.
+    temp_path=''
 
     if [ "$FORCE_UPDATE" != true ] && utility_usable "$util_path"; then
         echo -e "${GREEN}✓${NC} ${util_name} already installed"
