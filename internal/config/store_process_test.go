@@ -286,6 +286,12 @@ func TestStoreProcessCrashReleasesLock(t *testing.T) {
 					if e = os.WriteFile(selection.Path, oldBytes, 0644); e != nil {
 						t.Fatal(e)
 					}
+					if runtime.GOOS != "windows" {
+						// os.WriteFile honors the process umask for a new fixture.
+						if e = os.Chmod(selection.Path, 0644); e != nil {
+							t.Fatal(e)
+						}
+					}
 					old, e := ParseDocument(oldBytes, selection.Path, true)
 					if e != nil {
 						t.Fatal(e)
@@ -302,6 +308,7 @@ func TestStoreProcessCrashReleasesLock(t *testing.T) {
 					}
 					nextBytes = seed.Bytes()
 				}
+				permissions := captureCrashPermissions(t, selection.Path, existing)
 				cmd, output := spawnStoreChild(t, root, mode, "0", "")
 				awaitFile(t, filepath.Join(root, "ready-0"))
 				if e := os.WriteFile(filepath.Join(root, "start"), nil, 0600); e != nil {
@@ -320,12 +327,12 @@ func TestStoreProcessCrashReleasesLock(t *testing.T) {
 					if readErr != nil || !bytes.Equal(got, nextBytes) {
 						t.Fatalf("published bytes: err=%v got=%q want=%q", readErr, got, nextBytes)
 					}
-					assertPrivateCrashMode(t, selection.Path)
+					assertCrashPermissions(t, selection.Path, permissions, existing)
 				case existing:
 					if readErr != nil || !bytes.Equal(got, oldBytes) {
 						t.Fatalf("original bytes: err=%v got=%q want=%q", readErr, got, oldBytes)
 					}
-					assertCrashMode(t, selection.Path, 0644)
+					assertCrashPermissions(t, selection.Path, permissions, true)
 				case readErr == nil || !os.IsNotExist(readErr):
 					t.Fatalf("fresh target unexpectedly exists: err=%v bytes=%q", readErr, got)
 				}
@@ -355,22 +362,6 @@ func TestStoreProcessCrashReleasesLock(t *testing.T) {
 		}
 	}
 }
-
-func assertCrashMode(t *testing.T, path string, want os.FileMode) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		return // Native DACL preservation is asserted in store_windows_test.go.
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat mode: %v", err)
-	}
-	if info.Mode().Perm() != want {
-		t.Fatalf("mode: got=%v want=%v", info.Mode().Perm(), want)
-	}
-}
-
-func assertPrivateCrashMode(t *testing.T, path string) { assertCrashMode(t, path, 0600) }
 
 func TestStoreProcessSelectionGuardOrders(t *testing.T) {
 	for _, first := range []string{"legacy", "neutral"} {

@@ -137,18 +137,18 @@ shutil.copytree(os.environ['SOURCE'],root,dirs_exist_ok=True)
                    BOOTSTRAP_RELEASES_BASE_URL=self.url, INSTALL_SCRIPT_URL=self.url + '/install.sh')
         return env
 
-    def run(self, env, args, expected=0, data=None):
+    def open_canary_watch(self):
         # Linux inotify reports reads as well as writes to the sibling canary.
-        # Observe only the child interval; our own before/after snapshots read it.
         import ctypes
         libc = ctypes.CDLL(None, use_errno=True)
         watch = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
         assert watch >= 0, 'cannot monitor fixture canary'
+        mask = 0x1 | 0x2 | 0x4 | 0x20 | 0x400 | 0x800
+        assert libc.inotify_add_watch(watch, os.fsencode(self.base / 'outside-fixtures-canary'), mask) >= 0
+        return watch
+
+    def close_canary_watch(self, watch):
         try:
-            mask = 0x1 | 0x2 | 0x4 | 0x20 | 0x400 | 0x800
-            assert libc.inotify_add_watch(watch, os.fsencode(self.base / 'outside-fixtures-canary'), mask) >= 0
-            r = subprocess.run([str(x) for x in args], env=env, input=data, capture_output=True,
-                               cwd=env['HOME'], timeout=45, start_new_session=True)
             try:
                 events = os.read(watch, 65536)
             except BlockingIOError:
@@ -156,6 +156,15 @@ shutil.copytree(os.environ['SOURCE'],root,dirs_exist_ok=True)
             assert not events, 'child accessed outside-fixtures canary'
         finally:
             os.close(watch)
+
+    def run(self, env, args, expected=0, data=None):
+        # Observe only the child interval; our own before/after snapshots read it.
+        watch = self.open_canary_watch()
+        try:
+            r = subprocess.run([str(x) for x in args], env=env, input=data, capture_output=True,
+                               cwd=env['HOME'], timeout=45, start_new_session=True)
+        finally:
+            self.close_canary_watch(watch)
         assert CANARY.encode() not in r.stdout + r.stderr, 'canary leaked in diagnostics'
         assert r.returncode == expected, 'exit expected=%s observed=%s\n%s' % (expected, r.returncode, (r.stdout+r.stderr).decode(errors='replace'))
         return r
@@ -375,6 +384,7 @@ shutil.copytree(os.environ['SOURCE'],root,dirs_exist_ok=True)
         lock.touch(mode=0o600, exist_ok=True)
         processes = []
         install = settings = hook = None
+        canary_watch = self.open_canary_watch()
         def start(args, stdin):
             proc = subprocess.Popen(args, env=env, cwd=env['HOME'], stdin=stdin,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -433,6 +443,7 @@ shutil.copytree(os.environ['SOURCE'],root,dirs_exist_ok=True)
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait(timeout=5)
+            self.close_canary_watch(canary_watch)
         for name, proc, output in (('settings', settings, settings_out), ('hook', hook, hook_out),
                                    ('installer', install, install_out)):
             assert proc.returncode == 0, '%s failed: %s' % (name, (output[0] + output[1]).decode(errors='replace'))

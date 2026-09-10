@@ -1328,7 +1328,7 @@ func main() {
 	mark := func(label string) string {
 		return "[System.IO.File]::AppendAllText(" + psQuote(breadcrumbs) + ", " + psQuote(label) + " + [Environment]::NewLine); "
 	}
-	loop := mark("entering-loop") + "for ($i = 0; $i -lt 6; $i++) { " + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + " *> $null; " + mark("after-fake") + "if ($LASTEXITCODE -eq 0) { break }; [System.Threading.Thread]::Sleep(5000) }"
+	loop := mark("entering-loop") + "for ($i = 0; $i -lt 6; $i++) { " + mark("before-fake") + "& " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; " + mark("after-fake") + "if ($LASTEXITCODE -eq 0) { break }; [System.Threading.Thread]::Sleep(5000) }"
 	psCommand := "$ErrorActionPreference = 'Stop'; " + mark("before-thread-sleep") + "[System.Threading.Thread]::Sleep(750); " + mark("after-thread-sleep") + loop
 	if mode == "stop" {
 		psCommand = "$ErrorActionPreference = 'Stop'; & " + psQuote(os.Args[2]) + " -lc " + psQuote(shCommand) + "; exit $LASTEXITCODE"
