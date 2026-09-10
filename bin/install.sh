@@ -28,10 +28,14 @@ mkdir -p "$SCRIPT_DIR" 2>/dev/null || true
 # helper first so safe existing installs need no network. Old binaries that do
 # not speak this protocol require a verified staged release before live changes.
 INSTALL_CONFIG_STAGE=""
+INSTALL_CONFIG_STAGE_OWNER=""
 INSTALL_CONFIG_HELPER=""
+INSTALL_PRIVATE_DOWNLOAD=false
 
 cleanup_install_config() {
-    [ -z "$INSTALL_CONFIG_STAGE" ] || rm -rf "$INSTALL_CONFIG_STAGE"
+    if [ -n "$INSTALL_CONFIG_STAGE" ] && [ "$INSTALL_CONFIG_STAGE_OWNER" = "$BASH_SUBSHELL" ]; then
+        rm -rf "$INSTALL_CONFIG_STAGE"
+    fi
 }
 trap 'cleanup_install_config' EXIT
 
@@ -54,9 +58,11 @@ prepare_install_config_preflight() {
         return 1
     fi
     INSTALL_CONFIG_STAGE=$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/install-config.XXXXXX") || return 1
+    INSTALL_CONFIG_STAGE_OWNER=$BASH_SUBSHELL
     # Existing download/verification logic is confined to this new directory.
     if ! (
         SCRIPT_DIR="$INSTALL_CONFIG_STAGE"
+        INSTALL_PRIVATE_DOWNLOAD=true
         detect_platform
         REQUIRE_CHECKSUM=true
         pin_release_urls
@@ -95,7 +101,7 @@ try:
         paths = [os.path.abspath(p) for p in paths]
     request = json.dumps(dict(refreshDirs=paths))
     result = subprocess.run([helper, 'config', 'preflight-update', '--stdin', '--json'],
-                            input=request, text=True, stdout=subprocess.PIPE,
+                            input=request, universal_newlines=True, stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, timeout=20)
     response = json.loads(result.stdout)
     if not isinstance(response, dict) or response.get('status') not in {'safe', 'unsafe-target', 'invalid-config', 'import-required'}:
@@ -463,6 +469,12 @@ check_required_tools() {
     return 0
 }
 
+# Release downloads normally run in fresh private staging. Direct callers
+# still require canonical protection for their live output paths.
+guard_download_paths() {
+    [ "${INSTALL_PRIVATE_DOWNLOAD:-false}" = true ] || guard_install_paths "$@"
+}
+
 # Retry wrapper for network operations
 retry_download() {
     local url="$1"
@@ -478,6 +490,7 @@ retry_download() {
 
         local temp_file="${output}.tmp.$$"
         local success=false
+        guard_download_paths "$temp_file"
 
         if command -v curl &>/dev/null; then
             if curl -fsSL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CURL_TIMEOUT" "$url" -o "$temp_file" 2>/dev/null; then
@@ -490,10 +503,12 @@ retry_download() {
         fi
 
         if [ "$success" = true ] && [ -f "$temp_file" ] && [ "$(get_file_size "$temp_file")" -gt 0 ]; then
+            guard_download_paths "$temp_file" "$output"
             mv "$temp_file" "$output"
             return 0
         fi
 
+        guard_download_paths "$temp_file"
         rm -f "$temp_file" 2>/dev/null
         attempt=$((attempt + 1))
     done
@@ -739,13 +754,15 @@ download_utility() (
     fi
 
     # Keep the live utility intact until a complete replacement is ready.
+    guard_install_paths "$util_path"
     temp_path=$(mktemp "${util_path}.download.XXXXXX") || return 1
-    trap 'rm -f "$temp_path"; cleanup_install_config' EXIT
+    trap 'guard_install_paths "$temp_path"; rm -f "$temp_path"; cleanup_install_config' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
     echo -e "${BLUE}📦 Downloading ${util_name}...${NC}"
 
     local downloaded=false
+    guard_install_paths "$temp_path"
     if command -v curl &> /dev/null; then
         if curl -fsSL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CURL_TIMEOUT" "$url" -o "$temp_path" 2>/dev/null; then
             downloaded=true
@@ -758,7 +775,7 @@ download_utility() (
 
     # These sound tools do not implement --version; do not launch audio/device
     # enumeration to validate an optional download.
-    if [ "$downloaded" = true ] && chmod +x "$temp_path" &&
+    if [ "$downloaded" = true ] && guard_install_paths "$temp_path" && chmod +x "$temp_path" &&
        utility_usable "$temp_path" && guard_install_paths "$util_path" && mv -f "$temp_path" "$util_path"; then
         echo -e "${GREEN}✓${NC} ${util_name} downloaded"
         return 0
@@ -834,6 +851,7 @@ EOF
 
 # Download checksums file
 download_checksums() {
+    guard_download_paths "$CHECKSUMS_PATH"
     echo -e "${BLUE}📝 Downloading checksums...${NC}"
 
     if command -v curl &> /dev/null; then
@@ -852,9 +870,12 @@ download_checksums() {
 }
 
 # Download binary with progress bar
-download_binary() {
+download_binary() (
     local url="${RELEASE_URL}/${BINARY_NAME}"
-    local error_log="${TMPDIR:-${TEMP:-/tmp}}/install-error-$$.log"
+    diagnostic_stage=$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/install-diagnostic.XXXXXX") || return 1
+    trap 'rm -rf "$diagnostic_stage"; cleanup_install_config' EXIT
+    local error_log="$diagnostic_stage/error.log"
+    guard_download_paths "$BINARY_PATH"
     local http_code=""
     local curl_exit_code=0
     local curl_error=""
@@ -867,6 +888,7 @@ download_binary() {
     # Try curl first (with progress bar)
     if command -v curl &> /dev/null; then
         # Use a progress bar only for the first attempt; retry failures with clean stderr.
+        guard_download_paths "$BINARY_PATH"
         http_code=$(curl -w "%{http_code}" -fL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --progress-bar --max-time "$CURL_TIMEOUT" \
             "$url" -o "$BINARY_PATH" 2>"$error_log") || curl_exit_code=$?
 
@@ -877,6 +899,7 @@ download_binary() {
         fi
 
         # Analyze failure
+        guard_download_paths "$BINARY_PATH"
         rm -f "$BINARY_PATH"
         if [ -f "$error_log" ]; then
             curl_error=$(<"$error_log")
@@ -894,9 +917,11 @@ download_binary() {
 
         if [ "$should_retry" = true ]; then
             echo -e "${YELLOW}  Retrying once with compatibility mode...${NC}"
+            guard_download_paths "$BINARY_PATH"
             rm -f "$error_log" "$BINARY_PATH"
 
             curl_exit_code=0
+            guard_download_paths "$BINARY_PATH"
             http_code=$(curl -w "%{http_code}" -fL "${CURL_EXTRA_OPTS[@]}" "${CURL_COMPAT_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" -sS --max-time "$CURL_TIMEOUT" \
                 "$url" -o "$BINARY_PATH" 2>"$error_log") || curl_exit_code=$?
 
@@ -906,6 +931,7 @@ download_binary() {
                 return 0
             fi
 
+            guard_download_paths "$BINARY_PATH"
             rm -f "$BINARY_PATH"
             if [ -f "$error_log" ]; then
                 curl_error=$(<"$error_log")
@@ -952,6 +978,7 @@ download_binary() {
     # Fallback to wget
     elif command -v wget &> /dev/null; then
         # Capture wget errors
+        guard_download_paths "$BINARY_PATH"
         if wget --show-progress --timeout=$WGET_TIMEOUT "$url" -O "$BINARY_PATH" 2>"$error_log"; then
             if [ -f "$BINARY_PATH" ] && [ "$(get_file_size "$BINARY_PATH")" -gt 100000 ]; then
                 rm -f "$error_log"
@@ -961,6 +988,7 @@ download_binary() {
         fi
 
         local wget_error=$(cat "$error_log" 2>/dev/null)
+        guard_download_paths "$BINARY_PATH"
         rm -f "$BINARY_PATH" "$error_log"
 
         echo ""
@@ -978,7 +1006,7 @@ download_binary() {
         echo -e "${YELLOW}Please install curl or wget and try again${NC}" >&2
         return 1
     fi
-}
+)
 
 # Verify checksum
 verify_checksum() {
@@ -1023,6 +1051,7 @@ verify_checksum() {
         echo -e "${RED}  Got:      ${actual_sum}${NC}" >&2
         print_unexpected_payload_diagnostics "$BINARY_PATH"
         echo -e "${YELLOW}The downloaded file may be corrupted. Try again.${NC}" >&2
+        guard_download_paths "$BINARY_PATH"
         rm -f "$BINARY_PATH"
         return 1
     fi
@@ -1042,6 +1071,7 @@ verify_binary() {
         echo -e "${RED}✗ Downloaded file too small (${size} bytes)${NC}" >&2
         echo -e "${YELLOW}This might be an error page. Check your internet connection.${NC}" >&2
         print_unexpected_payload_diagnostics "$BINARY_PATH"
+        guard_download_paths "$BINARY_PATH"
         rm -f "$BINARY_PATH"
         return 1
     fi
@@ -1060,6 +1090,7 @@ verify_binary() {
 # nominally successful download, which can happen when a proxy/CDN returns an
 # unexpected payload with HTTP 200.
 download_and_verify_binary() {
+    guard_download_paths "$BINARY_PATH" "$CHECKSUMS_PATH"
     if [ -n "${INSTALL_STAGED_ASSETS:-}" ] && [ -f "$INSTALL_STAGED_ASSETS/$BINARY_NAME" ]; then
         cp "$INSTALL_STAGED_ASSETS/$BINARY_NAME" "$BINARY_PATH" || return 1
         cp "$INSTALL_STAGED_ASSETS/checksums.txt" "$CHECKSUMS_PATH" || return 1
@@ -1085,6 +1116,7 @@ download_and_verify_binary() {
             return 0
         fi
 
+        guard_download_paths "$BINARY_PATH"
         rm -f "$BINARY_PATH"
 
         if [ $attempt -lt $MAX_RETRIES ]; then
@@ -1114,6 +1146,7 @@ verify_executable() {
         echo -e "${RED}✗ Binary failed to execute (exit code: ${exit_code})${NC}" >&2
         echo -e "${RED}  Output: ${output}${NC}" >&2
         echo -e "${YELLOW}The downloaded file may be corrupted or incompatible.${NC}" >&2
+        guard_download_paths "$BINARY_PATH"
         rm -f "$BINARY_PATH"
         return 1
     fi
@@ -1123,6 +1156,7 @@ verify_executable() {
         echo -e "${RED}✗ Binary output unexpected${NC}" >&2
         echo -e "${RED}  Output: ${output}${NC}" >&2
         echo -e "${YELLOW}This doesn't appear to be the correct binary.${NC}" >&2
+        guard_download_paths "$BINARY_PATH"
         rm -f "$BINARY_PATH"
         return 1
     fi
@@ -1262,6 +1296,7 @@ configure_windows_native_hooks() {
         echo -e "${GREEN}✓${NC} Windows exec-form hooks configured"
         echo -e "${YELLOW}  Restart Claude Code to apply the Windows hook update.${NC}"
     else
+        guard_install_paths "$tmp_hooks"
         rm -f "$tmp_hooks" 2>/dev/null || true
         echo -e "${YELLOW}⚠ Could not write Windows exec-form hooks${NC}"
     fi
@@ -1302,6 +1337,7 @@ download_terminal_notifier_modern() {
             sleep $RETRY_DELAY
         fi
 
+        guard_install_paths "$TEMP_ZIP"
         if command -v curl &>/dev/null; then
             if curl -fsSL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CURL_TIMEOUT" "$MODERN_URL" -o "$TEMP_ZIP" 2>/dev/null; then
                 downloaded=true
@@ -1393,6 +1429,7 @@ download_terminal_notifier() {
             sleep $RETRY_DELAY
         fi
 
+        guard_install_paths "$TEMP_ZIP"
         if command -v curl &>/dev/null; then
             if curl -fsSL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CURL_TIMEOUT" "$NOTIFIER_URL" -o "$TEMP_ZIP" 2>/dev/null; then
                 downloaded=true
@@ -1468,7 +1505,7 @@ create_claude_notifications_app() {
 
     echo -e "${BLUE}🎨 Creating ClaudeNotifications.app (notification icon)...${NC}"
 
-    guard_install_paths "$APP_DIR" "${TMPDIR:-${TEMP:-/tmp}}/claude-$$.iconset" \
+    guard_install_paths "$APP_DIR" \
         "$APP_DIR/Contents/Info.plist" "$APP_DIR/Contents/MacOS/claude-notify" \
         "$APP_DIR/Contents/Resources/AppIcon.icns"
     # Create app structure
@@ -1476,8 +1513,10 @@ create_claude_notifications_app() {
     mkdir -p "$APP_DIR/Contents/Resources"
 
     # Create iconset from PNG
-    local ICONSET_DIR="${TMPDIR:-${TEMP:-/tmp}}/claude-$$.iconset"
-    mkdir -p "$ICONSET_DIR"
+    local ICONSET_ROOT ICONSET_DIR
+    ICONSET_ROOT=$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/claude-iconset.XXXXXX") || return 1
+    ICONSET_DIR="$ICONSET_ROOT/claude.iconset"
+    mkdir "$ICONSET_DIR" || return 1
 
     # Generate different icon sizes (silence sips stdout/stderr)
     sips -z 16 16 "$ICON_SRC" --out "$ICONSET_DIR/icon_16x16.png" >/dev/null 2>&1
@@ -1494,13 +1533,13 @@ create_claude_notifications_app() {
     guard_install_paths "$APP_DIR/Contents/Resources/AppIcon.icns"
     if ! iconutil -c icns "$ICONSET_DIR" -o "$APP_DIR/Contents/Resources/AppIcon.icns" 2>/dev/null; then
         echo -e "${YELLOW}⚠ Could not create app icon${NC}"
-        guard_install_paths "$ICONSET_DIR" "$APP_DIR"
-        rm -rf "$ICONSET_DIR" "$APP_DIR"
+        guard_install_paths "$ICONSET_ROOT" "$APP_DIR"
+        rm -rf "$ICONSET_ROOT" "$APP_DIR"
         return 1
     fi
 
-    guard_install_paths "$ICONSET_DIR"
-    rm -rf "$ICONSET_DIR"
+    guard_install_paths "$ICONSET_ROOT"
+    rm -rf "$ICONSET_ROOT"
 
     # Create Info.plist
     guard_install_paths "$APP_DIR/Contents/Info.plist"
@@ -1584,21 +1623,47 @@ setup_iterm2_venv() {
     echo ""
     echo -e "${BLUE}  Setting up iTerm2 tmux -CC support...${NC}"
 
+    # Never run venv or pip against existing children: they may alias the
+    # selected config in the reverse direction (e.g. pyvenv.cfg -> config).
     guard_install_paths "$VENV_DIR"
-    if ! "$python3_path" -m venv "$VENV_DIR" 2>/dev/null; then
-        echo -e "${YELLOW}  ⚠ Could not create Python venv, skipping${NC}"
+    local venv_stage
+    venv_stage=$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/iterm-venv.XXXXXX") || return 1
+    if ! "$python3_path" -m venv "$venv_stage/venv" 2>/dev/null ||
+       ! "$venv_stage/venv/bin/pip" install --quiet iterm2 2>/dev/null; then
+        guard_install_paths "$venv_stage"
+        rm -rf "$venv_stage"
+        echo -e "${YELLOW}  ⚠ Could not install iterm2 module${NC}"
         return 0
     fi
-
-    guard_install_paths "$VENV_DIR"
-    if "$VENV_DIR/bin/pip" install --quiet iterm2 2>/dev/null; then
-        echo -e "${GREEN}  ✓${NC} iTerm2 Python API support installed"
-        echo -e "${BLUE}    Enable 'Python API' in iTerm2 → Settings → General → Magic${NC}"
-    else
-        echo -e "${YELLOW}  ⚠ Could not install iterm2 module${NC}"
-        guard_install_paths "$VENV_DIR"
-        rm -rf "$VENV_DIR" 2>/dev/null
+    # venv entry points and activation scripts embed their creation path.
+    if ! "$python3_path" -I - "$venv_stage/venv" "$VENV_DIR" <<'PYVENV'
+import os, sys
+old, new = sys.argv[1:]
+for name in os.listdir(os.path.join(old, 'bin')):
+    path = os.path.join(old, 'bin', name)
+    if os.path.islink(path) or not os.path.isfile(path):
+        continue
+    with open(path, 'rb') as f:
+        data = f.read()
+    if b'\0' not in data and old.encode() in data:
+        with open(path, 'wb') as f:
+            f.write(data.replace(old.encode(), new.encode()))
+PYVENV
+    then
+        guard_install_paths "$venv_stage"
+        rm -rf "$venv_stage"
+        return 1
     fi
+    # Recheck after pip and immediately before removing the broken live tree.
+    # On rejection retain the private stage too: a changed config alias may
+    # now select it. Never let cleanup remove the selected file.
+    guard_install_paths "$VENV_DIR" "$venv_stage"
+    mkdir -p "$(dirname "$VENV_DIR")" || return 1
+    rm -rf "$VENV_DIR" || return 1
+    mv "$venv_stage/venv" "$VENV_DIR" || return 1
+    rmdir "$venv_stage"
+    echo -e "${GREEN}  ✓${NC} iTerm2 Python API support installed"
+    echo -e "${BLUE}    Enable 'Python API' in iTerm2 → Settings → General → Magic${NC}"
 }
 
 # Install GNOME activate-window-by-title extension for Linux click-to-focus
@@ -1688,6 +1753,7 @@ install_gnome_activate_window_extension() {
             sleep $RETRY_DELAY
         fi
 
+        guard_install_paths "$temp_zip"
         if command -v curl &>/dev/null; then
             if curl -fsSL "${CURL_EXTRA_OPTS[@]}" --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CURL_TIMEOUT" "https://extensions.gnome.org${download_url}" -o "$temp_zip" 2>/dev/null; then
                 downloaded=true
@@ -1803,6 +1869,7 @@ stage_and_promote_runtime() (
     trap 'exit 143' TERM
 
     SCRIPT_DIR="$stage"
+    INSTALL_PRIVATE_DOWNLOAD=true
     REQUIRE_CHECKSUM=true
     detect_platform
     download_and_verify_binary || exit 1

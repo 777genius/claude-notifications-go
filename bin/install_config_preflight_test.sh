@@ -1,6 +1,12 @@
 #!/bin/bash
+TEST_ENV_HANDOFF_GOMODCACHE=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-env.sh"
 test_env_enter "$0" "$@"
+# Scripted fault injection uses POSIX executable scripts. Native Windows
+# protocol coverage runs the actual built CLI in install_config_native_test.sh.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) exec bash "$(dirname "$0")/install_config_native_test.sh" ;;
+esac
 # Disposable adapter tests. The helper models the CLI protocol; native Store
 # identity behavior is covered by internal/config/preflight_test.go.
 set -eo pipefail
@@ -52,7 +58,7 @@ def run(name, body, e=None, ok=True):
     env=dict(os.environ, INSTALL_TARGET_DIR=str(case), TRACE=str(case/'trace'))
     if e is not None: env['AGENT_NOTIFICATIONS_CONFIG']=str(e)
     script='source '+q(functions)+'\ndetect_platform\nINSTALL_CONFIG_HELPER='+q(helper)+'\n'+isolation+body
-    r=subprocess.run(['bash','-c',script],env=env,capture_output=True,timeout=30)
+    r=subprocess.run(['bash','-c',script],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
     assert (r.returncode==0)==ok,(name,r.returncode,r.stderr.decode())
     assert b'SECRET-CANARY' not in r.stdout+r.stderr
     print('PASS:',name)
@@ -151,7 +157,7 @@ installer.write_text('#!/bin/bash\nsource '+q(functions)+'\ndetect_platform\nINS
 installer.chmod(0o755)
 env=dict(os.environ,AGENT_NOTIFICATIONS_CONFIG=str(config),TRACE=str(case/'trace'))
 before=binary.read_bytes()
-r=subprocess.run(['sh',str(case/'hook-wrapper.sh'),'Stop'],env=env,input=b'{}',capture_output=True,timeout=30)
+r=subprocess.run(['sh',str(case/'hook-wrapper.sh'),'Stop'],env=env,input=b'{}',stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
 assert r.returncode==0 and r.stdout==b'' and r.stderr==b'',r
 assert binary.read_bytes()==before and config.read_text()=='SECRET-CANARY'
 assert (case/'trace').exists()
@@ -196,7 +202,7 @@ TERM_PROGRAM=iTerm.app
 main
 """,config,False)
 assert config.read_text()=='SECRET-CANARY'
-# Real venv setup/failed-pip cleanup with only Python creation and pip stubbed.
+# Venv setup with only Python creation and pip stubbed; failure keeps live bytes.
 run('pip-failure-safe',"""
 uname() { echo Darwin; }
 tmux() { :; }
@@ -209,9 +215,9 @@ python3() {
 }
 setup_iterm2_venv
 """,outside)
-assert not venv.exists()
-print('PASS: non-overlap pip failure follows existing cleanup behavior')
-# Change a directory alias during pip, then require a fresh preflight before rm.
+assert config.read_text()=='SECRET-CANARY'
+print('PASS: pip failure preserves broken live venv')
+# Change a live directory alias during pip; failure never removes that live tree.
 late=box/'late-alias'; late.symlink_to(box/'initially-missing',target_is_directory=True)
 body="""
 uname() { echo Darwin; }
@@ -225,9 +231,121 @@ python3() {
 }
 setup_iterm2_venv
 """.replace('@ALIAS@',str(late)).replace('@VENV@',str(venv))
-run('pip-late-alias',body,late/'config.json',False)
+run('pip-late-alias',body,late/'config.json')
 assert (venv/'config.json').read_text()=='protected'
-print('PASS: post-pip overlap blocks recursive cleanup')
+print('PASS: failed staged pip never cleans live venv')
+late.unlink(); late.symlink_to(box/'initially-missing',target_is_directory=True)
+run('pip-success-late-alias',body.replace('exit 1', 'exit 0'),late/'config.json',False)
+assert (venv/'config.json').read_text()=='protected'
+print('PASS: fresh preflight rejects live replacement after successful pip')
 
+
+# Failed pip may change the selected alias to the newly built private tree.
+private_alias=box/'private-venv-alias'
+private_alias.symlink_to(box/'initially-missing',target_is_directory=True)
+run('pip-private-cleanup-alias', """
+uname() { echo Darwin; }
+tmux() { :; }
+TERM_PROGRAM=iTerm.app
+python3() {
+    if [ "$1" = -I ]; then command python3 "$@"; return; fi
+    mkdir -p "$3/bin"
+    printf '#!/bin/sh\\nprintf protected > "%s/config.json"\\nrm @ALIAS@\\nln -s "%s" @ALIAS@\\nexit 1\\n' "$3" "$3" > "$3/bin/pip"
+    chmod +x "$3/bin/pip"
+}
+setup_iterm2_venv
+""".replace('@ALIAS@',q(private_alias)),private_alias/'config.json',False)
+assert (private_alias/'config.json').read_text()=='protected'
+
+# A reverse child alias must not be followed by venv creation.
+for child in ('pyvenv.cfg', 'bin'):
+    shutil.rmtree(venv)
+    venv.mkdir()
+    protected=box/('protected-'+child)
+    if child == 'bin':
+        protected.mkdir(); selected=protected/'python3'; selected.write_text('protected')
+        (venv/child).symlink_to(protected, target_is_directory=True)
+    else:
+        protected.write_text('protected'); selected=protected
+        (venv/child).symlink_to(protected)
+    run('reverse-'+child, """
+uname() { echo Darwin; }
+tmux() { :; }
+TERM_PROGRAM=iTerm.app
+python3() {
+    if [ "$1" = -I ]; then command python3 "$@"; return; fi
+    mkdir -p "$3/bin"
+    printf created > "$3/pyvenv.cfg"
+    printf '#!/bin/sh\\nexit 0\\n' > "$3/bin/pip"
+    chmod +x "$3/bin/pip"
+}
+setup_iterm2_venv
+""",selected)
+    assert selected.read_text()=='protected'
+    assert not (venv/child).is_symlink()
+# Optional download children cannot remove the parent's verified helper.
+run('multiple-optionals',stage_body+"""
+FORCE_UPDATE=true
+utility_usable() { [ -s "$1" ]; }
+curl() { while [ "$1" != -o ]; do shift; done; printf utility > "$2"; }
+download_utilities
+[ -f "$INSTALL_CONFIG_HELPER" ]
+guard_install_paths "$SCRIPT_DIR"
+""",outside)
+# A selected config alias changes between attempts to the predictable zip.
+for name, function in [
+    ('modern-retry', 'download_terminal_notifier_modern'),
+    ('legacy-retry', 'download_terminal_notifier'),
+    ('gnome-retry', 'install_gnome_activate_window_extension'),
+]:
+    selected=box/(name+'-selected'); selected.symlink_to(outside)
+    case,r=run(name,"""
+MAX_RETRIES=2 RETRY_DELAY=0
+sleep() { :; }
+gnome-shell() { echo 'GNOME Shell 46.0'; }
+gnome-extensions() { return 1; }
+curl() {
+    case "$*" in
+        *extension-info*) printf '{"download_url":"/fixture.zip"}'; return 0;;
+    esac
+    while [ "$1" != -o ]; do shift; done
+    printf protected > "$2"
+    rm @SELECTED@
+    ln -s "$2" @SELECTED@
+    return 1
+}
+@FUNCTION@
+""".replace('@SELECTED@',q(selected)).replace('@FUNCTION@',function),selected,False)
+    assert selected.read_text()=='protected'
+
+# The helper bootstrap's actual downloader must not truncate shared diagnostics.
+run('private-diagnostics', """
+INSTALL_CONFIG_HELPER=/missing
+export AGENT_NOTIFICATIONS_CONFIG="$TMPDIR/install-error-$$.log"
+printf protected > "$AGENT_NOTIFICATIONS_CONFIG"
+pin_release_urls() { :; }
+get_file_size() { echo 200000; }
+curl() {
+    [ "$1" != --help ] || return 0
+    while [ "$1" != -o ]; do shift; done
+    case "$2" in "$INSTALL_CONFIG_STAGE"/*) ;; *) exit 99;; esac
+    cp @HELPER@ "$2"
+    echo diagnostic >&2
+    printf 200
+}
+download_and_verify_binary() {
+    download_binary
+    printf checksum > "$CHECKSUMS_PATH"
+}
+verify_executable() { :; }
+guard_install_paths "$SCRIPT_DIR"
+[ "$(cat "$AGENT_NOTIFICATIONS_CONFIG")" = protected ]
+""".replace('@HELPER@',q(helper)),outside)
+# Working venv returns before preflight or private creation.
+shutil.rmtree(venv)
+(venv/'bin').mkdir(parents=True)
+(venv/'bin/python3').write_text('#!/bin/sh\nexit 0\n')
+(venv/'bin/python3').chmod(0o755)
+run('working-venv',iterm,venv/'config.json')
 
 PY
