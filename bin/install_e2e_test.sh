@@ -1283,17 +1283,31 @@ FAKE_BASH_GO_EOF
         return
     fi
 
+    # Give the real hook an explicit, fixture-owned canonical config. Hook
+    # reads no longer fall back to arbitrary bundle or user configuration,
+    # and this test is about the updater process rather than config recovery.
     local fake_bash_for_windows="$fake_bash"
     local fake_bash_log_for_windows="$fake_bash_log"
+    local fixture_config="$TEST_DIR/config.json"
+    local fixture_config_for_windows="$fixture_config"
     if command -v cygpath >/dev/null 2>&1; then
         fake_bash_for_windows="$(cygpath -w "$fake_bash" 2>/dev/null || printf '%s' "$fake_bash")"
         fake_bash_log_for_windows="$(cygpath -w "$fake_bash_log" 2>/dev/null || printf '%s' "$fake_bash_log")"
+        fixture_config_for_windows="$(cygpath -w "$fixture_config" 2>/dev/null || printf '%s' "$fixture_config")"
+    fi
+
+    if ! AGENT_NOTIFICATIONS_CONFIG="$fixture_config_for_windows" \
+        "$exe_path" config init --json >/dev/null; then
+        fail_test "Initialize config for Windows lazy update" "config init failed"
+        cleanup_test_dir
+        return
     fi
 
     local output exit_code
     set +e
     output=$(printf '{"session_id":"ci-win","transcript_path":"","cwd":""}\n' | \
-        env CLAUDE_NOTIFICATIONS_BASH="$fake_bash_for_windows" \
+        env AGENT_NOTIFICATIONS_CONFIG="$fixture_config_for_windows" \
+            CLAUDE_NOTIFICATIONS_BASH="$fake_bash_for_windows" \
             FAKE_BASH_LOG="$fake_bash_log_for_windows" \
             CLAUDE_HOOK_JUDGE_MODE=true \
             "$exe_path" handle-hook Stop 2>&1)
