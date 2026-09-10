@@ -62,6 +62,47 @@ func TestRecoveryArtifactsUseNativeUnicodeNormalization(t *testing.T) {
 	}
 }
 
+func TestRecoveryArtifactsUseTerminalSuffixWithMarkerInBasename(t *testing.T) {
+	for _, tt := range []struct {
+		name, target, entry, probe string
+	}{
+		{
+			"case",
+			"/fixture/CONFIG.backup-work.json",
+			"config.backup-work.json.TMP-interrupted",
+			"/fixture/CONFIG.backup-work.json.TMP-interrupted",
+		},
+		{
+			"normalization",
+			"/fixture/caf\u00e9.tmp-work.json",
+			"cafe\u0301.tmp-work.json.BACKUP-interrupted",
+			"/fixture/caf\u00e9.tmp-work.json.BACKUP-interrupted",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := fakeEnv("darwin", map[string]string{OverrideEnv: tt.target}, nil)
+			e.ReadDir = func(string) ([]fs.DirEntry, error) {
+				return []fs.DirEntry{fakeEntry{tt.entry, 0}}, nil
+			}
+			e.Lstat = func(p string) (fs.FileInfo, error) {
+				if p == tt.probe {
+					return fakeEntry{name: filepath.Base(p), mode: 0600}, nil
+				}
+				return nil, fs.ErrNotExist
+			}
+			suffix, ok := recoverySuffix(tt.entry)
+			if !ok || filepath.Join(filepath.Dir(tt.target), filepath.Base(tt.target)+suffix) != tt.probe {
+				t.Fatalf("terminal suffix probe mismatch: suffix=%q ok=%v", suffix, ok)
+			}
+			_, err := Resolve(e)
+			var configErr *Error
+			if !errors.As(err, &configErr) || configErr.Code != ConfigRecoveryRequired {
+				t.Fatalf("marker in basename hid recovery evidence: %v", err)
+			}
+		})
+	}
+}
+
 func TestReadDocumentSelectionTracksBytesAfterSelectionChange(t *testing.T) {
 	e := fakeEnv("linux", map[string]string{"HOME": "/home/u"}, nil)
 	legacyPresent := false

@@ -463,7 +463,7 @@ func TestWindowsRejectsLinkedLockAndFinalSymlink(t *testing.T) {
 // All subsequent test directories inherit this explicitly established private
 // ACL, independent of the native runner's inherited temp-directory defaults.
 func prepareTestRoot(path string) error {
-	sa, err := privateSecurity()
+	sa, err := privateSecurity(true)
 	if err != nil {
 		return err
 	}

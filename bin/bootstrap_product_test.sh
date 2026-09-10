@@ -268,15 +268,36 @@ for product in ['claude','codex','both']:
     before=neutral.read_bytes(); trace.write_text('')
     run(['--product',product]); assert neutral.read_bytes()==before and len(init_events())==1
 
-# Claude's registry is strict preflight input and must be rejected before the
-# mocked Claude CLI can mutate it or any plugin state.
-reset_case()
-registry=pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'plugins/installed_plugins.json'
-registry.parent.mkdir(parents=True); original=b'{"plugins":{},"canary":true}'
-registry.write_bytes(original)
-output=run(['--product','claude'],1,{'AGENT_NOTIFICATIONS_CONFIG':str(registry)})
-assert not any(e[:1]==['claude'] for e in events()) and registry.read_bytes()==original
-assert json.loads(request.read_text())['protectedPaths']==[str(registry)]
+# All files changed by Claude registration are protected before the mocked
+# CLI can mutate any one, whether the explicit target exists or is absent.
+for target_name in ['installed_plugins.json','known_marketplaces.json','settings.json']:
+    for exists in [False,True]:
+        reset_case()
+        claude_home=pathlib.Path(env['CLAUDE_CONFIG_DIR'])
+        targets={
+            'installed_plugins.json':claude_home/'plugins/installed_plugins.json',
+            'known_marketplaces.json':claude_home/'plugins/known_marketplaces.json',
+            'settings.json':claude_home/'settings.json',
+        }
+        target=targets[target_name]
+        target.parent.mkdir(parents=True,exist_ok=True)
+        original=b'{"plugins":{},"canary":true}'
+        if exists: target.write_bytes(original)
+        for name,path in targets.items():
+            if name != target_name:
+                path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_bytes(b'{"sibling":"preserve"}')
+        before={name:(path.read_bytes() if path.exists() else None) for name,path in targets.items()}
+        output=run(['--product','claude'],1,{'AGENT_NOTIFICATIONS_CONFIG':str(target)})
+        assert not any(e[:1]==['claude'] for e in events())
+        after={name:(path.read_bytes() if path.exists() else None) for name,path in targets.items()}
+        assert after==before
+        protected=json.loads(request.read_text())['protectedPaths']
+        assert protected==[
+            str(pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'plugins/installed_plugins.json'),
+            str(pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'plugins/known_marketplaces.json'),
+            str(pathlib.Path(env['CLAUDE_CONFIG_DIR'])/'settings.json'),
+        ]
 reset_case()
 legacy=pathlib.Path(env['HOME'])/'.claude/claude-notifications-go/config.json'
 legacy.parent.mkdir(parents=True); legacy.write_bytes(b'{ "future": {"x":1} }\n')

@@ -100,7 +100,7 @@ for scenario in staged staged_corrupt offline fresh_offline download checksum mi
                 return $?
             fi
             cp "$SCRIPT_DIR/payload" "$BINARY_PATH"
-            if [ "$scenario" = interrupt ]; then kill -TERM "$(sh -c 'echo "$PPID"')"; fi
+            if [ "$scenario" = interrupt ]; then sh -c 'kill -TERM "$PPID"'; fi
         }
         download_terminal_notifier_modern() {
             [ "$scenario" = fresh_success ] || return 1
@@ -118,7 +118,7 @@ for scenario in staged staged_corrupt offline fresh_offline download checksum mi
             # Optional downloads cannot start until the live runtime is complete.
             desktop_runtime_usable
             "$BINARY_PATH" --version | grep -q new-version
-            [ "$scenario" != optional_interrupt ] || kill -TERM "$(sh -c 'echo "$PPID"')"
+            [ "$scenario" != optional_interrupt ] || sh -c 'kill -TERM "$PPID"'
         }
         create_claude_notifications_app() { :; }
         setup_iterm2_venv() { :; }
@@ -192,8 +192,9 @@ scenario=utility_downloader
         printf partial > "$output"
         case "$transfer" in
             interrupt)
-                # A child shell reports its actual parent, including on Bash 3.2.
-                kill -TERM "$(sh -c 'echo "$PPID"')"
+                # Avoid command substitution: Bash 3.2 forks an intermediate
+                # shell there, making the reported PPID the wrong process.
+                sh -c 'kill -TERM "$PPID"'
                 return 1 ;;
             fail) return 22 ;;
             short) return 0 ;;

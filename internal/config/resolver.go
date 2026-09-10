@@ -167,14 +167,20 @@ func candidate(e EnvSnapshot, p, source string) (Selection, error) {
 }
 
 func recoverySuffix(name string) (string, bool) {
+	last := -1
 	for _, marker := range []string{".backup-", ".tmp-", ".tmp"} {
 		for i := 0; i+len(marker) <= len(name); i++ {
 			if strings.EqualFold(name[i:i+len(marker)], marker) && (marker != ".tmp" || i+len(marker) == len(name)) {
-				return name[i:], true
+				if i > last {
+					last = i
+				}
 			}
 		}
 	}
-	return "", false
+	if last < 0 {
+		return "", false
+	}
+	return name[last:], true
 }
 func pathError(p string, err error) error {
 	var ce *Error
