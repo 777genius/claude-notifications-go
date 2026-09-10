@@ -127,32 +127,140 @@ h3 {
 }
 .language-switcher {
   position: relative;
+}
+.language-switcher__trigger {
+  min-height: 36px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   border: 1px solid #29404a;
-  border-radius: 5px;
-  padding: 0 8px;
+  border-radius: 6px;
+  padding: 0 10px;
   color: #8febf5;
   background: #0c0e16;
+  font: 500 11px/1 ui-monospace, monospace;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
-.language-switcher__icon {
-  font-size: 12px;
-  line-height: 1;
+.language-switcher__trigger:hover,
+.language-switcher__trigger[aria-expanded="true"] {
+  border-color: #58d9e8;
+  background: #111825;
+  box-shadow: 0 0 18px rgb(94 222 234 / 12%);
 }
-.language-switcher select {
-  min-height: 34px;
-  max-width: 108px;
+.language-switcher__trigger:focus-visible,
+.language-switcher__search:focus-within,
+.language-switcher__options button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.language-switcher__glyph {
+  font-size: 13px;
+}
+.language-switcher__chevron {
+  width: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  transition: transform 160ms ease;
+}
+[aria-expanded="true"] .language-switcher__chevron {
+  transform: rotate(180deg);
+}
+.language-switcher__popover {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 9px);
+  right: 0;
+  width: 238px;
+  padding: 8px;
+  border: 1px solid #29404a;
+  border-radius: 9px;
+  background: rgb(9 13 22 / 98%);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 55%), 0 0 30px rgb(94 222 234 / 8%);
+  backdrop-filter: blur(16px);
+}
+.language-switcher__search {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid #263b48;
+  border-radius: 6px;
+  background: #0d1420;
+}
+.language-switcher__search svg {
+  width: 15px;
+  fill: none;
+  stroke: #7d94a4;
+  stroke-width: 1.5;
+}
+.language-switcher__search input {
+  min-width: 0;
+  width: 100%;
   border: 0;
   outline: 0;
+  color: #e8f7f8;
   background: transparent;
-  color: inherit;
-  font-size: 11px;
+  font: 11px/1 ui-monospace, monospace;
+}
+.language-switcher__search input::placeholder {
+  color: #6e8493;
+}
+.language-switcher__search input::-webkit-search-cancel-button {
+  filter: invert(1);
+  opacity: 0.45;
+}
+.language-switcher__options {
+  display: grid;
+  gap: 3px;
+  margin-top: 7px;
+}
+.language-switcher__options button {
+  width: 100%;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 30px 1fr 16px;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 5px;
+  padding: 5px 9px;
+  color: #c6d9df;
+  background: transparent;
+  text-align: left;
+  font: 12px/1.2 ui-monospace, monospace;
   cursor: pointer;
 }
-.language-switcher:focus-within {
-  outline: 2px solid var(--cyan);
-  outline-offset: 3px;
+.language-switcher__options button:hover,
+.language-switcher__options button.active {
+  color: #a9f5fc;
+  background: rgb(94 222 234 / 10%);
+}
+.language-switcher__options button > svg {
+  width: 14px;
+  fill: none;
+  stroke: #5edeea;
+  stroke-width: 2;
+}
+.language-switcher__code {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 23px;
+  border: 1px solid #31505b;
+  border-radius: 4px;
+  color: #69dce8;
+  background: #101b27;
+  font-size: 8px;
+  letter-spacing: 0.7px;
+}
+.language-switcher__empty {
+  padding: 13px 9px 8px;
+  color: #758995;
+  font: 10px/1.4 ui-monospace, monospace;
+  text-align: center;
 }
 .visually-hidden {
   position: absolute !important;
@@ -747,9 +855,18 @@ footer .brand {
   .github {
     display: none;
   }
-  .language-switcher select {
-    max-width: 88px;
+  .language-switcher__trigger {
+    max-width: 112px;
+    padding: 0 8px;
     font-size: 10px;
+  }
+  .language-switcher__trigger > span:nth-child(2) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .language-switcher__popover {
+    width: min(238px, calc(100vw - 32px));
   }
   .brand-icon {
     font-size: 25px;

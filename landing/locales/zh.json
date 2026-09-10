@@ -6,6 +6,8 @@
   "language": {
     "label": "语言",
     "current": "当前语言：{language}",
+    "search": "搜索语言",
+    "noResults": "未找到语言",
     "switchError": "无法切换语言，请重试。"
   },
   "accessibility": {
