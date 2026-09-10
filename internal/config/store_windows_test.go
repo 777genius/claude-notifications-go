@@ -186,18 +186,27 @@ func TestWindowsInitDefersResolveSharingViolationToGuard(t *testing.T) {
 
 func TestWindowsInvalidOverrideDoesNotPublishGuard(t *testing.T) {
 	env := storeEnv(t)
+	before, err := os.ReadDir(env.Vars["USERPROFILE"])
+	if err != nil {
+		t.Fatal(err)
+	}
 	env.Vars[OverrideEnv] = `relative\config.json`
-	_, err := EnsureInitialized(context.Background(), InitRequest{Env: env})
+	_, err = EnsureInitialized(context.Background(), InitRequest{Env: env})
 	var ce *Error
 	if !errors.As(err, &ce) || ce.Code != ConfigOverrideInvalid {
 		t.Fatalf("invalid override: %v", err)
 	}
-	entries, err := os.ReadDir(env.Vars["USERPROFILE"])
+	after, err := os.ReadDir(env.Vars["USERPROFILE"])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("invalid override created %v", entries)
+	if len(after) != len(before) {
+		t.Fatalf("invalid override changed home entries: before=%v after=%v", before, after)
+	}
+	for i := range before {
+		if before[i].Name() != after[i].Name() || before[i].Type() != after[i].Type() {
+			t.Fatalf("invalid override changed home entries: before=%v after=%v", before, after)
+		}
 	}
 }
 

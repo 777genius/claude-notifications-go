@@ -112,15 +112,25 @@ func TestStoreConcurrentInit(t *testing.T) {
 	if SnapshotEnv().GOOS == "windows" {
 		rounds = 20
 	}
-	for round := 0; round < rounds; round++ {
-		t.Run(fmt.Sprintf("round-%02d", round), func(t *testing.T) {
-			testStoreConcurrentInit(t)
+	for _, mode := range []string{"automatic", "explicit"} {
+		t.Run(mode, func(t *testing.T) {
+			for round := 0; round < rounds; round++ {
+				t.Run(fmt.Sprintf("round-%02d", round), func(t *testing.T) {
+					testStoreConcurrentInit(t, mode == "explicit")
+				})
+			}
 		})
 	}
 }
 
-func testStoreConcurrentInit(t *testing.T) {
+func testStoreConcurrentInit(t *testing.T, explicit bool) {
 	env := storeEnv(t)
+	if explicit {
+		// Keep the explicit target in the shared HOME: its absent-target
+		// resolution enumerates the same directory in which automatic writers
+		// publish private directories on Windows.
+		env.Vars[OverrideEnv] = filepath.Join(env.Vars["USERPROFILE"], "explicit.json")
+	}
 	start := make(chan struct{})
 	errs := make(chan error, 20)
 	changed := make(chan bool, 20)
