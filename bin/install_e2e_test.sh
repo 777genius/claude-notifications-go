@@ -1235,7 +1235,9 @@ test_windows_real_hook_schedules_lazy_update() {
         return
     fi
 
-    if ! command -v powershell.exe >/dev/null 2>&1; then
+    local powershell_path
+    powershell_path=$(command -v powershell.exe 2>/dev/null)
+    if [ -z "$powershell_path" ]; then
         skip_test "Windows real hook schedules lazy update" "PowerShell not available"
         return
     fi
@@ -1283,19 +1285,22 @@ FAKE_BASH_GO_EOF
         return
     fi
 
-    # Give the real hook an explicit, fixture-owned canonical config. Hook
-    # reads no longer fall back to arbitrary bundle or user configuration,
-    # and this test is about the updater process rather than config recovery.
     local fake_bash_for_windows="$fake_bash"
     local fake_bash_log_for_windows="$fake_bash_log"
+    local bin_dir_for_windows="$bin_dir"
+    local install_script_for_windows="$bin_dir/install.sh"
     local fixture_config="$TEST_DIR/config.json"
     local fixture_config_for_windows="$fixture_config"
     if command -v cygpath >/dev/null 2>&1; then
         fake_bash_for_windows="$(cygpath -w "$fake_bash" 2>/dev/null || printf '%s' "$fake_bash")"
         fake_bash_log_for_windows="$(cygpath -w "$fake_bash_log" 2>/dev/null || printf '%s' "$fake_bash_log")"
+        bin_dir_for_windows="$(cygpath -m "$bin_dir" 2>/dev/null || printf '%s' "$bin_dir")"
+        install_script_for_windows="$(cygpath -m "$bin_dir/install.sh" 2>/dev/null || printf '%s' "$bin_dir/install.sh")"
         fixture_config_for_windows="$(cygpath -w "$fixture_config" 2>/dev/null || printf '%s' "$fixture_config")"
     fi
 
+    # Keep the real hook fixture independent of arbitrary bundle or user
+    # configuration; this test exercises updater scheduling, not recovery.
     if ! AGENT_NOTIFICATIONS_CONFIG="$fixture_config_for_windows" \
         "$exe_path" config init --json >/dev/null; then
         fail_test "Initialize config for Windows lazy update" "config init failed"
@@ -1303,7 +1308,9 @@ FAKE_BASH_GO_EOF
         return
     fi
 
-    local output exit_code
+    local output exit_code stamp_path="$LOCALAPPDATA/claude-notifications-go/windows-lazy-update-stamp"
+    local stamp_before="missing"
+    if [ -f "$stamp_path" ]; then stamp_before="present:$(cat "$stamp_path" 2>/dev/null)"; fi
     set +e
     output=$(printf '{"session_id":"ci-win","transcript_path":"","cwd":""}\n' | \
         env AGENT_NOTIFICATIONS_CONFIG="$fixture_config_for_windows" \
@@ -1325,7 +1332,73 @@ FAKE_BASH_GO_EOF
         i=$((i + 1))
     done
 
-    assert_file_exists "$fake_bash_log" "Windows hook schedules lazy update through bash"
+    if [ ! -f "$fake_bash_log" ]; then
+        # Record the original deadline failure before diagnostics. A delayed
+        # detached child must not turn this failed assertion into a pass.
+        fail_test "Windows hook schedules lazy update through bash" "file not found: $fake_bash_log"
+
+        # Failure-only diagnostics: the product intentionally discards the
+        # detached child's errors, and the fake executable ignores log errors.
+        # Exercise only that fake executable, with fixture paths and a bounded
+        # foreground reproduction; diagnostic success never satisfies the E2E.
+        local stamp_after="missing"
+        if [ -f "$stamp_path" ]; then stamp_after="present:$(cat "$stamp_path" 2>/dev/null)"; fi
+        echo "lazy-update diagnostic: stamp before=$stamp_before after=$stamp_after path=$stamp_path"
+
+        local direct_log="$TEST_DIR/fake-bash-direct.log"
+        local direct_log_for_windows="$direct_log"
+        if command -v cygpath >/dev/null 2>&1; then
+            direct_log_for_windows="$(cygpath -w "$direct_log" 2>/dev/null || printf '%s' "$direct_log")"
+        fi
+        local diagnostic_start diagnostic_status diagnostic_elapsed
+        diagnostic_start=$(date +%s)
+        run_with_timeout 5 env -i SystemRoot="${SystemRoot:-}" USERPROFILE="$USERPROFILE" \
+            LOCALAPPDATA="$LOCALAPPDATA" TMP="$TMP" TEMP="$TEMP" \
+            FAKE_BASH_LOG="$direct_log_for_windows" \
+            "$fake_bash" -lc "diagnostic" >/dev/null 2>&1
+        diagnostic_status=$?
+        diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
+        echo "lazy-update diagnostic: direct fake status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$direct_log" ] && echo present || echo missing)"
+
+        local native_ps_log="$TEST_DIR/fake-bash-powershell-native.log"
+        local native_ps_log_for_windows="$native_ps_log"
+        if command -v cygpath >/dev/null 2>&1; then
+            native_ps_log_for_windows="$(cygpath -w "$native_ps_log" 2>/dev/null || printf '%s' "$native_ps_log")"
+        fi
+        local sh_command="INSTALL_TARGET_DIR='$bin_dir_for_windows' '$install_script_for_windows' --force"
+        local ps_fake=${fake_bash_for_windows//\'/\'\'}
+        local ps_shell=${sh_command//\'/\'\'}
+        diagnostic_start=$(date +%s)
+        run_with_timeout 12 env FAKE_BASH_LOG="$native_ps_log_for_windows" \
+            "$powershell_path" -NoProfile -ExecutionPolicy Bypass -Command \
+            "\$ErrorActionPreference = 'Stop'; & '$ps_fake' -lc '$ps_shell'; exit \$LASTEXITCODE" 2>&1
+        diagnostic_status=$?
+        diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
+        echo "lazy-update diagnostic: native-env foreground scheduler status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$native_ps_log" ] && echo present || echo missing)"
+
+        local ps_log="$TEST_DIR/fake-bash-powershell.log"
+        local ps_log_for_windows="$ps_log"
+        local diagnostic_userprofile="$USERPROFILE" diagnostic_localappdata="$LOCALAPPDATA"
+        local diagnostic_tmp="$TMP" diagnostic_temp="$TEMP"
+        if command -v cygpath >/dev/null 2>&1; then
+            ps_log_for_windows="$(cygpath -w "$ps_log" 2>/dev/null || printf '%s' "$ps_log")"
+            diagnostic_userprofile="$(cygpath -w "$USERPROFILE" 2>/dev/null || printf '%s' "$USERPROFILE")"
+            diagnostic_localappdata="$(cygpath -w "$LOCALAPPDATA" 2>/dev/null || printf '%s' "$LOCALAPPDATA")"
+            diagnostic_tmp="$(cygpath -w "$TMP" 2>/dev/null || printf '%s' "$TMP")"
+            diagnostic_temp="$(cygpath -w "$TEMP" 2>/dev/null || printf '%s' "$TEMP")"
+        fi
+        diagnostic_start=$(date +%s)
+        run_with_timeout 12 env -i SystemRoot="${SystemRoot:-}" USERPROFILE="$diagnostic_userprofile" \
+            LOCALAPPDATA="$diagnostic_localappdata" TMP="$diagnostic_tmp" TEMP="$diagnostic_temp" \
+            FAKE_BASH_LOG="$ps_log_for_windows" \
+            "$powershell_path" -NoProfile -ExecutionPolicy Bypass -Command \
+            "\$ErrorActionPreference = 'Stop'; & '$ps_fake' -lc '$ps_shell'; exit \$LASTEXITCODE" 2>&1
+        diagnostic_status=$?
+        diagnostic_elapsed=$(( $(date +%s) - diagnostic_start ))
+        echo "lazy-update diagnostic: normalized-env foreground scheduler status=$diagnostic_status elapsed=${diagnostic_elapsed}s log=$([ -f "$ps_log" ] && echo present || echo missing)"
+    else
+        assert_file_exists "$fake_bash_log" "Windows hook schedules lazy update through bash"
+    fi
     if [ -f "$fake_bash_log" ]; then
         local fake_log
         fake_log=$(cat "$fake_bash_log")
