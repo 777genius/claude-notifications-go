@@ -36,6 +36,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:modelValue": [value: string];
 }>();
+const { t } = useI18n();
 
 const selected = computed(
   () =>
@@ -83,7 +84,7 @@ function updateValue(value: unknown) {
       >
         <SelectScrollUpButton
           class="app-select__scroll"
-          aria-label="Scroll options up"
+          :aria-label="t('select.scrollUp')"
           >⌃</SelectScrollUpButton
         >
         <SelectViewport class="app-select__viewport">
@@ -104,7 +105,7 @@ function updateValue(value: unknown) {
         </SelectViewport>
         <SelectScrollDownButton
           class="app-select__scroll"
-          aria-label="Scroll options down"
+          :aria-label="t('select.scrollDown')"
           >⌄</SelectScrollDownButton
         >
       </SelectContent>

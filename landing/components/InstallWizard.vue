@@ -9,6 +9,7 @@ import {
   type Target,
   type Intent,
 } from "~/data/install";
+const { t } = useI18n();
 const installTitle = ref<HTMLHeadingElement>();
 async function changeIntent(value: Intent) {
   intent.value = value;
@@ -21,17 +22,29 @@ const intent = ref<Intent>("install");
 const manualOverride = ref(false);
 const detected = ref<Target>("unknown");
 const showOSPicker = ref(false);
+const localizedProducts = computed(() =>
+  products.map((item) => ({
+    ...item,
+    label: t(`install.products.${item.value}`),
+  })),
+);
+const localizedTargets = computed(() =>
+  targets.map((item) => ({
+    ...item,
+    label: t(`install.targets.${item.value}`),
+  })),
+);
 const agentName = computed(() =>
   product.value === "both"
-    ? "Claude Code and Codex CLI"
+    ? t("install.products.both")
     : product.value === "claude"
       ? "Claude Code"
       : "Codex CLI",
 );
 const osLabel = computed(
   () =>
-    targets.find((item) => item.value === target.value)?.label ??
-    "Choose target OS",
+    localizedTargets.value.find((item) => item.value === target.value)?.label ??
+    t("install.targets.unknown"),
 );
 const copyStatus = ref("");
 const commandField = ref<HTMLTextAreaElement>();
@@ -53,11 +66,10 @@ async function copy() {
   try {
     await navigator.clipboard.writeText(value);
     if (snippet.value === value)
-      copyStatus.value = "Copied. Paste into your target terminal when ready.";
+      copyStatus.value = t("install.copied");
   } catch {
     if (snippet.value !== value) return;
-    copyStatus.value =
-      "Copy unavailable. Select the command and copy it manually.";
+    copyStatus.value = t("install.copyUnavailable");
     commandField.value?.focus();
     commandField.value?.select();
   }
@@ -71,16 +83,14 @@ async function copy() {
   >
     <header class="install-heading">
       <h2 id="install-title" ref="installTitle" tabindex="-1">
-        Set up notifications
+        {{ t("install.title") }}
       </h2>
-      <p>
-        Follow the steps below to add desktop notifications to {{ agentName }}.
-      </p>
+      <p>{{ t("install.intro", { agent: agentName }) }}</p>
     </header>
 
-    <div class="agent-cards" role="group" aria-label="Choose your agent">
+    <div class="agent-cards" role="group" :aria-label="t('install.chooseAgent')">
       <button
-        v-for="item in products.filter((item) => item.value !== 'both')"
+        v-for="item in localizedProducts.filter((item) => item.value !== 'both')"
         :key="item.value"
         class="agent-card"
         :aria-label="item.label"
@@ -91,10 +101,8 @@ async function copy() {
         <span class="agent-card-copy"
           ><strong
             >{{ item.value === "claude" ? "Claude Code" : "Codex CLI" }}
-            <small v-if="item.value === 'codex'">beta</small></strong
-          ><span
-            >Requires
-            {{ item.value === "claude" ? "Claude Code" : "Codex CLI" }}</span
+            <small v-if="item.value === 'codex'">{{ t("common.beta") }}</small></strong
+          ><span>{{ t("install.requires", { agent: item.value === "claude" ? "Claude Code" : "Codex CLI" }) }}</span
           ></span
         >
         <span class="agent-check" aria-hidden="true">{{
@@ -106,11 +114,11 @@ async function copy() {
       <div class="os-summary">
         <span>{{
           target === "unknown"
-            ? "Choose the computer where your agent runs"
+            ? t("install.chooseComputer")
             : osLabel
         }}</span>
         <small v-if="target !== 'unknown' && target !== 'manual'">{{
-          manualOverride ? "Selected" : "Detected automatically"
+          manualOverride ? t("install.selected") : t("install.detected")
         }}</small>
         <button
           class="text-action"
@@ -118,27 +126,27 @@ async function copy() {
           aria-controls="os-picker"
           @click="showOSPicker = !showOSPicker"
         >
-          Change
+          {{ t("install.change") }}
         </button>
       </div>
       <button
         class="text-action both-choice"
         :aria-pressed="product === 'both'"
-        aria-label="Both agents"
+        :aria-label="t('install.bothAgents')"
         @click="product = product === 'both' ? 'claude' : 'both'"
       >
         {{
           product === "both"
-            ? "✓ Both agents selected"
-            : "Install for both agents"
+            ? t("install.bothSelected")
+            : t("install.installBoth")
         }}
       </button>
     </div>
     <div v-if="showOSPicker" id="os-picker" class="os-picker">
       <AppSelect
         :model-value="target"
-        :options="targets"
-        label="Target operating system"
+        :options="localizedTargets"
+        :label="t('install.targetOs')"
         @update:model-value="
           target = $event as Target;
           manualOverride = true;
@@ -147,64 +155,56 @@ async function copy() {
     </div>
 
     <p v-if="product !== 'claude'" class="notice install-prerequisite">
-      <strong>Codex CLI beta — release prerequisite.</strong> Requires a
-      published stable plugin release ≥1.42.0. That release is currently draft;
-      the Codex installer is not available until it is published.
-      <a :href="repo + '/releases'">Check releases</a>.
+      <strong>{{ t("install.prerequisiteTitle") }}</strong>
+      {{ t("install.prerequisiteText") }}
+      <a :href="repo + '/releases'">{{ t("install.checkReleases") }}</a>.
     </p>
 
     <div
       v-if="intent === 'configure'"
       class="setup-panel configuration instructions"
     >
-      <h3>Make it sound like you</h3>
+      <h3>{{ t("install.configure.title") }}</h3>
       <p v-if="product !== 'codex'">
-        Inside Claude Code chat, run
-        <code>/claude-notifications-go:settings</code>. This is a Claude slash
-        command, not a shell command.
+        {{ t("install.configure.claudeBefore") }}
+        <code>/claude-notifications-go:settings</code>.
+        {{ t("install.configure.claudeAfter") }}
       </p>
       <p v-if="product !== 'claude'">
-        For Codex, edit the shared settings file
-        <code>~/.claude/claude-notifications-go/config.json</code> using the
+        {{ t("install.configure.codexBefore") }}
+        <code>~/.claude/claude-notifications-go/config.json</code>
+        {{ t("install.configure.codexMiddle") }}
         <a :href="repo + '#manual-configuration'"
-          >documented manual configuration</a
-        >. Claude Code is not required for Codex-only setup.
+          >{{ t("install.configure.codexLink") }}</a
+        >. {{ t("install.configure.codexAfter") }}
       </p>
-      <p>
-        Both agents share this configuration. Your settings are preserved when
-        updating.
-      </p>
+      <p>{{ t("install.configure.shared") }}</p>
     </div>
     <div v-else-if="target === 'manual'" class="setup-panel instructions">
-      <h3>Follow the manual route</h3>
+      <h3>{{ t("install.manual.title") }}</h3>
       <p v-if="product !== 'codex'">
-        <a :href="repo + '#manual-install'">Manual Claude installation</a>
+        <a :href="repo + '#manual-install'">{{ t("install.manual.claude") }}</a>
       </p>
       <p v-if="product !== 'claude'">
         <a :href="repo + '#manual-codex-registration'"
-          >Manual Codex registration</a
+          >{{ t("install.manual.codex") }}</a
         >
       </p>
     </div>
     <div v-else-if="!snippet" class="setup-panel instructions">
-      <p>
-        Choose a target operating system to reveal your command. Mobile and
-        unknown browsers need an explicit choice.
-      </p>
+      <p>{{ t("install.chooseTarget") }}</p>
     </div>
     <template v-else>
       <div class="installation-command">
         <div class="command-panel-heading">
-          <label for="command"
-            >{{ intent === "update" ? "Update" : "Install" }} command</label
-          >
+          <label for="command">{{ t("install.commandLabel", { intent: t(`install.intents.${intent === "update" ? "update" : "install"}`) }) }}</label>
           <div class="command-tools">
             <span>{{ target === "windows" ? "Git Bash" : "Bash" }}</span>
 
           </div>
         </div>
         <div class="install-command-line">
-            <button class="copy-icon" aria-label="Copy command" title="Copy command" @click="copy">
+            <button class="copy-icon" :aria-label="t('install.copyCommand')" :title="t('install.copyCommand')" @click="copy">
               <svg
                 width="18"
                 height="18"
@@ -232,15 +232,14 @@ async function copy() {
         <button
           v-if="intent === 'install'"
           class="text-action update-under-command"
-          aria-label="Update"
+          :aria-label="t('install.intents.update')"
           @click="changeIntent('update')"
         >
-          Updating instead?
+          {{ t("install.updatingInstead") }}
         </button>
         <p role="status" class="copy-status">{{ copyStatus }}</p>
         <p v-if="intent === 'update'" class="update-note">
-          Install and update use the same command. Your existing settings are
-          preserved.
+          {{ t("install.updateNote") }}
         </p>
       </div>
       <div class="next-steps">
@@ -255,15 +254,15 @@ async function copy() {
               <path d="m5 6 6 6-6 6M13 18h6" /></svg
           ></span>
           <div>
-            <span class="step-label">NEXT STEP 1</span>
+            <span class="step-label">{{ t("install.steps.label1") }}</span>
             <h3>
-              {{ target === "windows" ? "Run in Git Bash" : "Run in Terminal" }}
+              {{ target === "windows" ? t("install.steps.runBash") : t("install.steps.runTerminal") }}
             </h3>
             <p v-if="target === 'windows'">
-              <strong>Run in Git Bash on Windows.</strong> Do not use WSL or
-              paste this pipe into PowerShell.
+              <strong>{{ t("install.steps.windowsTitle") }}</strong>
+              {{ t("install.steps.windowsText") }}
             </p>
-            <p v-else>Open your terminal and run the command above.</p>
+            <p v-else>{{ t("install.steps.terminalText") }}</p>
           </div>
         </article>
         <article class="setup-panel next-step">
@@ -277,17 +276,13 @@ async function copy() {
               <path d="M20 10a8 8 0 1 0-1 7M20 4v6h-6" /></svg
           ></span>
           <div>
-            <span class="step-label">NEXT STEP 2</span>
-            <h3>
-              Restart {{ product === "both" ? "both agents" : agentName }}
-            </h3>
+            <span class="step-label">{{ t("install.steps.label2") }}</span>
+            <h3>{{ t("install.steps.restart", { agent: product === "both" ? t("install.steps.bothAgents") : agentName }) }}</h3>
             <p v-if="product !== 'codex'">
-              Close and reopen Claude Code for notifications to be active.
+              {{ t("install.steps.restartClaude") }}
             </p>
             <p v-if="product !== 'claude'">
-              Restart Codex, open <code>/hooks</code>, then review and trust the
-              installed hooks. Changed definitions need review again; trust is
-              never automatic.
+              {{ t("install.steps.restartCodex") }}
             </p>
           </div>
         </article>
@@ -301,28 +296,28 @@ async function copy() {
             ? '#manual-install'
             : '#manual-codex-registration')
         "
-        >Installation help ↗</a
+        >{{ t("install.help") }} ↗</a
       >
       <a v-if="product === 'both'" :href="repo + '#manual-install'"
-        >Claude installation help ↗</a
+        >{{ t("install.claudeHelp") }} ↗</a
       >
       <div>
         <button
           v-if="intent !== 'install'"
           class="text-action"
-          aria-label="Install"
+          :aria-label="t('install.intents.install')"
           @click="changeIntent('install')"
         >
-          Installation instructions
+          {{ t("install.installationInstructions") }}
         </button>
 
         <button
           v-if="intent !== 'configure'"
           class="text-action"
-          aria-label="Configure"
+          :aria-label="t('install.intents.configure')"
           @click="changeIntent('configure')"
         >
-          ⚙ Configure settings
+          {{ t("install.configureSettings") }}
         </button>
       </div>
     </footer>

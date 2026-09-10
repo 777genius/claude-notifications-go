@@ -120,6 +120,51 @@ h3 {
   text-transform: uppercase;
   letter-spacing: 1px;
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.language-switcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #29404a;
+  border-radius: 5px;
+  padding: 0 8px;
+  color: #8febf5;
+  background: #0c0e16;
+}
+.language-switcher__icon {
+  font-size: 12px;
+  line-height: 1;
+}
+.language-switcher select {
+  min-height: 34px;
+  max-width: 108px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.language-switcher:focus-within {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
 .github {
   font-size: 12px;
   border: 1px solid #29404a;
@@ -700,8 +745,11 @@ footer .brand {
     display: none;
   }
   .github {
+    display: none;
+  }
+  .language-switcher select {
+    max-width: 88px;
     font-size: 10px;
-    padding: 8px;
   }
   .brand-icon {
     font-size: 25px;
