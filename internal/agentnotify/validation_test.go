@@ -17,7 +17,7 @@ func TestUnicodeAndLimits(t *testing.T) {
 		ok                bool
 	}{
 		{"literal", "--help -execute [important] $(echo) \"", "body", true},
-		{"formats", "👩‍💻 می‌خواهم", "\U000e0067\U000e007f", true},
+		{"formats", "👩\u200d💻 می\u200cخواهم", "\U000e0067\U000e007f", true},
 		{"title_boundary", strings.Repeat("é", 128), "", true},
 		{"title_over", strings.Repeat("é", 128) + "a", "", false},
 		{"body_boundary", "title", strings.Repeat("é", 2048), true},

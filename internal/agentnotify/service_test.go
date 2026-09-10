@@ -491,7 +491,8 @@ func TestPayloadAbsentFromStoreAndNativeUUID(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(id) {
 		t.Fatal(id)
 	}
-	if correlationID("key", "attempt") != correlationID("key", "attempt") || correlationID("key", "attempt") == correlationID("key", "other") {
+	first := correlationID("key", "attempt")
+	if first != correlationID("key", "attempt") || first == correlationID("key", "other") {
 		t.Fatal("correlation derivation")
 	}
 	if f.requests[0].Deadline.NotAfter != 115 || f.requests[0].Content.Title != p.Title || f.requests[0].Content.Body != p.Body {
@@ -585,7 +586,7 @@ func TestInvalidDependencies(t *testing.T) {
 	if r := s.Notify(context.Background(), payload("R"), caller(), notification.Deadline{}); r.Reason != "invalid_dependencies" {
 		t.Fatal(r)
 	}
-	if r := f.s.Notify(nil, payload("R"), caller(), notification.Deadline{}); r.Reason != "invalid_context" {
+	if r := f.s.Notify(nil, payload("R"), caller(), notification.Deadline{}); r.Reason != "invalid_context" { //nolint:staticcheck // Deliberately verify nil-context rejection.
 		t.Fatal(r)
 	}
 }

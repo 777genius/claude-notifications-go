@@ -44,7 +44,7 @@ func content(s string, max int, body bool) bool {
 		return false
 	}
 	for _, r := range s {
-		if unicode.Is(unicode.Cc, r) && !(body && (r == '\n' || r == '\t')) {
+		if unicode.Is(unicode.Cc, r) && (!body || (r != '\n' && r != '\t')) {
 			return false
 		}
 		if !body && (r == '\u2028' || r == '\u2029') {
