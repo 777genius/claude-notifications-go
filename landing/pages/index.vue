@@ -13,9 +13,33 @@ useHead(() => ({
     { name: "description", content: t("seo.description") },
     { property: "og:title", content: t("seo.title") },
     { property: "og:description", content: t("seo.description") },
+    { property: "og:type", content: "website" },
+    { property: "og:site_name", content: "Agent Notifications" },
     { name: "twitter:card", content: "summary" },
     { name: "twitter:title", content: t("seo.title") },
     { name: "twitter:description", content: t("seo.description") },
+    { name: "theme-color", content: "#080b12" },
+  ],
+  script: [
+    {
+      type: "application/ld+json",
+      innerHTML: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        name: "Agent Notifications",
+        description: t("seo.description"),
+        applicationCategory: "DeveloperApplication",
+        operatingSystem: "macOS, Linux, Windows",
+        isAccessibleForFree: true,
+        offers: {
+          "@type": "Offer",
+          price: "0",
+          priceCurrency: "USD",
+        },
+        url: "https://777genius.github.io/agent-notifications/",
+        downloadUrl: repo,
+      }),
+    },
   ],
 }));
 
