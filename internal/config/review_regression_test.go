@@ -50,7 +50,7 @@ func TestRecoveryArtifactsUseNativeUnicodeNormalization(t *testing.T) {
 		return []fs.DirEntry{fakeEntry{"cafe\u0301.json.backup-interrupted", 0}}, nil
 	}
 	e.Lstat = func(p string) (fs.FileInfo, error) {
-		if p == "/fixture/caf\u00e9.json.backup-interrupted" {
+		if filepath.ToSlash(p) == "/fixture/caf\u00e9.json.backup-interrupted" {
 			return fakeEntry{name: filepath.Base(p), mode: 0600}, nil
 		}
 		return nil, fs.ErrNotExist
@@ -85,13 +85,14 @@ func TestRecoveryArtifactsUseTerminalSuffixWithMarkerInBasename(t *testing.T) {
 				return []fs.DirEntry{fakeEntry{tt.entry, 0}}, nil
 			}
 			e.Lstat = func(p string) (fs.FileInfo, error) {
-				if p == tt.probe {
+				if filepath.ToSlash(p) == filepath.ToSlash(tt.probe) {
 					return fakeEntry{name: filepath.Base(p), mode: 0600}, nil
 				}
 				return nil, fs.ErrNotExist
 			}
 			suffix, ok := recoverySuffix(tt.entry)
-			if !ok || filepath.Join(filepath.Dir(tt.target), filepath.Base(tt.target)+suffix) != tt.probe {
+			assembled := filepath.ToSlash(filepath.Join(filepath.Dir(tt.target), filepath.Base(tt.target)+suffix))
+			if !ok || assembled != filepath.ToSlash(tt.probe) {
 				t.Fatalf("terminal suffix probe mismatch: suffix=%q ok=%v", suffix, ok)
 			}
 			_, err := Resolve(e)
