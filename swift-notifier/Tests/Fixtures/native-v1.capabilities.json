@@ -4,7 +4,8 @@
     1
   ],
   "actionKinds": [
-    "none"
+    "none",
+    "desktop_thread_v1"
   ],
   "receiptSupport": true,
   "backend": "macos.usernotifications",

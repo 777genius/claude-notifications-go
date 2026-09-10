@@ -1,8 +1,5 @@
 import Foundation
 
-// Separate from legacy ClickAction: new send cannot manufacture shell actions.
-// PR3 can add a versioned typed action without changing the legacy decoder.
-enum NativeAction: String, Codable { case none }
 enum NativeStatus: String, Codable { case rejected, suppressed, submitted, unknown }
 enum NativeReason: String, Codable, Error {
     case malformed_request, unsupported_version, unsupported_action, invalid_file
@@ -56,7 +53,7 @@ struct NativeCapabilities: Codable, Equatable {
     init() {
         schemaVersion = 1
         protocolVersions = [1]
-        actionKinds = ["none"]
+        actionKinds = ["none", "desktop_thread_v1"]
         receiptSupport = true
         backend = "macos.usernotifications"
         explicitFeatureEnabledByDefault = false
@@ -88,7 +85,10 @@ enum NativeCodec {
               CFGetTypeID(version) != CFBooleanGetTypeID(), version.doubleValue == 1 else {
             throw NativeReason.unsupported_version
         }
-        guard object["action"] as? String == "none" else { throw NativeReason.unsupported_action }
+        if object["action"] as? String != "none" {
+            guard let action = object["action"] as? [String: Any] else { throw NativeReason.unsupported_action }
+            _ = try DesktopThreadAction.decode(JSONSerialization.data(withJSONObject: action))
+        }
         let request: NativeRequest
         do { request = try JSONDecoder().decode(NativeRequest.self, from: data) }
         catch { throw NativeReason.malformed_request }
@@ -96,6 +96,9 @@ enum NativeCodec {
               UUID(uuidString: request.nonce) != nil,
               !request.bootID.isEmpty, request.bootID.utf8.count <= 256,
               request.notAfter.isFinite, request.notAfter > 0 else { throw NativeReason.malformed_request }
+        if case .desktopThread(let action) = request.action {
+            guard action.correlationID == request.correlationID else { throw NativeReason.malformed_request }
+        }
         try text(request.title, limit: 256)
         try text(request.body, limit: 4096, multiline: true)
         if let subtitle = request.subtitle { try text(subtitle, limit: 256) }
@@ -135,7 +138,7 @@ import CoreFoundation
 
 // Foundation decoders may accept duplicate keys. Walk the bounded JSON syntax
 // before decoding, comparing decoded keys (including escaped spellings).
-private struct StrictJSON {
+struct StrictJSON {
     var bytes: [UInt8]
     var i = 0
     static func object(_ data: Data) throws -> [String: Any] {

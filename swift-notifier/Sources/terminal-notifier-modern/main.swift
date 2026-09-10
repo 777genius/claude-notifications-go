@@ -132,9 +132,7 @@ func runCallbackMode() {
     app.delegate = appDelegate
     UNUserNotificationCenter.current().delegate = appDelegate
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-        NSApplication.shared.terminate(nil)
-    }
+    appDelegate.lifecycle.start()
 
     withExtendedLifetime(appDelegate) {
         app.run()
