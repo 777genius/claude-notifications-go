@@ -5,19 +5,19 @@ const features = [
     number: "01",
     title: "Step away, stay informed",
     text: "Get a desktop notification when your agent finishes or needs your attention. Spend less time watching a terminal.",
-    icon: "↗",
+    label: "DESKTOP NOTIFICATIONS",
   },
   {
     number: "02",
     title: "A sound for every moment",
     text: "Pick sounds, set the volume, and choose an audio device. Keep the signals you want and quiet the rest.",
-    icon: "♫",
+    label: "SOUND CONTROLS",
   },
   {
     number: "03",
     title: "Your workflow, connected",
     text: "Send updates to Slack, Discord, Telegram, Teams and more. Configure webhooks for wherever you work.",
-    icon: "⌁",
+    label: "WEBHOOK INTEGRATIONS",
   },
 ];
 </script>
@@ -70,12 +70,8 @@ const features = [
           <NotificationPreview />
         </section>
       </div>
-      <div class="compatibility">
-        <span>BUILT FOR YOUR WORKFLOW</span
-        ><strong><AgentLogo agent="claude" /> Claude Code</strong
-        ><strong
-          ><AgentLogo agent="codex" /> Codex CLI <small>beta</small></strong
-        ><PlatformLogos />
+      <div class="compatibility" role="group" aria-label="Supported operating systems">
+        <PlatformLogos />
       </div>
       <InstallWizard />
       <section id="features" class="section anchor-offset">
@@ -87,10 +83,23 @@ const features = [
             :key="feature.number"
             class="panel feature"
           >
-            <div class="feature-top">
-              <span>{{ feature.number }}</span
-              ><b>{{ feature.icon }}</b>
+            <div class="feature-visual" aria-hidden="true">
+              <div v-if="feature.number === '01'" class="mini-notification">
+                <span class="signal-icon">✓</span>
+                <div><strong>Your agent is done</strong><span>Ready when you are.</span></div>
+                <span class="mini-now">now</span>
+              </div>
+              <div v-else-if="feature.number === '02'" class="sound-preview">
+                <div class="sound-wave"><i v-for="(height, index) in [12, 22, 36, 20, 46, 30, 54, 38, 24, 44, 28, 16, 32, 20, 10]" :key="index" :style="{ height: height + 'px' }" /></div>
+                <span>Your sound. Your volume.</span>
+              </div>
+              <div v-else class="channel-preview">
+                <span class="channel-source">Agent event</span>
+                <span class="channel-line" />
+                <div class="channel-tags"><span>Slack</span><span>Discord</span><span>Telegram</span><span>Teams</span></div>
+              </div>
             </div>
+            <div class="feature-top"><span>{{ feature.label }}</span></div>
             <h3>{{ feature.title }}</h3>
             <p>{{ feature.text }}</p>
           </article>
@@ -101,20 +110,22 @@ const features = [
         </p>
       </section>
       <section id="faq" class="section faq anchor-offset">
-        <div>
+        <div class="faq-header">
           <p class="eyebrow">A FEW THINGS TO KNOW</p>
-          <h2>Before you<br />get back to work</h2>
+          <h2>Frequently asked questions</h2>
+          <p>Everything you need to get back to work.</p>
         </div>
+        <div class="faq-content">
         <div class="faq-list">
           <details>
-            <summary>Do I need both agents installed?</summary>
+            <summary><span class="faq-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3m8-3v3M5 6h14v14H5zM9 11h.01M15 11h.01M9 16h6" /></svg></span><span>Do I need both agents installed?</span><span class="faq-chevron" aria-hidden="true"></span></summary>
             <p>
               No. Select Claude Code, Codex CLI, or both. Install the selected
               agent CLI first; the command installs this notification plugin.
             </p>
           </details>
           <details>
-            <summary>Are Codex hooks installed automatically?</summary>
+            <summary><span class="faq-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H4v6h4m8 4h4v6h-4M4 7h10a4 4 0 0 1 4 4v3M6 10v3a4 4 0 0 0 4 4h10" /></svg></span><span>Are Codex hooks installed automatically?</span><span class="faq-chevron" aria-hidden="true"></span></summary>
             <p>
               Yes. The installer registers the hooks and saves a stable runtime
               copy. Open <code>/hooks</code> in Codex to review and trust them.
@@ -122,7 +133,7 @@ const features = [
             </p>
           </details>
           <details>
-            <summary>Will an update reset my settings?</summary>
+            <summary><span class="faq-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" /></svg></span><span>Will an update reset my settings?</span><span class="faq-chevron" aria-hidden="true"></span></summary>
             <p>
               The installer preserves your shared configuration and foreign
               Codex hooks. Install and update use the same command. Restart the
@@ -130,7 +141,7 @@ const features = [
             </p>
           </details>
           <details>
-            <summary>Can I choose what makes a sound?</summary>
+            <summary><span class="faq-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4zM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14" /></svg></span><span>Can I choose what makes a sound?</span><span class="faq-chevron" aria-hidden="true"></span></summary>
             <p>
               Yes. Configure sounds, volume, audio device and notification
               channels. Choose Configure in the guide for the steps specific to
@@ -138,7 +149,7 @@ const features = [
             </p>
           </details>
           <details>
-            <summary>Does click-to-focus work everywhere?</summary>
+            <summary><span class="faq-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H4zM8 20h8m-4-4v4" /></svg></span><span>Does click-to-focus work everywhere?</span><span class="faq-chevron" aria-hidden="true"></span></summary>
             <p>
               Support varies by OS and terminal. iTerm2 needs its Python API for
               precise tab targeting. Windows focuses a window, not an exact tab.
@@ -148,7 +159,7 @@ const features = [
             </p>
           </details>
           <details>
-            <summary>What if I don't get a notification?</summary>
+            <summary><span class="faq-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9a3 3 0 1 1 5 2c-2 1-2 2-2 3m0 3h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0" /></svg></span><span>What if I don't get a notification?</span><span class="faq-chevron" aria-hidden="true"></span></summary>
             <p>
               Check your OS notification permissions and chosen channels. For
               Codex, confirm the hooks are trusted.
@@ -156,6 +167,8 @@ const features = [
               for platform-specific checks.
             </p>
           </details>
+        </div>
+        <div class="faq-decoration" aria-hidden="true"><span class="faq-ring" /><span class="faq-ring" /><span class="faq-ring" /><span class="faq-orb">?</span></div>
         </div>
       </section>
       <section class="closing">
