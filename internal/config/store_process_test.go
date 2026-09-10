@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -99,6 +100,19 @@ func TestStoreProcessHelper(t *testing.T) {
 				time.Sleep(time.Hour)
 			}
 		}
+		var old, next Document
+		if m.selection.Exists {
+			old, e = currentDocument(m, AssetContext{})
+			if e != nil {
+				t.Fatal(e)
+			}
+			next, e = ApplyRawEdits(old, Edits{Set: map[string]json.RawMessage{"/debug/benchmark": json.RawMessage(`true`)}}, AssetContext{})
+		} else {
+			next, e = SeedDocument(m.selection.Path)
+		}
+		if e != nil {
+			t.Fatal(e)
+		}
 		if mode == "crash-temp-write" || mode == "crash-temp-sync" {
 			name, e := uniqueStoreName(filepath.Base(m.selection.Path), "tmp")
 			if e != nil {
@@ -108,11 +122,7 @@ func TestStoreProcessHelper(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			seed, e := SeedDocument(m.selection.Path)
-			if e != nil {
-				t.Fatal(e)
-			}
-			if _, e = f.Write(seed.Bytes()); e != nil {
+			if _, e = f.Write(next.Bytes()); e != nil {
 				t.Fatal(e)
 			}
 			if mode == "crash-temp-sync" {
@@ -124,30 +134,18 @@ func TestStoreProcessHelper(t *testing.T) {
 		}
 		if mode == "crash-before-replace" || mode == "crash-after-replace" || mode == "crash-before-dir-sync" {
 			m.parent = &crashMutationFiles{mutationFiles: m.parent, phase: mode}
-			seed, e := SeedDocument(m.selection.Path)
-			if e != nil {
-				t.Fatal(e)
-			}
-			if _, e = commitDocument(ctx, env, m, Document{}, seed, Result{Selection: m.selection}); e != nil {
+			if _, e = commitDocument(ctx, env, m, old, next, Result{Selection: m.selection, Revision: old.Revision()}); e != nil {
 				t.Fatal(e)
 			}
 			t.Fatal("crash boundary was not reached")
 		}
 		if mode == "crash-temp" {
-			d, e := SeedDocument(m.selection.Path)
-			if e != nil {
-				t.Fatal(e)
-			}
-			if _, e = m.parent.writeArtifact(filepath.Base(m.selection.Path), "tmp", d.Bytes()); e != nil {
+			if _, e = m.parent.writeArtifact(filepath.Base(m.selection.Path), "tmp", next.Bytes()); e != nil {
 				t.Fatal(e)
 			}
 		}
 		if mode == "crash-backup" {
-			d, e := currentDocument(m, AssetContext{})
-			if e != nil {
-				t.Fatal(e)
-			}
-			if _, e = m.parent.writeArtifact(filepath.Base(m.selection.Path), "backup", d.Bytes()); e != nil {
+			if _, e = m.parent.writeArtifact(filepath.Base(m.selection.Path), "backup", old.Bytes()); e != nil {
 				t.Fatal(e)
 			}
 		}
@@ -263,39 +261,116 @@ func TestStoreTwentyProcesses(t *testing.T) {
 	}
 }
 func TestStoreProcessCrashReleasesLock(t *testing.T) {
-	for _, mode := range []string{"crash-before-lock", "crash-lock", "crash-temp-write", "crash-temp-sync", "crash-temp", "crash-backup", "crash-before-replace", "crash-after-replace", "crash-before-dir-sync"} {
-		t.Run(mode, func(t *testing.T) {
-			root := t.TempDir()
-			env := processStoreEnv(root)
-			if mode == "crash-backup" {
-				if _, e := EnsureInitialized(context.Background(), InitRequest{Env: env}); e != nil {
+	oldBytes := []byte("{\n  \"notifications\": {\"desktop\": {\"enabled\": false, \"sound\": false, \"volume\": 0.37}},\n  \"future\": {\"integer\": 9007199254740993}\n}\n")
+	for _, existing := range []bool{false, true} {
+		for _, mode := range []string{"crash-before-lock", "crash-lock", "crash-temp-write", "crash-temp-sync", "crash-temp", "crash-backup", "crash-before-replace", "crash-after-replace", "crash-before-dir-sync"} {
+			if !existing && mode == "crash-backup" {
+				continue
+			}
+			name := "fresh/" + mode
+			if existing {
+				name = "existing/" + mode
+			}
+			t.Run(name, func(t *testing.T) {
+				root := t.TempDir()
+				env := processStoreEnv(root)
+				selection, e := Resolve(env)
+				if e != nil {
 					t.Fatal(e)
 				}
-			}
-			cmd, output := spawnStoreChild(t, root, mode, "0", "")
-			awaitFile(t, filepath.Join(root, "ready-0"))
-			if e := os.WriteFile(filepath.Join(root, "start"), nil, 0600); e != nil {
-				t.Fatal(e)
-			}
-			e := cmd.Wait()
-			var exit *exec.ExitError
-			if !errors.As(e, &exit) || exit.ExitCode() != 24 {
-				t.Fatalf("%v %s", e, output)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			_, e = EnsureInitialized(ctx, InitRequest{Env: env})
-			if mode == "crash-temp" || mode == "crash-temp-write" || mode == "crash-temp-sync" || mode == "crash-before-replace" {
-				var ce *Error
-				if !errors.As(e, &ce) || ce.Code != ConfigRecoveryRequired {
-					t.Fatalf("%v", e)
+				var nextBytes []byte
+				if existing {
+					if e = os.MkdirAll(filepath.Dir(selection.Path), 0700); e != nil {
+						t.Fatal(e)
+					}
+					if e = os.WriteFile(selection.Path, oldBytes, 0644); e != nil {
+						t.Fatal(e)
+					}
+					old, e := ParseDocument(oldBytes, selection.Path, true)
+					if e != nil {
+						t.Fatal(e)
+					}
+					next, e := ApplyRawEdits(old, Edits{Set: map[string]json.RawMessage{"/debug/benchmark": json.RawMessage(`true`)}}, AssetContext{})
+					if e != nil {
+						t.Fatal(e)
+					}
+					nextBytes = next.Bytes()
+				} else {
+					seed, e := SeedDocument(selection.Path)
+					if e != nil {
+						t.Fatal(e)
+					}
+					nextBytes = seed.Bytes()
 				}
-			} else if e != nil {
-				t.Fatal(e)
-			}
-		})
+				cmd, output := spawnStoreChild(t, root, mode, "0", "")
+				awaitFile(t, filepath.Join(root, "ready-0"))
+				if e := os.WriteFile(filepath.Join(root, "start"), nil, 0600); e != nil {
+					t.Fatal(e)
+				}
+				e = cmd.Wait()
+				var exit *exec.ExitError
+				if !errors.As(e, &exit) || exit.ExitCode() != 24 {
+					t.Fatalf("%v %s", e, output)
+				}
+				// Assert the physical crash point before invoking any recovery path.
+				got, readErr := os.ReadFile(selection.Path)
+				published := mode == "crash-after-replace" || mode == "crash-before-dir-sync"
+				switch {
+				case published:
+					if readErr != nil || !bytes.Equal(got, nextBytes) {
+						t.Fatalf("published bytes: err=%v got=%q want=%q", readErr, got, nextBytes)
+					}
+					assertPrivateCrashMode(t, selection.Path)
+				case existing:
+					if readErr != nil || !bytes.Equal(got, oldBytes) {
+						t.Fatalf("original bytes: err=%v got=%q want=%q", readErr, got, oldBytes)
+					}
+					assertCrashMode(t, selection.Path, 0644)
+				case readErr == nil || !os.IsNotExist(readErr):
+					t.Fatalf("fresh target unexpectedly exists: err=%v bytes=%q", readErr, got)
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				_, e = EnsureInitialized(ctx, InitRequest{Env: env})
+				wantRecovery := !existing && (mode == "crash-temp" || mode == "crash-temp-write" || mode == "crash-temp-sync" || mode == "crash-before-replace")
+				if wantRecovery {
+					var ce *Error
+					if !errors.As(e, &ce) || ce.Code != ConfigRecoveryRequired {
+						t.Fatalf("%v", e)
+					}
+				} else if e != nil {
+					t.Fatal(e)
+				}
+				if !wantRecovery {
+					want := nextBytes
+					if existing && !published {
+						want = oldBytes
+					}
+					if got, e = os.ReadFile(selection.Path); e != nil || !bytes.Equal(got, want) {
+						t.Fatalf("recovery bytes: err=%v got=%q want=%q", e, got, want)
+					}
+				}
+			})
+		}
 	}
 }
+
+func assertCrashMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return // Native DACL preservation is asserted in store_windows_test.go.
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat mode: %v", err)
+	}
+	if info.Mode().Perm() != want {
+		t.Fatalf("mode: got=%v want=%v", info.Mode().Perm(), want)
+	}
+}
+
+func assertPrivateCrashMode(t *testing.T, path string) { assertCrashMode(t, path, 0600) }
 
 func TestStoreProcessSelectionGuardOrders(t *testing.T) {
 	for _, first := range []string{"legacy", "neutral"} {
@@ -355,7 +430,8 @@ func TestStoreProcessSelectionGuardOrders(t *testing.T) {
 // Crash barriers are test-only adapters around the actual transaction methods.
 type crashMutationFiles struct {
 	mutationFiles
-	phase string
+	phase     string
+	published bool
 }
 
 func (f *crashMutationFiles) publish(ctx context.Context, temp, name string, exists bool, old, next []byte) error {
@@ -363,13 +439,16 @@ func (f *crashMutationFiles) publish(ctx context.Context, temp, name string, exi
 		os.Exit(24)
 	}
 	err := f.mutationFiles.publish(ctx, temp, name, exists, old, next)
+	if err == nil {
+		f.published = true
+	}
 	if err == nil && f.phase == "crash-after-replace" {
 		os.Exit(24)
 	}
 	return err
 }
 func (f *crashMutationFiles) sync() error {
-	if f.phase == "crash-before-dir-sync" {
+	if f.phase == "crash-before-dir-sync" && f.published {
 		os.Exit(24)
 	}
 	return f.mutationFiles.sync()

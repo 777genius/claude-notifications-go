@@ -84,9 +84,16 @@ chmod +x "$INSTALL_TARGET_DIR/claude-notifications"
         put(self.web / 'install.sh', self.installer)
         self.requests = []
         requests = self.requests
+        self.asset_gate_enabled = False
+        self.asset_gate_entered = threading.Event()
+        self.asset_gate_release = threading.Event()
+        suite = self
         class Handler(http.server.SimpleHTTPRequestHandler):
             def do_GET(self):
                 requests.append(self.path)
+                if suite.asset_gate_enabled and self.path.endswith('/' + suite.asset):
+                    suite.asset_gate_entered.set()
+                    assert suite.asset_gate_release.wait(30), 'asset barrier timeout'
                 super().do_GET()
             def log_message(self, *_):
                 pass
@@ -336,6 +343,113 @@ shutil.copytree(os.environ['SOURCE'],root,dirs_exist_ok=True)
         self.boot(env, 'codex', expected=1)
         assert not any(p.exists() for p in self.paths(env))
 
+    def concurrent_install_hook_settings(self):
+        """A real bootstrap, hook reader, and CAS edit overlap at OS barriers."""
+        import fcntl
+        import signal
+        import time
+        env = self.fixture()
+        config = self.paths(env)[1]
+        initial = json.loads((ROOT / 'config/config.json').read_bytes())
+        initial['notifications']['desktop']['enabled'] = False
+        initial['notifications']['desktop']['sound'] = False
+        initial['notifications']['webhook']['enabled'] = False
+        initial['futureConcurrent'] = {'integer': 9007199254740993, 'installed': True}
+        source = Path(env['HOME']) / 'concurrent-source.json'
+        put(source, json.dumps(initial))
+        self.cli(env, 'init', '--from', str(source), '--json')
+        inspection = json.loads(self.cli(env, 'inspect', '--json').stdout)
+        edits = {'set': {
+            '/notifications/desktop/volume': 0.23,
+            '/statuses/task_complete/title': 'concurrent edit survived',
+        }}
+
+        # The HTTP barrier holds the real installer after it has requested its
+        # verified helper. The persistent target lock independently holds the
+        # real settings writer while the hook reads the last complete config.
+        # No timing sleep decides when any participant may cross a boundary.
+        self.asset_gate_entered.clear()
+        self.asset_gate_release.clear()
+        self.asset_gate_enabled = True
+        lock = Path(str(config) + '.lock')
+        lock.touch(mode=0o600, exist_ok=True)
+        processes = []
+        install = settings = hook = None
+        def start(args, stdin):
+            proc = subprocess.Popen(args, env=env, cwd=env['HOME'], stdin=stdin,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    start_new_session=True)
+            processes.append(proc)
+            return proc
+        def feed(proc, payload):
+            proc.stdin.write(payload)
+            proc.stdin.close()
+            proc.stdin = None
+        def await_open_fd(proc, path):
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and proc.poll() is None:
+                try:
+                    if any(fd.resolve() == path for fd in Path('/proc/%d/fd' % proc.pid).iterdir()):
+                        return
+                except OSError:
+                    pass
+                threading.Event().wait(0.01)
+            raise AssertionError('settings writer did not contend on config lock')
+        try:
+            with lock.open('r+') as held:
+                fcntl.flock(held, fcntl.LOCK_EX)
+                install = start(['/bin/bash', ROOT / 'bin/bootstrap.sh', '--product', 'both'],
+                                subprocess.DEVNULL)
+                assert self.asset_gate_entered.wait(15), 'installer did not reach asset barrier'
+                settings = start(
+                    [self.binary, 'config', 'edit', '--stdin', '--expect-revision', inspection['revision']],
+                    subprocess.PIPE)
+                hook = start([self.binary, 'handle-hook', 'Stop'], subprocess.PIPE)
+                # Supply EOF before observing either command. This proves a live
+                # settings process has opened the exclusively-held lock rather
+                # than merely waiting for its stdin or its first scheduler slice.
+                feed(settings, json.dumps(edits).encode())
+                feed(hook, b'{"session_id":"concurrent","transcript_path":"","cwd":""}')
+                await_open_fd(settings, lock)
+                assert settings.poll() is None, 'settings writer bypassed config lock'
+                hook_out = hook.communicate(timeout=30)
+                assert hook.returncode == 0, 'hook failed while settings was blocked: %s' % ((hook_out[0] + hook_out[1]).decode(errors='replace'))
+                self.asset_gate_release.set()
+                fcntl.flock(held, fcntl.LOCK_UN)
+
+            settings_out = settings.communicate(timeout=30)
+            install_out = install.communicate(timeout=45)
+        finally:
+            self.asset_gate_release.set()
+            self.asset_gate_enabled = False
+            for proc in processes:
+                if proc.poll() is None:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+        for name, proc, output in (('settings', settings, settings_out), ('hook', hook, hook_out),
+                                   ('installer', install, install_out)):
+            assert proc.returncode == 0, '%s failed: %s' % (name, (output[0] + output[1]).decode(errors='replace'))
+            assert CANARY.encode() not in output[0] + output[1], '%s leaked canary' % name
+        assert b'ConfigInvalid' not in hook_out[0] + hook_out[1], 'hook observed an invalid/partial config'
+        final = json.loads(config.read_bytes())
+        assert final['futureConcurrent'] == initial['futureConcurrent']
+        assert final['notifications']['desktop']['volume'] == 0.23
+        assert final['statuses']['task_complete']['title'] == 'concurrent edit survived'
+        assert final['notifications']['desktop']['enabled'] is False
+        assert final['notifications']['desktop']['sound'] is False
+        assert final['notifications']['webhook']['enabled'] is False
+        for key, value in initial.items():
+            if key not in ('notifications', 'statuses', 'futureConcurrent'):
+                assert final[key] == value, 'installation/settings lost root field ' + key
+        assert not Path(env['EFFECTS']).exists(), 'hook invoked a desktop/webhook provider'
+
 
 def main():
     assert platform.system() == 'Linux', 'This suite qualifies native Linux; macOS/Windows require native CI adapters'
@@ -362,6 +476,7 @@ def main():
         cases += [('legacy-exact', suite.legacy), ('explicit-import-CAS', suite.explicit_and_import_edit),
                   ('corrupt-no-fallback', suite.corrupt), ('custom-and-overlap', suite.custom_and_overlap),
                   ('setup-readonly', suite.setup_readonly), ('offline-retains-state', suite.offline), ('registration-failure', suite.registration_failure), ('hooks-no-config-writes', suite.hooks), ('partial-config-only-retry', suite.partial_retry)]
+        cases += [('concurrent-install-hook-settings', suite.concurrent_install_hook_settings)]
         cases += [('historical-' + k, lambda k=k: suite.historical(k)) for k in ('personalized', 'unknown', 'exact')]
         try:
             for name, case in cases:
