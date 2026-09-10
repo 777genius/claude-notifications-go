@@ -252,6 +252,12 @@ def events():
     return [json.loads(line) for line in trace.read_text().splitlines()] if trace.exists() else []
 def path_ids(values):
     return [pathlib.Path(value).resolve() for value in values]
+def native_shell_path(value):
+    if os.name != 'nt':
+        return value
+    cygpath=shutil.which('cygpath')
+    assert cygpath, 'native Windows fixture requires cygpath'
+    return subprocess.check_output([cygpath,'-w',value],text=True).strip()
 def reset_case():
     # Every directory is an explicit child of this fixture, never host state.
     for key in ['HOME','XDG_CONFIG_HOME','CODEX_HOME','CLAUDE_CONFIG_DIR']:
@@ -377,11 +383,12 @@ for product in ['codex','both']:
     assert (pathlib.Path(env['CODEX_HOME'])/'fixture-registration').read_text()=='registered'
     assert not init_events()
     line=next(line for line in output.splitlines() if line.startswith('Config-only retry'))
-    command=shlex.split(line.split(': ',1)[1])
-    assert pathlib.Path(command[0]).read_bytes()==payload_file.read_bytes()
+    shell_command=line.split(': ',1)[1]
+    command=shlex.split(shell_command)
+    assert pathlib.Path(native_shell_path(command[0])).read_bytes()==payload_file.read_bytes()
     assert command[1:]==['config','init','--json']
     trace.write_text(''); requests_before=list(request_paths)
-    r=subprocess.run(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20)
+    r=subprocess.run([bash,'-c',shell_command],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20)
     assert r.returncode==0, r.stdout.decode()
     assert events()==[['config','init','--json']] and request_paths==requests_before
 # Fresh registration failure never reaches init.
@@ -392,8 +399,10 @@ reset_case()
 output=run(['--product','both'],1,{'FAIL_INIT':'1'})
 assert 'Partial setup' in output and 'Config-only retry' in output
 line=next(line for line in output.splitlines() if line.startswith('Config-only retry'))
-command=shlex.split(line.split(': ',1)[1]); trace.write_text('')
-r=subprocess.run(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20)
+shell_command=line.split(': ',1)[1]; command=shlex.split(shell_command); trace.write_text('')
+assert pathlib.Path(native_shell_path(command[0])).read_bytes()==payload_file.read_bytes()
+assert command[1:]==['config','init','--json']
+r=subprocess.run([bash,'-c',shell_command],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20)
 assert r.returncode==0, r.stdout.decode()
 assert events()==[['config','init','--json']]
 # Offline staging failure cannot touch a working runtime/registration.
