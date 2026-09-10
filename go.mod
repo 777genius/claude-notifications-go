@@ -1,6 +1,6 @@
 module github.com/777genius/agent-notifications
 
-go 1.22
+go 1.25.0
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast v1.1.2
