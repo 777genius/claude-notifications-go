@@ -14,7 +14,7 @@ Telegram integration uses the Bot API to send HTML-formatted messages directly t
 2. Start a chat and send `/newbot`
 3. Follow the prompts:
    - **Bot name:** Choose a display name (e.g., "Agent Notifications")
-   - **Username:** Choose a unique username ending in `bot` (e.g., `claude_notify_bot`)
+   - **Username:** Choose a unique username ending in `bot` (e.g., `agent_notify_bot`)
 4. BotFather will give you an **API token** like:
    ```
    123456789:ABCdefGHIjklMNOpqrsTUVwxyz

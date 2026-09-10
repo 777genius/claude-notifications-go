@@ -248,7 +248,7 @@ Both platforms use the same webhook API format. This plugin works with both.
 
 ## Best Practices
 
-1. **Use dedicated groups** - Create a "Agent Notifications" group
+1. **Use dedicated groups** - Create an "Agent Notifications" group
 2. **One bot per group** - Don't reuse bots across projects
 3. **Secure your URL** - Never commit webhook URLs to git
 4. **Enable retry** - Handle transient network failures

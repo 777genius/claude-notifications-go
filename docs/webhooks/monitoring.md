@@ -228,7 +228,7 @@ If your webhook endpoint logs requests, use the `X-Request-ID` header to correla
 
 **Your webhook endpoint log:**
 ```
-Received webhook: request_id=550e8400-... from=claude-notifications
+Received webhook: request_id=550e8400-... from=agent-notifications
 ```
 
 ## Monitoring Examples
