@@ -1082,7 +1082,9 @@ if os.path.lexists(registry):
     for e in entries:
         v=re.sub(r'^v', '', str(e.get('version','')))
         if re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)',v) and os.path.lexists(os.path.join(e['installPath'],'config','config.json')): versions.add(v)
-print('\n'.join(sorted(versions)))
+# This output is consumed by a Bash read loop.  Native Windows Python otherwise
+# emits CRLF, leaving a trailing CR in the release URL and baseline directory.
+sys.stdout.buffer.write(('\n'.join(sorted(versions))+'\n' if versions else '').encode('ascii'))
 PYVERSIONS
     local version base dir
     while IFS= read -r version; do

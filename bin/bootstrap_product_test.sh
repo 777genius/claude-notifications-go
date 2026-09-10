@@ -140,7 +140,7 @@ for tag in ['v1.42.0', 'v1.43.0']:
     (dest / 'binary').write_bytes(payload)
     (dest / asset_name).write_bytes(payload)
     import hashlib
-    (dest / 'checksums.txt').write_text(hashlib.sha256(payload).hexdigest()+'  '+asset_name+'\n')
+    (dest / 'checksums.txt').write_bytes((hashlib.sha256(payload).hexdigest()+'  '+asset_name+'\n').encode('ascii'))
 (web/'install.sh').write_bytes(installer.encode('utf-8'))
 request_paths=[]
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -328,7 +328,7 @@ for value in [b'{"personalized":true}',b'{}']:
 # against that same template still stop; current template is never substituted.
 dest=web/'download/v1.40.0'; dest.mkdir()
 (dest/'config.json').write_bytes(b'{}')
-(dest/'checksums.txt').write_text(hashlib.sha256(b'{}').hexdigest()+'  config.json\n')
+(dest/'checksums.txt').write_bytes((hashlib.sha256(b'{}').hexdigest()+'  config.json\n').encode('ascii'))
 reset_case(); active=historical(b'{}'); run(['--product','claude'])
 assert len(init_events())==1
 reset_case(); active=historical(b'{"custom":1}')
@@ -407,7 +407,7 @@ valid_payload=payload_file.read_bytes()
 bad_capability=valid_payload.replace(b"assert args[0]=='config'",b"raise SystemExit(2)")
 payload_file.write_bytes(bad_capability)
 checksums=payload_file.parent/'checksums.txt'; valid_checksums=checksums.read_bytes()
-checksums.write_text(hashlib.sha256(bad_capability).hexdigest()+'  '+asset_name+'\n')
+checksums.write_bytes((hashlib.sha256(bad_capability).hexdigest()+'  '+asset_name+'\n').encode('ascii'))
 trace.write_text('')
 run(['--product','both'],1)
 assert not any(e[:1]==['claude'] or e[:1]==['setup-codex'] for e in events())
