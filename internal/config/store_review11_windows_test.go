@@ -7,8 +7,49 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 )
+
+func TestWindowsInitEntryProbeRetriesOnlySharingViolation(t *testing.T) {
+	calls := 0
+	err := checkInitEntryContext(context.Background(), `C:\absent\config.json`, func(string) error {
+		calls++
+		if calls == 1 {
+			return syscall.Errno(32)
+		}
+		return nil
+	})
+	if err != nil || calls != 2 {
+		t.Fatalf("err=%v calls=%d", err, calls)
+	}
+
+	for _, failure := range []error{syscall.Errno(5), &Error{Code: ConfigLinkedPath}} {
+		calls = 0
+		err = checkInitEntryContext(context.Background(), `C:\absent\config.json`, func(string) error {
+			calls++
+			return failure
+		})
+		if !errors.Is(err, failure) || calls != 1 {
+			t.Fatalf("failure %v was retried or hidden: err=%v calls=%d", failure, err, calls)
+		}
+	}
+}
+
+func TestWindowsInitEntryProbeSharingViolationDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	calls := 0
+	err := checkInitEntryContext(ctx, `C:\absent\config.json`, func(string) error {
+		calls++
+		return syscall.Errno(32)
+	})
+	var ce *Error
+	if !errors.As(err, &ce) || ce.Code != ConfigLockTimeout || calls < 2 {
+		t.Fatalf("err=%v calls=%d", err, calls)
+	}
+}
 
 func TestWindowsUnavailableBaseDoesNotPublishHomeGuard(t *testing.T) {
 	env := storeEnv(t)

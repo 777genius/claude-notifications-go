@@ -580,10 +580,33 @@ func checkInitEntry(path string) error {
 	return nil
 }
 
+// checkInitEntryContext waits only for the transient directory-publication
+// conflict produced by MoveFileEx. In particular, linked paths, permission
+// failures, and every other validation result remain immediate failures.
+func checkInitEntryContext(ctx context.Context, path string, check func(string) error) error {
+	for {
+		e := check(path)
+		var errno windows.Errno
+		if !errors.As(e, &errno) || errno != windows.ERROR_SHARING_VIOLATION {
+			return e
+		}
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return &Error{Code: ConfigLockTimeout, Path: path}
+		case <-timer.C:
+		}
+	}
+}
+
 func readInitSnapshot(ctx context.Context, path string) (Snapshot, error) {
 	// The general read adapter follows final links. Initialization must reject
 	// that spelling before the adapter resolves it to its regular-file target.
-	if e := checkInitEntry(path); e != nil && !os.IsNotExist(e) {
+	// An initializer may concurrently publish the containing directory, so this
+	// unguarded probe waits out only ERROR_SHARING_VIOLATION within the caller's
+	// existing initialization deadline.
+	if e := checkInitEntryContext(ctx, path, checkInitEntry); e != nil && !os.IsNotExist(e) {
 		return Snapshot{}, e
 	}
 	// Keep link checks inside the shared read so they cannot race a cooperating

@@ -35,7 +35,7 @@ test_env_enter() {
     if [ "${TEST_ENV_HANDOFF_GOMODCACHE:-}" = 1 ]; then
         gomodcache="${GOMODCACHE:-}"
         if [ -z "$gomodcache" ] && command -v go >/dev/null 2>&1; then
-            gomodcache=$(go env GOMODCACHE) || exit 1
+            gomodcache=$(GOTOOLCHAIN=local go env GOMODCACHE) || exit 1
         fi
         if [ -n "$gomodcache" ]; then
             toolchain_env+=("GOMODCACHE=$gomodcache")
