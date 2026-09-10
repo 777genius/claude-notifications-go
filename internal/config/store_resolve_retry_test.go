@@ -15,7 +15,7 @@ func retryResolverEnv(readDir func(string) ([]fs.DirEntry, error)) EnvSnapshot {
 		Vars: map[string]string{
 			OverrideEnv: `C:\shared\absent\config.json`,
 		},
-		Lstat: func(string) (fs.FileInfo, error) { return nil, fs.ErrNotExist },
+		Lstat:   func(string) (fs.FileInfo, error) { return nil, fs.ErrNotExist },
 		ReadDir: readDir,
 	}
 }
