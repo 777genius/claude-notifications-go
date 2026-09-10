@@ -515,12 +515,7 @@ func scheduleWindowsLazyUpdateImpl(pluginRoot string) error {
 	targetDir := filepath.ToSlash(filepath.Join(pluginRoot, "bin"))
 	installScript = filepath.ToSlash(installScript)
 	shCommand := "INSTALL_TARGET_DIR=" + shellSingleQuoted(targetDir) + " " + shellSingleQuoted(installScript) + " --force"
-	psCommand := "$ErrorActionPreference = 'SilentlyContinue'; " +
-		"Start-Sleep -Milliseconds 750; " +
-		"for ($i = 0; $i -lt 6; $i++) { " +
-		"& " + powershellSingleQuoted(bashPath) + " -lc " + powershellSingleQuoted(shCommand) + " *> $null; " +
-		"if ($LASTEXITCODE -eq 0) { break }; " +
-		"Start-Sleep -Seconds 5 }"
+	psCommand := windowsLazyUpdatePowerShellCommand(bashPath, shCommand)
 
 	cmd := exec.Command(powershellPath, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psCommand)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
@@ -544,6 +539,18 @@ func scheduleWindowsLazyUpdateImpl(pluginRoot string) error {
 		_ = devNull.Close()
 	}
 	return nil
+}
+
+func windowsLazyUpdatePowerShellCommand(bashPath, shCommand string) string {
+	// The PowerShell process already inherits NUL for all three standard
+	// streams. WinPS native-command redirection here is redundant and can keep
+	// the detached pipeline alive instead of starting bash.
+	return "$ErrorActionPreference = 'SilentlyContinue'; " +
+		"Start-Sleep -Milliseconds 750; " +
+		"for ($i = 0; $i -lt 6; $i++) { " +
+		"& " + powershellSingleQuoted(bashPath) + " -lc " + powershellSingleQuoted(shCommand) + "; " +
+		"if ($LASTEXITCODE -eq 0) { break }; " +
+		"Start-Sleep -Seconds 5 }"
 }
 
 func findWindowsPowerShell() (string, error) {

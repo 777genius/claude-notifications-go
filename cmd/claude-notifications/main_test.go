@@ -88,6 +88,24 @@ func TestLazyUpdateQuoting(t *testing.T) {
 	}
 }
 
+func TestWindowsLazyUpdateCommandUsesProcessLevelNullStreams(t *testing.T) {
+	command := windowsLazyUpdatePowerShellCommand(`C:\Program Files\Git\bin\bash.exe`, `echo ok`)
+
+	if strings.Contains(command, `*> $null`) {
+		t.Fatalf("lazy update command has native PowerShell redirection: %s", command)
+	}
+	for _, want := range []string{
+		`Start-Sleep -Milliseconds 750`,
+		`for ($i = 0; $i -lt 6; $i++)`,
+		`& 'C:\Program Files\Git\bin\bash.exe' -lc 'echo ok'`,
+		`if ($LASTEXITCODE -eq 0) { break }`,
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("lazy update command missing %q: %s", want, command)
+		}
+	}
+}
+
 func TestNewExecHookUsesArgsWithoutShell(t *testing.T) {
 	hook := newExecHook(`C:\Tools\claude-notifications.exe`, "Stop")
 
