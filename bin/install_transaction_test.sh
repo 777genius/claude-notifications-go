@@ -7,6 +7,29 @@ set -eo pipefail
 root=$(cd "$(dirname "$0")" && pwd)
 sandbox=$(mktemp -d)
 trap 'result=$?; if [ "$result" != 0 ]; then echo "FAILED: ${scenario:-utility} (status $result)" >&2; [ ! -f "${case_dir:-}/output" ] || tail -n 25 "$case_dir/output" >&2; fi; rm -rf "$sandbox"' EXIT
+
+assert() {
+    local message="$1"
+    shift
+    if ! "$@"; then
+        echo "ASSERTION FAILED: ${scenario:-utility}: $message" >&2
+        return 1
+    fi
+}
+
+assert_output() {
+    local expected="$1" message="$2"
+    shift 2
+    local actual
+    actual=$("$@") || {
+        echo "ASSERTION FAILED: ${scenario:-utility}: $message (command status $?)" >&2
+        return 1
+    }
+    if [ "$actual" != "$expected" ]; then
+        echo "ASSERTION FAILED: ${scenario:-utility}: $message (expected '$expected', got '$actual')" >&2
+        return 1
+    fi
+}
 test_env_setup "$sandbox"
 sed '/^main "\$@"$/d' "$root/install.sh" > "$sandbox/functions.sh"
 for scenario in staged staged_corrupt offline fresh_offline download checksum missing_checksum executable interrupt desktop fresh_desktop success fresh_success optional_interrupt legacy_fallback retained_legacy failed_fallback; do
@@ -128,19 +151,24 @@ for scenario in staged staged_corrupt offline fresh_offline download checksum mi
             [ "$("$selected")" = legacy-notifier ]
             [ ! -e "$case_dir/ClaudeNotifier.app" ] ;;
         fresh_desktop|fresh_offline) [ ! -e "$binary" ]; [ "$status" != 0 ] ;;
-        *) "$binary" | grep -q old-version
-           "$case_dir/claude-notifications" | grep -q old-version ;;
+        *) assert_output old-version 'existing binary was not preserved' "$binary"
+           assert_output old-version 'existing binary symlink was not preserved' "$case_dir/claude-notifications" ;;
     esac
-    [ "$scenario" != staged_corrupt ] || [ "$status" != 0 ]
-    [ "$(cat "$case_dir/sound-preview")" = utility ]
+    [ "$scenario" != staged_corrupt ] || assert 'corrupt staged binary must fail installation' test "$status" != 0
+    assert_output utility 'existing utility was not preserved' cat "$case_dir/sound-preview"
     if [[ "$scenario" != fresh_* && "$scenario" != desktop && "$scenario" != *legacy* && "$scenario" != *fallback ]]; then
-        [ "$("$case_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern")" = old-notifier ]
+        assert_output old-notifier 'existing notifier was not preserved' "$case_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern"
     fi
     if [ "$scenario" = failed_fallback ]; then
         [ "$status" != 0 ]
         [ -f "$case_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ]
     fi
-    [ -z "$(find "$case_dir" -name '.install-stage.*' -o -name '.install.lock')" ]
+    transaction_artifacts=$(find "$case_dir" \( -name '.install-stage.*' -o -name '.install.lock' \) -print)
+    if [ -n "$transaction_artifacts" ]; then
+        echo "ASSERTION FAILED: $scenario: staged temp/lock artifacts were not cleaned:" >&2
+        echo "$transaction_artifacts" >&2
+        false
+    fi
     echo "PASS: $scenario (status $status)"
 done
 

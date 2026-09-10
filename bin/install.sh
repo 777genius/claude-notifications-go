@@ -1640,7 +1640,11 @@ desktop_runtime_usable() {
 stage_and_promote_runtime() (
     local live_dir="$SCRIPT_DIR"
     local live_binary="$BINARY_PATH"
-    local stage
+    # Keep this pathname in the subshell's global scope. Bash 3.2 can discard a
+    # function-local variable before running an EXIT trap when the function
+    # terminates via `exit` (for example, after a staged checksum failure).
+    # The trap must still know which disposable staging directory to remove.
+    stage=''
     stage=$(mktemp -d "$SCRIPT_DIR/.install-stage.XXXXXX") || exit 1
     trap 'rm -rf "$stage"' EXIT
     trap 'exit 130' INT
