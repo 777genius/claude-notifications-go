@@ -24,6 +24,108 @@ fi
 # Ensure target directory exists
 mkdir -p "$SCRIPT_DIR" 2>/dev/null || true
 
+# Explicit config protection uses the canonical Go command. Try the installed
+# helper first so safe existing installs need no network. Old binaries that do
+# not speak this protocol require a verified staged release before live changes.
+INSTALL_CONFIG_STAGE=""
+INSTALL_CONFIG_HELPER=""
+
+cleanup_install_config() {
+    [ -z "$INSTALL_CONFIG_STAGE" ] || rm -rf "$INSTALL_CONFIG_STAGE"
+}
+trap 'cleanup_install_config' EXIT
+
+config_preflight_stop() {
+    echo 'Config preflight stopped installation; existing runtime retained. Check AGENT_NOTIFICATIONS_CONFIG and repair/recover the selected file, or rerun bootstrap with a config-capable release and Python 3.' >&2
+    return 1
+}
+
+prepare_install_config_preflight() {
+    [ "${AGENT_NOTIFICATIONS_CONFIG+x}" = x ] || return 0
+    command -v python3 >/dev/null 2>&1 || { config_preflight_stop; return 1; }
+    local status
+    [ -n "$INSTALL_CONFIG_HELPER" ] || INSTALL_CONFIG_HELPER="$BINARY_PATH"
+    if install_config_preflight "$@"; then return 0; else status=$?; fi
+    # A canonical rejection is final; only an unavailable protocol needs staging.
+    [ "$status" = 2 ] || return 1
+    [ -z "$INSTALL_CONFIG_STAGE" ] || { config_preflight_stop; return 1; }
+    if [ "$OFFLINE_MODE" = true ] && [ -z "${INSTALL_STAGED_ASSETS:-}" ]; then
+        config_preflight_stop
+        return 1
+    fi
+    INSTALL_CONFIG_STAGE=$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/install-config.XXXXXX") || return 1
+    # Existing download/verification logic is confined to this new directory.
+    if ! (
+        SCRIPT_DIR="$INSTALL_CONFIG_STAGE"
+        detect_platform
+        REQUIRE_CHECKSUM=true
+        pin_release_urls
+        download_and_verify_binary && verify_executable
+    ) >/dev/null 2>&1; then
+        config_preflight_stop
+        return 1
+    fi
+    INSTALL_CONFIG_HELPER="$INSTALL_CONFIG_STAGE/$BINARY_NAME"
+    install_config_preflight "$@" || { config_preflight_stop; return 1; }
+    cp "$INSTALL_CONFIG_STAGE/.checksums.txt" "$INSTALL_CONFIG_STAGE/checksums.txt" || return 1
+    # Reuse the verified bytes for promotion, even when upgrading an old binary.
+    INSTALL_STAGED_ASSETS="$INSTALL_CONFIG_STAGE"
+}
+
+install_config_preflight() {
+    [ "${AGENT_NOTIFICATIONS_CONFIG+x}" = x ] || return 0
+    [ -n "$INSTALL_CONFIG_HELPER" ] || { config_preflight_stop; return 1; }
+    local -a targets=("$@")
+    local helper="$INSTALL_CONFIG_HELPER"
+    local i
+    if [ "$PLATFORM" = windows ]; then
+        helper=$(cygpath -aw "$helper") || { config_preflight_stop; return 1; }
+        for ((i=0; i<${#targets[@]}; i++)); do
+            targets[$i]=$(cygpath -aw "${targets[$i]}") || { config_preflight_stop; return 1; }
+        done
+    fi
+    # Python only transports JSON/native paths and bounds helper execution. All
+    # selection, validation and alias identity decisions belong to Go Store.
+    local status
+    if python3 -I - "$helper" "$PLATFORM" "${targets[@]}" <<'PYINSTALL'
+import json, os, subprocess, sys
+try:
+    helper, platform, *paths = sys.argv[1:]
+    if platform != 'windows':
+        paths = [os.path.abspath(p) for p in paths]
+    request = json.dumps(dict(refreshDirs=paths))
+    result = subprocess.run([helper, 'config', 'preflight-update', '--stdin', '--json'],
+                            input=request, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, timeout=20)
+    response = json.loads(result.stdout)
+    if not isinstance(response, dict) or response.get('status') not in {'safe', 'unsafe-target', 'invalid-config', 'import-required'}:
+        sys.exit(2)
+    if result.returncode == 0 and response.get('status') == 'safe':
+        sys.exit(0)
+    # Only canonical codes, never paths, raw helper output, or config contents.
+    for diagnostic in response.get('diagnostics', []):
+        code = diagnostic.get('code', '')
+        if isinstance(code, str) and code in {'ConfigUnsafeTarget', 'ConfigOverrideInvalid', 'ConfigInvalid',
+                'ConfigUnsupportedSchema', 'ConfigPermissionDenied', 'ConfigRecoveryRequired',
+                'ConfigLinkedPath', 'ConfigChanged', 'ConfigLockTimeout', 'ConfigMissing',
+                'ConfigHomeUnavailable', 'ConfigBaseUnavailable'}:
+            print(code, file=sys.stderr)
+except (OSError, ValueError, TypeError, AttributeError, subprocess.TimeoutExpired):
+    sys.exit(2)
+sys.exit(1)
+PYINSTALL
+    then return 0; else status=$?; fi
+    [ "$status" != 2 ] || return 2
+    config_preflight_stop
+}
+
+# Exit even when the caller treats an optional resource failure as nonfatal.
+# 78 also carries rejection out of the optional downloader subshell.
+# Targets are supplied at mutation sites, after their non-mutating early returns.
+guard_install_paths() {
+    prepare_install_config_preflight "$@" || exit 78
+}
+
 # Lockfile to prevent parallel installations
 LOCKFILE="${SCRIPT_DIR}/.install.lock"
 
@@ -303,6 +405,7 @@ acquire_lock() {
 
             if [ "$lock_age" -gt 600 ]; then
                 echo -e "${YELLOW}⚠ Removing stale lock (${lock_age}s old)${NC}"
+                guard_install_paths "$LOCKFILE"
                 rm -rf "$LOCKFILE"
                 mkdir "$LOCKFILE" 2>/dev/null || true
             else
@@ -314,7 +417,7 @@ acquire_lock() {
     fi
 
     # Set trap to release lock on exit
-    trap 'rm -rf "$LOCKFILE" 2>/dev/null' EXIT
+    trap 'rmdir "$LOCKFILE" 2>/dev/null; cleanup_install_config' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
     return 0
@@ -637,7 +740,7 @@ download_utility() (
 
     # Keep the live utility intact until a complete replacement is ready.
     temp_path=$(mktemp "${util_path}.download.XXXXXX") || return 1
-    trap 'rm -f "$temp_path"' EXIT
+    trap 'rm -f "$temp_path"; cleanup_install_config' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
     echo -e "${BLUE}📦 Downloading ${util_name}...${NC}"
@@ -656,7 +759,7 @@ download_utility() (
     # These sound tools do not implement --version; do not launch audio/device
     # enumeration to validate an optional download.
     if [ "$downloaded" = true ] && chmod +x "$temp_path" &&
-       utility_usable "$temp_path" && mv -f "$temp_path" "$util_path"; then
+       utility_usable "$temp_path" && guard_install_paths "$util_path" && mv -f "$temp_path" "$util_path"; then
         echo -e "${GREEN}✓${NC} ${util_name} downloaded"
         return 0
     fi
@@ -669,9 +772,16 @@ download_utilities() {
     echo ""
     echo -e "${BLUE}📦 Downloading utility binaries...${NC}"
 
-    download_utility "$SOUND_PREVIEW_NAME" "$SOUND_PREVIEW_PATH" || true
-    download_utility "$LIST_DEVICES_NAME" "$LIST_DEVICES_PATH" || true
-    download_utility "$LIST_SOUNDS_NAME" "$LIST_SOUNDS_PATH" || true
+    local status
+    download_utility "$SOUND_PREVIEW_NAME" "$SOUND_PREVIEW_PATH" || {
+        status=$?; [ "$status" != 78 ] || exit 78;
+    }
+    download_utility "$LIST_DEVICES_NAME" "$LIST_DEVICES_PATH" || {
+        status=$?; [ "$status" != 78 ] || exit 78;
+    }
+    download_utility "$LIST_SOUNDS_NAME" "$LIST_SOUNDS_PATH" || {
+        status=$?; [ "$status" != 78 ] || exit 78;
+    }
     # The Windows focus handler was verified and promoted with the runtime.
     # Never overwrite that required asset through the optional downloader.
 
@@ -695,12 +805,14 @@ create_utility_symlink() {
 
     local symlink_path="${SCRIPT_DIR}/${util_base}"
 
+    guard_install_paths "$symlink_path"
     # Remove old symlink if exists
     rm -f "$symlink_path" 2>/dev/null || true
 
     if [ "$PLATFORM" = "windows" ]; then
         # Windows: create .bat wrapper
         local bat_path="${symlink_path}.bat"
+        guard_install_paths "$bat_path"
         cat > "$bat_path" << EOF
 @echo off
 setlocal
@@ -1076,6 +1188,7 @@ create_symlink() {
         local final_bat_path="${SCRIPT_DIR}/claude-notifications.bat"
         local bat_path="${final_bat_path}.tmp.$$"
 
+        guard_install_paths "$bat_path" "$final_bat_path"
         # Remove old .bat file if exists
         rm -f "$bat_path" 2>/dev/null || true
 
@@ -1102,7 +1215,7 @@ EOF
     # Unix: create symlink or copy
     local final_symlink_path="${SCRIPT_DIR}/claude-notifications"
     local symlink_path="${final_symlink_path}.tmp.$$"
-
+    guard_install_paths "$final_symlink_path" "$symlink_path"
     # Remove old symlink if exists
     rm -f "$symlink_path" 2>/dev/null || true
 
@@ -1144,6 +1257,7 @@ configure_windows_native_hooks() {
     fi
 
     local tmp_hooks="${hooks_path}.tmp.$$"
+    guard_install_paths "$hooks_path" "$tmp_hooks"
     if printf '%s\n' "$hooks_json" > "$tmp_hooks" 2>/dev/null && mv "$tmp_hooks" "$hooks_path" 2>/dev/null; then
         echo -e "${GREEN}✓${NC} Windows exec-form hooks configured"
         echo -e "${YELLOW}  Restart Claude Code to apply the Windows hook update.${NC}"
@@ -1157,6 +1271,8 @@ configure_windows_native_hooks() {
 
 # Cleanup temporary files
 cleanup() {
+    [ -e "$CHECKSUMS_PATH" ] || return 0
+    guard_install_paths "$CHECKSUMS_PATH"
     rm -f "$CHECKSUMS_PATH" 2>/dev/null || true
 }
 
@@ -1174,6 +1290,8 @@ download_terminal_notifier_modern() {
 
     echo ""
     echo -e "${BLUE}📦 Installing ClaudeNotifier (modern notifications + click-to-focus)...${NC}"
+
+    guard_install_paths "$MODERN_APP" "$TEMP_ZIP"
 
     local attempt=1
     local downloaded=false
@@ -1201,6 +1319,7 @@ download_terminal_notifier_modern() {
 
     if [ "$downloaded" != true ]; then
         echo -e "${YELLOW}⚠ Could not download ClaudeNotifier, falling back to legacy${NC}"
+        guard_install_paths "$TEMP_ZIP"
         rm -f "$TEMP_ZIP" 2>/dev/null
         return 1
     fi
@@ -1208,17 +1327,21 @@ download_terminal_notifier_modern() {
     # Verify zip
     if ! unzip -t "$TEMP_ZIP" &>/dev/null; then
         echo -e "${YELLOW}⚠ Downloaded file is not a valid zip, falling back to legacy${NC}"
+        guard_install_paths "$TEMP_ZIP"
         rm -f "$TEMP_ZIP"
         return 1
     fi
 
     # Extract
+    guard_install_paths "$MODERN_APP" "$TEMP_ZIP"
     if ! unzip -o -q "$TEMP_ZIP" -d "${SCRIPT_DIR}/" 2>&1; then
         echo -e "${YELLOW}⚠ Could not extract ClaudeNotifier${NC}"
+        guard_install_paths "$TEMP_ZIP"
         rm -f "$TEMP_ZIP"
         return 1
     fi
 
+    guard_install_paths "$TEMP_ZIP"
     rm -f "$TEMP_ZIP"
 
     # Verify extraction
@@ -1237,6 +1360,7 @@ download_terminal_notifier_modern() {
         return 0
     else
         echo -e "${YELLOW}⚠ ClaudeNotifier extraction incomplete, falling back to legacy${NC}"
+        guard_install_paths "$MODERN_APP"
         rm -rf "$MODERN_APP" 2>/dev/null
         return 1
     fi
@@ -1258,6 +1382,8 @@ download_terminal_notifier() {
     echo -e "${BLUE}📦 Installing terminal-notifier (click-to-focus support)...${NC}"
 
     # Download with retry
+    guard_install_paths "$NOTIFIER_APP" "$TEMP_ZIP"
+
     local attempt=1
     local downloaded=false
 
@@ -1284,6 +1410,7 @@ download_terminal_notifier() {
 
     if [ "$downloaded" != true ]; then
         echo -e "${YELLOW}⚠ Could not download terminal-notifier (click-to-focus will be disabled)${NC}"
+        guard_install_paths "$TEMP_ZIP"
         rm -f "$TEMP_ZIP" 2>/dev/null
         return 1
     fi
@@ -1291,18 +1418,22 @@ download_terminal_notifier() {
     # Verify zip file is valid before extracting
     if ! unzip -t "$TEMP_ZIP" &>/dev/null; then
         echo -e "${YELLOW}⚠ Downloaded file is not a valid zip (click-to-focus will be disabled)${NC}"
+        guard_install_paths "$TEMP_ZIP"
         rm -f "$TEMP_ZIP"
         return 1
     fi
 
     # Extract (-o to overwrite without prompting)
+    guard_install_paths "$NOTIFIER_APP" "$TEMP_ZIP"
     if ! unzip -o -q "$TEMP_ZIP" -d "${SCRIPT_DIR}/" 2>&1; then
         echo -e "${YELLOW}⚠ Could not extract terminal-notifier${NC}"
+        guard_install_paths "$TEMP_ZIP"
         rm -f "$TEMP_ZIP"
         return 1
     fi
 
     # Cleanup
+    guard_install_paths "$TEMP_ZIP"
     rm -f "$TEMP_ZIP"
 
     # Verify extraction
@@ -1311,6 +1442,7 @@ download_terminal_notifier() {
         return 0
     else
         echo -e "${YELLOW}⚠ terminal-notifier extraction incomplete${NC}"
+        guard_install_paths "$NOTIFIER_APP"
         rm -rf "$NOTIFIER_APP" 2>/dev/null
         return 1
     fi
@@ -1336,6 +1468,9 @@ create_claude_notifications_app() {
 
     echo -e "${BLUE}🎨 Creating ClaudeNotifications.app (notification icon)...${NC}"
 
+    guard_install_paths "$APP_DIR" "${TMPDIR:-${TEMP:-/tmp}}/claude-$$.iconset" \
+        "$APP_DIR/Contents/Info.plist" "$APP_DIR/Contents/MacOS/claude-notify" \
+        "$APP_DIR/Contents/Resources/AppIcon.icns"
     # Create app structure
     mkdir -p "$APP_DIR/Contents/MacOS"
     mkdir -p "$APP_DIR/Contents/Resources"
@@ -1356,15 +1491,19 @@ create_claude_notifications_app() {
     cp "$ICON_SRC" "$ICONSET_DIR/icon_512x512.png" >/dev/null 2>&1
 
     # Convert to icns
+    guard_install_paths "$APP_DIR/Contents/Resources/AppIcon.icns"
     if ! iconutil -c icns "$ICONSET_DIR" -o "$APP_DIR/Contents/Resources/AppIcon.icns" 2>/dev/null; then
         echo -e "${YELLOW}⚠ Could not create app icon${NC}"
+        guard_install_paths "$ICONSET_DIR" "$APP_DIR"
         rm -rf "$ICONSET_DIR" "$APP_DIR"
         return 1
     fi
 
+    guard_install_paths "$ICONSET_DIR"
     rm -rf "$ICONSET_DIR"
 
     # Create Info.plist
+    guard_install_paths "$APP_DIR/Contents/Info.plist"
     cat > "$APP_DIR/Contents/Info.plist" << 'PLIST_EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1389,6 +1528,7 @@ create_claude_notifications_app() {
 PLIST_EOF
 
     # Create minimal executable
+    guard_install_paths "$APP_DIR/Contents/MacOS/claude-notify"
     cat > "$APP_DIR/Contents/MacOS/claude-notify" << 'EXEC_EOF'
 #!/bin/bash
 exit 0
@@ -1444,16 +1584,19 @@ setup_iterm2_venv() {
     echo ""
     echo -e "${BLUE}  Setting up iTerm2 tmux -CC support...${NC}"
 
+    guard_install_paths "$VENV_DIR"
     if ! "$python3_path" -m venv "$VENV_DIR" 2>/dev/null; then
         echo -e "${YELLOW}  ⚠ Could not create Python venv, skipping${NC}"
         return 0
     fi
 
+    guard_install_paths "$VENV_DIR"
     if "$VENV_DIR/bin/pip" install --quiet iterm2 2>/dev/null; then
         echo -e "${GREEN}  ✓${NC} iTerm2 Python API support installed"
         echo -e "${BLUE}    Enable 'Python API' in iTerm2 → Settings → General → Magic${NC}"
     else
         echo -e "${YELLOW}  ⚠ Could not install iterm2 module${NC}"
+        guard_install_paths "$VENV_DIR"
         rm -rf "$VENV_DIR" 2>/dev/null
     fi
 }
@@ -1535,6 +1678,7 @@ install_gnome_activate_window_extension() {
 
     echo -e "${BLUE}   Downloading extension...${NC}"
 
+    guard_install_paths "$temp_zip"
     local downloaded=false
     attempt=1
 
@@ -1561,6 +1705,7 @@ install_gnome_activate_window_extension() {
 
     if [ "$downloaded" != true ]; then
         echo -e "${YELLOW}⚠ Could not download extension (click-to-focus will be disabled)${NC}"
+        guard_install_paths "$temp_zip"
         rm -f "$temp_zip" 2>/dev/null
         return 1
     fi
@@ -1568,12 +1713,15 @@ install_gnome_activate_window_extension() {
     # Install using gnome-extensions
     echo -e "${BLUE}   Installing extension...${NC}"
 
+    guard_install_paths "${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/$EXTENSION_UUID"
     if ! gnome-extensions install --force "$temp_zip" 2>/dev/null; then
         echo -e "${YELLOW}⚠ Could not install extension${NC}"
+        guard_install_paths "$temp_zip"
         rm -f "$temp_zip"
         return 1
     fi
 
+    guard_install_paths "$temp_zip"
     rm -f "$temp_zip"
 
     # Enable the extension
@@ -1607,6 +1755,7 @@ install_linux_notification_desktop_entry() {
         return 1
     fi
 
+    guard_install_paths "$desktop_file" "$tmp_file"
     cat > "$tmp_file" << EOF
 [Desktop Entry]
 Name=Agent Notifications
@@ -1649,7 +1798,7 @@ stage_and_promote_runtime() (
     # The trap must still know which disposable staging directory to remove.
     stage=''
     stage=$(mktemp -d "$SCRIPT_DIR/.install-stage.XXXXXX") || exit 1
-    trap 'rm -rf "$stage"' EXIT
+    trap 'rm -rf "$stage"; cleanup_install_config' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
 
@@ -1658,6 +1807,9 @@ stage_and_promote_runtime() (
     detect_platform
     download_and_verify_binary || exit 1
     verify_executable || exit 1
+
+    # A verified new binary supplies the protocol even on fresh/old installs.
+    INSTALL_CONFIG_HELPER="$BINARY_PATH"
 
     if [ "$PLATFORM" = "darwin" ]; then
         if ! [ -x "$live_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ] &&
@@ -1671,6 +1823,7 @@ stage_and_promote_runtime() (
                 esac
                 # Only an unusable bundle can be displaced here. A valid live
                 # notifier never has a rename gap, including during SIGKILL.
+                guard_install_paths "$live_dir/$app"
                 if [ -e "$live_dir/$app" ]; then
                     mv "$live_dir/$app" "$stage/old-$app" || exit 1
                 fi
@@ -1682,6 +1835,7 @@ stage_and_promote_runtime() (
         if ! [ -x "$live_dir/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern" ] &&
            [ -x "$live_dir/terminal-notifier.app/Contents/MacOS/terminal-notifier" ] &&
            { [ -e "$live_dir/ClaudeNotifier.app" ] || [ -L "$live_dir/ClaudeNotifier.app" ]; }; then
+            guard_install_paths "$live_dir/ClaudeNotifier.app"
             mv "$live_dir/ClaudeNotifier.app" "$stage/unusable-ClaudeNotifier.app" || exit 1
         fi
     elif [ "$PLATFORM" = "windows" ]; then
@@ -1691,6 +1845,7 @@ stage_and_promote_runtime() (
         BINARY_PATH="$FOCUS_HANDLER_PATH"
         download_and_verify_binary || exit 1
         chmod +x "$BINARY_PATH" || exit 1
+        guard_install_paths "$live_dir/$BINARY_NAME"
         mv -f "$BINARY_PATH" "$live_dir/$BINARY_NAME" || exit 1
         BINARY_NAME="$main_name"
         BINARY_PATH="$main_path"
@@ -1698,6 +1853,7 @@ stage_and_promote_runtime() (
         install_linux_notification_desktop_entry || exit 1
     fi
 
+    guard_install_paths "$live_binary"
     mv -f "$BINARY_PATH" "$live_binary" || exit 1
 )
 
@@ -1720,10 +1876,6 @@ main() {
         exit 1
     fi
 
-    if ! acquire_lock; then
-        exit 1
-    fi
-
     # Detect platform
     detect_platform
     echo -e "${BLUE}Platform:${NC} ${PLATFORM}-${ARCH}"
@@ -1739,6 +1891,8 @@ main() {
             return 1
         fi
     fi
+
+    acquire_lock || return 1
 
     # Check if already installed
     if check_existing; then
@@ -1788,6 +1942,7 @@ main() {
         fi
 
         # Verify existing binary still works
+        guard_install_paths "$BINARY_PATH"
         if ! verify_executable; then
             echo -e "${RED}✗ Existing binary is corrupted or incompatible${NC}" >&2
             echo -e "${YELLOW}Please restore network access to download a fresh binary.${NC}" >&2
