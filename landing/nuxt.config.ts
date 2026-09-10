@@ -1,20 +1,39 @@
+import { supportedLocales } from "./data/i18n";
+
+const baseURL = process.env.NUXT_APP_BASE_URL || "/agent-notifications/";
+const siteUrl =
+  process.env.NUXT_PUBLIC_SITE_URL ||
+  "https://777genius.github.io/agent-notifications";
+const siteOrigin = new URL(siteUrl).origin;
+
 export default defineNuxtConfig({
   compatibilityDate: "2026-09-09",
   devtools: { enabled: false },
   app: {
-    baseURL: process.env.NUXT_APP_BASE_URL || "/agent-notifications/",
+    baseURL,
     head: {
-      title: "Agent Notifications — Stay in flow",
-      htmlAttrs: { lang: "en" },
-      meta: [
-        {
-          name: "description",
-          content:
-            "Desktop notifications for Claude Code and Codex CLI beta. Know when work finishes, a question needs you, or something goes wrong.",
-        },
-      ],
+      title: "Agent Notifications",
     },
   },
+  modules: ["@nuxtjs/i18n"],
   css: ["~/assets/main.css"],
-  nitro: { preset: "static" },
+  nitro: {
+    preset: "static",
+    prerender: { routes: ["/", "/zh/"] },
+  },
+  i18n: {
+    restructureDir: ".",
+    locales: [...supportedLocales],
+    defaultLocale: "en",
+    strategy: "prefix_except_default",
+    langDir: "locales",
+    baseUrl: siteOrigin,
+    detectBrowserLanguage: {
+      useCookie: true,
+      cookieKey: "agent_notifications_locale",
+      redirectOn: "root",
+      alwaysRedirect: false,
+      fallbackLocale: "en",
+    },
+  },
 });
