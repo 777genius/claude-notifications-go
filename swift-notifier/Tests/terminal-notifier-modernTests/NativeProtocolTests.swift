@@ -80,7 +80,7 @@ final class NativeProtocolTests: XCTestCase {
         XCTAssertNoThrow(try NativeCodec.decodeCapabilities(data))
         XCTAssertThrowsError(try NativeCodec.decodeCapabilities(Data("{}".utf8)))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(object["actionKinds"] as? [String], ["none"])
+        XCTAssertEqual(object["actionKinds"] as? [String], ["none", "desktop_thread_v1"])
         XCTAssertEqual(object["explicitFeatureEnabledByDefault"] as? Bool, false)
     }
     func testRepositoryWireFixtures() throws {

@@ -31,15 +31,32 @@ private final class StructuredUNBackend: NativeBackend {
         }
     }
     func add(_ request: NativeRequest, completion: @escaping (Bool) -> Void) {
+        let content: UNMutableNotificationContent
+        do { content = try StructuredNotificationContent.make(request) }
+        catch { completion(false); return }
+        if case .desktopThread = request.action { NotificationCategory.register() }
+        center.add(UNNotificationRequest(identifier: request.correlationID, content: content, trigger: nil)) { error in
+            DispatchQueue.main.async { completion(error == nil) }
+        }
+    }
+}
+
+enum StructuredNotificationContent {
+    static func make(_ request: NativeRequest) throws -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = request.title
         content.body = request.body
         content.subtitle = request.subtitle ?? ""
         content.sound = request.silent ? nil : .default
-        // PR1 supports no navigation. No legacy action, shell, category or route.
-        center.add(UNNotificationRequest(identifier: request.correlationID, content: content, trigger: nil)) { error in
-            DispatchQueue.main.async { completion(error == nil) }
+        if case .desktopThread(let action) = request.action {
+            try action.validate()
+            guard action.correlationID == request.correlationID else { throw NativeReason.malformed_request }
+            guard let data = try? JSONEncoder().encode(action),
+                  let json = String(data: data, encoding: .utf8) else { throw NativeReason.malformed_request }
+            content.userInfo = ["desktop_thread_v1": json]
+            content.categoryIdentifier = NotificationCategory.categoryIdentifier
         }
+        return content
     }
 }
 

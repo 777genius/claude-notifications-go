@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Native PR1 protocol",
+  "title": "Native protocol v1 with PR3 desktop action",
   "description": "Choose a $defs schema. Runtime also checks UTF-8 byte limits, duplicates, controls, boot deadline and filename correlation. Entire wire request <=16384 bytes.",
   "$defs": {
     "request": {
@@ -64,7 +64,14 @@
           ]
         },
         "action": {
-          "const": "none"
+          "oneOf": [
+            {
+              "const": "none"
+            },
+            {
+              "$ref": "#/$defs/desktop_thread_v1"
+            }
+          ]
         },
         "silent": {
           "type": "boolean"
@@ -193,7 +200,8 @@
         },
         "actionKinds": {
           "const": [
-            "none"
+            "none",
+            "desktop_thread_v1"
           ]
         },
         "receiptSupport": {
@@ -204,6 +212,53 @@
         },
         "explicitFeatureEnabledByDefault": {
           "const": false
+        }
+      }
+    },
+    "desktop_thread_v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "schemaVersion",
+        "threadID",
+        "routeKind",
+        "bundleID",
+        "teamID",
+        "applicationPath",
+        "correlationID"
+      ],
+      "properties": {
+        "type": {
+          "const": "desktop_thread_v1"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "threadID": {
+          "type": "string",
+          "minLength": 1,
+          "description": "1..256 UTF-8 bytes; single line; no Cc controls; not . or ..; encoded as a single URI path segment without normalization."
+        },
+        "routeKind": {
+          "const": "codex_thread"
+        },
+        "bundleID": {
+          "const": "com.openai.codex"
+        },
+        "teamID": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{10}$"
+        },
+        "applicationPath": {
+          "type": "string",
+          "pattern": "^/.*\\.app$",
+          "description": "Canonical configured location; <=4096 UTF-8 bytes; no Cc or line separators."
+        },
+        "correlationID": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Must equal enclosing request correlationID / notification identifier."
         }
       }
     }
