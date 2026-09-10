@@ -115,53 +115,84 @@ func rememberStoreLock(ctx context.Context, f *os.File) error {
 
 func beginMutation(ctx context.Context, env EnvSnapshot) (*mutation, error) {
 	ctx = context.WithValue(ctx, heldStoreLocksKey{}, &heldStoreLocks{})
+	guard := func() {}
+	guardHeld := false
+	home := env.Vars["HOME"]
+	if env.GOOS == "windows" {
+		home = env.Vars["USERPROFILE"]
+	}
+	acquireGuard := func(initial Selection) error {
+		if !validAbsolute(env.GOOS, home) {
+			return nil
+		}
+		physical, e := filepath.EvalSymlinks(home)
+		if e != nil {
+			if initial.Source != "explicit" {
+				return pathError(home, e)
+			}
+			return nil
+		}
+		guardPath := filepath.Join(physical, ".agent-notifications-config.lock")
+		if initial.Path != "" && sameStorePath(initial.Path, guardPath, env.GOOS) {
+			return &Error{Code: ConfigInvalid, Path: initial.Path}
+		}
+		parent, e := openStoreParent(physical, false)
+		if e != nil {
+			if initial.Source != "explicit" {
+				return pathError(home, e)
+			}
+			return nil
+		}
+		release, e := parent.lock(ctx, ".agent-notifications-config.lock", false, true)
+		if e != nil {
+			parent.close()
+			_, guardStatErr := os.Lstat(guardPath)
+			if initial.Source != "explicit" || !portableGuardUnavailable(e) || !os.IsNotExist(guardStatErr) {
+				return pathError(home, e)
+			}
+			return nil
+		}
+		guard = func() { release(); parent.close() }
+		guardHeld = true
+		return nil
+	}
+
+	// Windows publishes newly private directories with MoveFileEx. A concurrent
+	// os.ReadDir can receive ERROR_SHARING_VIOLATION while that rename owns its
+	// transient DELETE handle (Go's directory open does not share DELETE). For
+	// the guard path is known from USERPROFILE alone, so serialize resolution
+	// before any directory enumeration. A portable explicit target keeps the
+	// existing target-lock fallback when USERPROFILE cannot host the guard.
+	if env.GOOS == "windows" {
+		preselection := Selection{}
+		if override, explicit := env.Vars[OverrideEnv]; explicit {
+			// Resolve owns override validation. In particular, an invalid override
+			// must remain a side-effect-free error and must not publish a guard.
+			if !validAbsolute(env.GOOS, override) {
+				return nil, &Error{Code: ConfigOverrideInvalid}
+			}
+			preselection = Selection{Path: cleanPath(env.GOOS, override), Source: "explicit"}
+		}
+		if err := acquireGuard(preselection); err != nil {
+			return nil, err
+		}
+	}
 	initial, err := Resolve(env)
 	if err != nil {
 		var ce *Error
 		if !errors.As(err, &ce) || ce.Code != ConfigRecoveryRequired {
+			guard()
 			return nil, err
 		}
 		// A live initializer may own these artifacts. Classify only after locks.
 	}
 	if err := validateStoreTarget(initial.Path); err != nil {
+		guard()
 		return nil, err
 	}
-	guard := func() {}
-	home := env.Vars["HOME"]
-	if env.GOOS == "windows" {
-		home = env.Vars["USERPROFILE"]
-	}
-	if validAbsolute(env.GOOS, home) {
-		physical, e := filepath.EvalSymlinks(home)
-		if e == nil {
-			guardPath := filepath.Join(physical, ".agent-notifications-config.lock")
-			if sameStorePath(initial.Path, guardPath, env.GOOS) {
-				return nil, &Error{Code: ConfigInvalid, Path: initial.Path}
-			}
-			parent, e := openStoreParent(physical, false)
-			if e != nil {
-				if initial.Source != "explicit" {
-					return nil, pathError(home, e)
-				}
-				// An unusable HOME cannot host automatic cooperating writes.
-				// Explicit portable targets retain their own physical lock.
-			} else {
-				release, e := parent.lock(ctx, ".agent-notifications-config.lock", false, true)
-				if e != nil {
-					parent.close()
-					// A read-only HOME cannot participate in automatic writes.
-					// Portable explicit targets can still use their target lock;
-					// timeout and unsafe-lock failures must never bypass the guard.
-					_, guardStatErr := os.Lstat(guardPath)
-					if initial.Source != "explicit" || !portableGuardUnavailable(e) || !os.IsNotExist(guardStatErr) {
-						return nil, pathError(home, e)
-					}
-				} else {
-					guard = func() { release(); parent.close() }
-				}
-			}
-		} else if initial.Source != "explicit" {
-			return nil, pathError(home, e)
+	if !guardHeld {
+		if err := acquireGuard(initial); err != nil {
+			return nil, err
 		}
 	}
 	fail := func(e error) (*mutation, error) { guard(); return nil, e }

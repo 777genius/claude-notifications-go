@@ -134,6 +134,73 @@ func TestWindowsManagedReaderWaits(t *testing.T) {
 		t.Fatal("reader did not resume")
 	}
 }
+
+func TestWindowsInitDefersResolveSharingViolationToGuard(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		name := "automatic"
+		if explicit {
+			name = "explicit"
+		}
+		t.Run(name, func(t *testing.T) {
+			env := storeEnv(t)
+			if explicit {
+				env.Vars[OverrideEnv] = filepath.Join(env.Vars["USERPROFILE"], "explicit.json")
+			}
+			originalReadDir := env.ReadDir
+			calls := 0
+			env.ReadDir = func(path string) ([]os.DirEntry, error) {
+				calls++
+				if calls == 1 {
+					// Model os.ReadDir colliding with the transient DELETE handle held
+					// by another initializer's MoveFileEx directory publication.
+					return nil, windows.ERROR_SHARING_VIOLATION
+				}
+				if calls == 2 {
+					guardPath := filepath.Join(env.Vars["USERPROFILE"], ".agent-notifications-config.lock")
+					f, err := winOpen(guardPath, windows.GENERIC_READ|windows.GENERIC_WRITE, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, false)
+					if err != nil {
+						t.Fatalf("selection guard was not published before Resolve: %v", err)
+					}
+					defer f.Close()
+					var ov windows.Overlapped
+					err = windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &ov)
+					if !errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+						if err == nil {
+							_ = windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, &ov)
+						}
+						t.Fatalf("Resolve ran without the selection guard held: %v", err)
+					}
+				}
+				return originalReadDir(path)
+			}
+			_, err := EnsureInitialized(context.Background(), InitRequest{Env: env})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls < 2 {
+				t.Fatal("initial sharing violation was not resolved again under the guard")
+			}
+		})
+	}
+}
+
+func TestWindowsInvalidOverrideDoesNotPublishGuard(t *testing.T) {
+	env := storeEnv(t)
+	env.Vars[OverrideEnv] = `relative\config.json`
+	_, err := EnsureInitialized(context.Background(), InitRequest{Env: env})
+	var ce *Error
+	if !errors.As(err, &ce) || ce.Code != ConfigOverrideInvalid {
+		t.Fatalf("invalid override: %v", err)
+	}
+	entries, err := os.ReadDir(env.Vars["USERPROFILE"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("invalid override created %v", entries)
+	}
+}
+
 func TestWindowsPrivateCreationAndACLReplacement(t *testing.T) {
 	env := storeEnv(t)
 	r, e := EnsureInitialized(context.Background(), InitRequest{Env: env})
