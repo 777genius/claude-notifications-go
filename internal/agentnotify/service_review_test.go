@@ -1,4 +1,6 @@
-// Review-only Go overlay. Never installed into the production package on disk.
+//go:build linux || darwin
+
+// Regression cases retained from independent service review.
 package agentnotify
 
 import (
