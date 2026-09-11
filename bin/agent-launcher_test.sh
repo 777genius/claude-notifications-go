@@ -17,10 +17,24 @@ BINARY_PATH="$SCRIPT_DIR/$BINARY_NAME"
 printf '#!/bin/sh\nprintf "fixture-binary\\n"\n' > "$BINARY_PATH"
 chmod +x "$BINARY_PATH"
 create_symlink
-[ "$(readlink "$SCRIPT_DIR/agent-notifications")" = "$BINARY_NAME" ]
-[ "$(readlink "$SCRIPT_DIR/claude-notifications")" = "$BINARY_NAME" ]
-[ "$("$SCRIPT_DIR/agent-notifications")" = fixture-binary ]
-[ "$("$SCRIPT_DIR/claude-notifications")" = fixture-binary ]
+for name in agent-notifications claude-notifications; do
+    launcher="$SCRIPT_DIR/$name"
+    if [ -L "$launcher" ]; then
+        [ "$(readlink "$launcher")" = "$BINARY_NAME" ]
+    else
+        # Git Bash may implement ln as a copy when native symlinks are disabled.
+        # The installer also explicitly supports copying on such filesystems.
+        [ -f "$launcher" ]
+        cmp -s "$BINARY_PATH" "$launcher"
+    fi
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            # This fixture is a POSIX script, not a native Windows executable.
+            [ "$(sh "$launcher")" = fixture-binary ]
+            ;;
+        *) [ "$("$launcher")" = fixture-binary ] ;;
+    esac
+done
 PLATFORM=windows
 BINARY_NAME=claude-notifications-windows-amd64.exe
 create_symlink
