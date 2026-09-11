@@ -27,6 +27,7 @@ type focusInfo struct {
 	windowTitle   string
 	wezTermPaneID string
 	wezTermSocket string
+	warpFocusURL  string
 }
 
 // Server is the notification daemon server
@@ -288,6 +289,7 @@ func (s *Server) handleNotification(req *NotifyRequest) (*NotifyResponse, error)
 		windowTitle:   req.FocusWindowTitle,
 		wezTermPaneID: req.FocusWezTermPaneID,
 		wezTermSocket: req.FocusWezTermSocket,
+		warpFocusURL:  req.FocusWarpURL,
 	}
 	s.focusCtxMu.Unlock()
 
@@ -318,6 +320,7 @@ func (s *Server) onActionInvoked(sig *notify.ActionInvokedSignal) {
 	focusWindowTitle := info.windowTitle
 	wezTermPaneID := info.wezTermPaneID
 	wezTermSocket := info.wezTermSocket
+	warpFocusURL := info.warpFocusURL
 
 	if !exists {
 		log.Printf("[WARN] No focus context for notification %d", sig.ID)
@@ -325,9 +328,9 @@ func (s *Server) onActionInvoked(sig *notify.ActionInvokedSignal) {
 	}
 
 	// Attempt to focus
-	log.Printf("[INFO] Attempting to focus: %s (folder: %s, window_id: %s, window_title: %q, wezterm_pane: %s)",
-		focusTarget, focusFolder, focusWindowID, focusWindowTitle, wezTermPaneID)
-	if err := TryFocusWithHints(focusTarget, focusFolder, focusWindowID, focusWindowTitle, wezTermPaneID, wezTermSocket); err != nil {
+	log.Printf("[INFO] Attempting to focus: %s (folder: %s, window_id: %s, window_title: %q, wezterm_pane: %s, warp_url: %s)",
+		focusTarget, focusFolder, focusWindowID, focusWindowTitle, wezTermPaneID, warpFocusURL)
+	if err := TryFocusWithHints(focusTarget, focusFolder, focusWindowID, focusWindowTitle, wezTermPaneID, wezTermSocket, warpFocusURL); err != nil {
 		log.Printf("[ERROR] Focus failed: %v", err)
 	} else {
 		log.Printf("[INFO] Focus succeeded")

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Warp: exact pane/chat click-to-focus** — notification clicks open Warp's session deep link (`WARP_FOCUS_URL` / `warp://session/<uuid>`) so the originating window, tab, and pane (including the agent chat in that pane) come to the front. Falls back to the previous AXTitle `focus-window` path when the URL is absent or Warp cannot resolve it. Also works on Linux (`xdg-open`) and Windows (toast protocol), and composes with tmux/zellij inside Warp.
+
+### Fixed
+- Ignore inherited `WARP_FOCUS_URL` in Cursor/VS Code launched from Warp so notification clicks stay on the editor instead of stealing focus back to Warp.
+
 ## [1.42.0] - 2026-09-11
 
 ### Added

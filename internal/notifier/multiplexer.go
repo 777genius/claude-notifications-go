@@ -36,7 +36,7 @@ func detectMultiplexerArgs(title, message, bundleID string) ([]string, string) {
 			logging.Debug("%s detected but buildArgs failed: %v", mux.name, err)
 			return nil, mux.name
 		}
-		return args, mux.name
+		return injectWarpFocusURL(args), mux.name
 	}
 	return nil, ""
 }

@@ -33,14 +33,17 @@ Auto-detects your terminal via `TERM_PROGRAM` / `__CFBundleIdentifier`. Uses `te
 | Ghostty | Exact tab focus via Ghostty AppleScript, with AXDocument retry fallback |
 | VS Code / Insiders / Cursor | AXTitle via focus-window subcommand |
 | iTerm2 | Exact tab/pane targeting via iTerm2 Python API when available, otherwise app-level iTerm activation |
-| Warp, kitty, WezTerm, Alacritty, Hyper, Apple Terminal | AXTitle via focus-window subcommand |
+| Warp | Exact window/tab/pane via `WARP_FOCUS_URL` (`open warp://session/<uuid>`) when the hook ran inside Warp, with AXTitle `focus-window` fallback on older Warp. Cursor/VS Code launched from Warp keep editor focus. |
+| kitty, WezTerm, Alacritty, Hyper, Apple Terminal | AXTitle via focus-window subcommand |
 | Any other (custom `terminalBundleId`) | AXTitle via focus-window subcommand |
 
 To find your terminal's bundle ID: `osascript -e 'id of app "YourTerminal"'`
 
 ### Permissions
 
-All terminals with click-to-focus may require up to two permissions for window-level focus:
+Warp session deep links (`WARP_FOCUS_URL`) do not need Accessibility or Screen Recording — Warp handles window/tab/pane focus itself.
+
+All other terminals with click-to-focus may require up to two permissions for window-level focus:
 
 - **Accessibility** — to enumerate and raise the correct window via the AX API
 - **Screen Recording** — to read window titles across Spaces (macOS 10.15+)
@@ -58,15 +61,17 @@ Uses a background D-Bus daemon. Auto-detects terminal and compositor.
 | Terminal | Supported compositors |
 |----------|----------------------|
 | VS Code | GNOME, KDE, Sway, X11 |
+| Warp | GNOME, KDE, Sway, X11 — exact pane via `WARP_FOCUS_URL` |
 | GNOME Terminal, Konsole, Alacritty, kitty, WezTerm, Tilix, Terminator, XFCE4 Terminal, MATE Terminal | GNOME, KDE, Sway, X11 |
 | Any other | Fallback by name |
 
 Focus methods (tried in order):
 
-1. **GNOME**: `activate-window-by-title` extension, Shell Eval, FocusApp (GNOME 45+)
-2. **Sway / wlroots**: `wlrctl`
-3. **KDE Plasma**: `kdotool`
-4. **X11** (XFCE, MATE, Cinnamon, i3, bspwm): `xdotool`
+1. **Warp**: `xdg-open` of `$WARP_FOCUS_URL` (`warp://session/<uuid>`) when the hook ran inside Warp
+2. **GNOME**: `activate-window-by-title` extension, Shell Eval, FocusApp (GNOME 45+)
+3. **Sway / wlroots**: `wlrctl`
+4. **KDE Plasma**: `kdotool`
+5. **X11** (XFCE, MATE, Cinnamon, i3, bspwm): `xdotool`
 
 Falls back to standard notifications if no focus tool is available.
 
@@ -89,7 +94,7 @@ Review the file before sharing it publicly, because it may include local paths a
 
 ## Multiplexers
 
-On both macOS and Linux, click-to-focus supports **tmux**, **zellij**, **WezTerm**, and **kitty** — clicking a notification switches to the correct session/pane/tab.
+On both macOS and Linux, click-to-focus supports **tmux**, **zellij**, **WezTerm**, and **kitty** — clicking a notification switches to the correct session/pane/tab. Inside Warp, the Warp session URL is opened first so the right Warp window/tab is raised, then the multiplexer target is selected.
 
 ### iTerm2 + tmux Control Mode (-CC)
 
@@ -120,7 +125,7 @@ If the Python API is not available, the plugin falls back to standard `tmux sele
 
 ## Windows
 
-Clicking a notification raises the terminal **window** that started the task. Enabled by the same `clickToFocus` flag; no extra configuration.
+Clicking a notification raises the terminal **window** that started the task. Enabled by the same `clickToFocus` flag; no extra configuration. In Warp, the toast also carries `WARP_FOCUS_URL`, and the click handler opens that session deep link first so the originating tab/pane is selected before the generic HWND fallback.
 
 How it works (no admin rights, no COM server):
 

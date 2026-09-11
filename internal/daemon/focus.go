@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/777genius/agent-notifications/internal/warpfocus"
 )
 
 // FocusMethod represents a method for focusing a window
@@ -34,21 +36,24 @@ func GetFocusMethods() []FocusMethod {
 	}
 }
 
+var openFocusURL = warpfocus.Open
+
 // TryFocus attempts to focus a window using available tools.
 // folderName is the project folder name used for title-based window search (may be empty).
 // It tries each method in order until one succeeds.
 func TryFocus(terminalName, folderName string) error {
-	return TryFocusWithHints(terminalName, folderName, "", "", "", "")
+	return TryFocusWithHints(terminalName, folderName, "", "", "", "", "")
 }
 
 // TryFocusWithWindowID preserves the previous API for callers that only have an exact X11 window ID.
 func TryFocusWithWindowID(terminalName, folderName, windowID string) error {
-	return TryFocusWithHints(terminalName, folderName, windowID, "", "", "")
+	return TryFocusWithHints(terminalName, folderName, windowID, "", "", "", "")
 }
 
 // TryFocusWithHints attempts exact focus using hook-time hints first, then falls back to
 // compositor-specific methods.
 // wezTermPaneID and wezTermSocket enable tab-level focus for WezTerm.
+// warpFocusURL is a Warp session deep link that focuses the originating window/tab/pane.
 //
 // For WezTerm, window-level focus runs first, then the pane switch runs after a short
 // delay. This ordering matters: GNOME's XDG Activation Token is processed asynchronously
@@ -56,7 +61,13 @@ func TryFocusWithWindowID(terminalName, folderName, windowID string) error {
 // switch runs first. Running the pane switch last ensures it wins.
 // If all window-level methods fail but a pane ID is available, TryWezTermPane is tried
 // as a last resort (activate-pane also raises the window on WezTerm).
-func TryFocusWithHints(terminalName, folderName, windowID, windowTitle, wezTermPaneID, wezTermSocket string) error {
+func TryFocusWithHints(terminalName, folderName, windowID, windowTitle, wezTermPaneID, wezTermSocket, warpFocusURL string) error {
+	if url := warpfocus.Normalize(warpFocusURL); url != "" {
+		if err := openFocusURL(url); err == nil {
+			return nil
+		}
+	}
+
 	wezTermPaneID, wezTermSocket = normalizeWezTermFocusHints(terminalName, wezTermPaneID, wezTermSocket)
 	windowFocused := false
 	var exactErr, lastErr error

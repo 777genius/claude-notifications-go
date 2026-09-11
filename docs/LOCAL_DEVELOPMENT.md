@@ -153,6 +153,13 @@ What to verify manually:
 2. Clicking it focuses the exact Claude terminal/window that triggered the hook.
 3. On Linux, verify it does not jump to a stale Terminator/X11 window.
 4. On macOS, verify the right app/window becomes frontmost.
+5. In Warp (v0.2026.05.27+): with two Warp tabs/panes, the click must land on the originating pane (and its agent chat), not merely bring Warp to the front. From a Warp pane:
+
+```bash
+scripts/warp-focus-check.sh notify
+```
+
+Then switch to another Warp tab and click the notification. `scripts/warp-focus-check.sh open` only checks Warp's URL handler, not the notification click path.
 
 ### Status / targeting
 

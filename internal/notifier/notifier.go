@@ -347,12 +347,14 @@ func buildTerminalNotifierArgsWithOptions(title, message, bundleID, cwd, ghostty
 }
 
 // buildFocusScript returns the shell command for -execute in terminal-notifier.
+// For Warp: opens WARP_FOCUS_URL so Warp raises the originating window/tab/pane.
 // For Ghostty: uses AXDocument attribute (OSC 7 CWD) via Accessibility API,
 // falling back to plain app activation.
 // For all apps (including Electron editors and regular terminals): invokes the
 // binary's focus-window subcommand which uses CGS + AXTitle APIs to find and
 // raise the correct window across Spaces.
-// Returns "" when cwd is empty or unusable (caller should use -activate instead).
+// Returns "" when cwd is empty or unusable (caller should use -activate instead),
+// except Warp/iTerm2 session targeting which can work without cwd.
 func buildFocusScript(bundleID, cwd string) string {
 	return buildFocusScriptWithOptions(bundleID, cwd, "")
 }
@@ -360,6 +362,10 @@ func buildFocusScript(bundleID, cwd string) string {
 func buildFocusScriptWithOptions(bundleID, cwd, ghosttyTerminalID string) string {
 	if isIterm2BundleID(bundleID) {
 		return buildIterm2FocusScript(cwd)
+	}
+
+	if focusURL := warpFocusURL(); focusURL != "" {
+		return buildWarpFocusScript(focusURL, bundleID, cwd)
 	}
 
 	if isGhosttyBundleID(bundleID) {
