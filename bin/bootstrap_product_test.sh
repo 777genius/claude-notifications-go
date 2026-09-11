@@ -26,6 +26,46 @@ done
 for tag in v1.41.0 v0.99.0 v1.42.0-rc1 v01.42.0 v1.042.0 v1.42.00 v99999999999999999999.0.0 main; do
     if BOOTSTRAP_RELEASE_TAG="$tag" resolve_bootstrap_release; then exit 1; fi
 done
+# setup_marketplace self-heals a marketplace declared under a retired repo
+# name, but leaves an unrelated source conflict alone.
+(
+    # shellcheck disable=SC2034 # consumed by the sourced setup_marketplace
+    MARKETPLACE_SOURCE="new/repo"
+    # shellcheck disable=SC2034
+    MARKETPLACE_NAME="claude-notifications-go"
+    # shellcheck disable=SC2034
+    LEGACY_MARKETPLACE_REPOS="old/retired-repo"
+    config_preflight() { :; }
+    calls="$SANDBOX/marketplace-calls"; declared_repo="old/retired-repo"
+    claude() {
+        printf '%s\n' "$*" >> "$calls"
+        if [ "$1 $2 $3" = "plugin marketplace add" ]; then
+            if [ ! -f "$SANDBOX/marketplace-add-called" ]; then
+                touch "$SANDBOX/marketplace-add-called"
+                echo "Failed to add marketplace: its network source differs from the one declared for it in settings" >&2
+                return 1
+            fi
+            return 0
+        elif [ "$1 $2 $3" = "plugin marketplace list" ]; then
+            printf '[{"name":"claude-notifications-go","repo":"%s"}]\n' "$declared_repo"
+            return 0
+        elif [ "$1 $2 $3" = "plugin marketplace remove" ]; then
+            return 0
+        fi
+        return 0
+    }
+    : > "$calls"; rm -f "$SANDBOX/marketplace-add-called"
+    setup_marketplace
+    [ "$(grep -c '^plugin marketplace add' "$calls")" = 2 ] || { echo "expected retry add after self-heal"; exit 1; }
+    grep -q '^plugin marketplace remove claude-notifications-go$' "$calls" || { echo "expected self-heal remove"; exit 1; }
+
+    declared_repo="someone-else/unrelated-fork"
+    : > "$calls"; rm -f "$SANDBOX/marketplace-add-called"
+    setup_marketplace
+    [ "$(grep -c '^plugin marketplace add' "$calls")" = 1 ] || { echo "unrelated conflict must not retry add"; exit 1; }
+    if grep -q '^plugin marketplace remove' "$calls"; then echo "unrelated conflict must not self-heal"; exit 1; fi
+)
+echo "marketplace self-heal fixtures passed"
 # macOS resource refresh outside the cache must also protect explicit config.
 (
     PRODUCT=claude

@@ -2,6 +2,33 @@
 
 Common installation and runtime issues.
 
+## `Failed to add marketplace: ... its network source differs from the one declared for it in settings`
+
+### Symptom
+
+Running the installer to update fails during "Setting up marketplace..." with an error
+mentioning the marketplace's network source differing from what's declared in settings.
+
+### Why it happens
+
+You installed before the project's GitHub repository was renamed from `claude-notifications-go`
+to `agent-notifications`. Claude Code remembers which repo you originally added the marketplace
+from and refuses to silently switch it to a different one under the same name — that's a
+deliberate safety check, not a bug in Claude Code.
+
+### Fix
+
+The installer (`bin/bootstrap.sh`) detects this specific case and re-registers the marketplace
+automatically; your saved notification settings are not affected. If you're still seeing this
+error (e.g. from a cached copy of an older installer script), fix it manually and re-run the
+installer:
+
+```bash
+/plugin marketplace remove claude-notifications-go
+```
+
+then run the [installer](../README.md#quick-install-recommended) again.
+
 ## macOS: VS Code click-to-focus focuses the wrong window
 
 ### Symptom

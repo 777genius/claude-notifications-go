@@ -20,6 +20,13 @@ PLUGIN_NAME="claude-notifications-go"
 PLUGIN_KEY="${PLUGIN_NAME}@${MARKETPLACE_NAME}"
 INSTALL_SCRIPT_URL="${INSTALL_SCRIPT_URL:-https://raw.githubusercontent.com/${REPO}/main/bin/install.sh}"
 
+# Retired GitHub repo name(s) this marketplace was previously declared under.
+# Users who added the marketplace before a rename have this baked into their
+# settings; Claude Code refuses to silently re-point a declared marketplace
+# at a different source, so `marketplace add` fails for them. See
+# setup_marketplace() and docs/CLAUDE_PLUGIN_IDENTITY.md.
+LEGACY_MARKETPLACE_REPOS="777genius/claude-notifications-go"
+
 # Paths — CLAUDE_CONFIG_DIR is the official Claude Code env var;
 # CLAUDE_HOME is a legacy fallback; default to ~/.claude
 CLAUDE_HOME="${CLAUDE_CONFIG_DIR:-${CLAUDE_HOME:-$HOME/.claude}}"
@@ -163,6 +170,38 @@ print_iterm2_python_api_notice() {
 
 # ──────────────────────────────────────────────
 
+# Reports (on stdout) the repo currently declared in settings for
+# $MARKETPLACE_NAME, or nothing if it isn't declared / can't be read.
+# `marketplace list` only reads local state — no network calls.
+marketplace_declared_repo() {
+    local tmp
+    tmp=$(mktemp "${TMPDIR:-/tmp}/marketplace-list-XXXXXX") || return 1
+    claude plugin marketplace list --json </dev/null >"$tmp" 2>/dev/null
+    python3 -I - "$tmp" "$MARKETPLACE_NAME" <<'PY'
+import json, sys
+path, name = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as f:
+        entries = json.load(f)
+    for e in entries:
+        if e.get('name') == name and e.get('repo'):
+            print(e['repo'])
+            break
+except Exception:
+    pass
+PY
+    rm -f "$tmp"
+}
+
+# True if $1 (a repo slug) is one of our own retired marketplace sources.
+is_legacy_marketplace_repo() {
+    local repo="$1" candidate
+    for candidate in $LEGACY_MARKETPLACE_REPOS; do
+        [ "$repo" = "$candidate" ] && return 0
+    done
+    return 1
+}
+
 setup_marketplace() {
     echo ""
     echo -e "${BLUE}📦 Setting up marketplace...${NC}"
@@ -182,6 +221,24 @@ setup_marketplace() {
             else
                 # Update may fail if already up-to-date — that's OK
                 echo -e "${GREEN}✓${NC} Marketplace is up to date"
+            fi
+        elif echo "$output" | grep -qi "source differs" \
+            && is_legacy_marketplace_repo "$(marketplace_declared_repo)"; then
+            # Declared under a repo name we ourselves retired (rename
+            # migration). Claude Code won't silently re-point an existing
+            # declaration, and there's no other transparent migration path
+            # for a marketplace source change, so re-register it: this
+            # only drops the marketplace/plugin *registration*, not the
+            # user's saved notification settings (a separate file), and
+            # the rest of this script reinstalls the plugin right after.
+            echo -e "${BLUE}  Marketplace points at the retired repo name; re-registering...${NC}"
+            claude plugin marketplace remove "$MARKETPLACE_NAME" </dev/null >/dev/null 2>&1 || true
+            config_preflight || return 1
+            if output=$(claude plugin marketplace add "$MARKETPLACE_SOURCE" </dev/null 2>&1); then
+                echo -e "${GREEN}✓${NC} Marketplace re-registered"
+            else
+                echo -e "${YELLOW}⚠ Marketplace add output: ${output}${NC}"
+                echo -e "${YELLOW}  Continuing anyway...${NC}"
             fi
         else
             echo -e "${YELLOW}⚠ Marketplace add output: ${output}${NC}"
