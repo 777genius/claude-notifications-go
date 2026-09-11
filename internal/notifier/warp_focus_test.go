@@ -131,12 +131,15 @@ func TestInjectWarpFocusURL_NoopWithoutWarp(t *testing.T) {
 }
 
 func TestWarpFocusExecute_IsValidShell(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not available")
+	}
 	clearWarpFocusEnv(t)
 	t.Setenv(warpfocus.FocusURLEnv, warpTestFocusURL)
 	t.Setenv(iTerm2SessionIDEnv, "")
 
 	script := buildFocusScript("dev.warp.Warp-Stable", "/home/user/my-project")
-	cmd := exec.Command("/bin/sh", "-n", "-c", script)
+	cmd := exec.Command("sh", "-n", "-c", script)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("Warp execute script is not valid shell: %v\n%s\nscript: %s", err, out, script)
 	}
