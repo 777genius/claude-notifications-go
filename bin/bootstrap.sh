@@ -176,19 +176,19 @@ print_iterm2_python_api_notice() {
 marketplace_declared_repo() {
     local tmp
     tmp=$(mktemp "${TMPDIR:-/tmp}/marketplace-list-XXXXXX") || return 1
-    claude plugin marketplace list --json >"$tmp" 2>/dev/null
+    claude plugin marketplace list --json </dev/null >"$tmp" 2>/dev/null
     python3 -I - "$tmp" "$MARKETPLACE_NAME" <<'PY'
 import json, sys
 path, name = sys.argv[1], sys.argv[2]
 try:
     with open(path) as f:
         entries = json.load(f)
+    for e in entries:
+        if e.get('name') == name and e.get('repo'):
+            print(e['repo'])
+            break
 except Exception:
-    sys.exit(0)
-for e in entries:
-    if e.get('name') == name and e.get('repo'):
-        print(e['repo'])
-        break
+    pass
 PY
     rm -f "$tmp"
 }
@@ -232,7 +232,7 @@ setup_marketplace() {
             # user's saved notification settings (a separate file), and
             # the rest of this script reinstalls the plugin right after.
             echo -e "${BLUE}  Marketplace points at the retired repo name; re-registering...${NC}"
-            claude plugin marketplace remove "$MARKETPLACE_NAME" </dev/null >/dev/null 2>&1
+            claude plugin marketplace remove "$MARKETPLACE_NAME" </dev/null >/dev/null 2>&1 || true
             config_preflight || return 1
             if output=$(claude plugin marketplace add "$MARKETPLACE_SOURCE" </dev/null 2>&1); then
                 echo -e "${GREEN}✓${NC} Marketplace re-registered"
