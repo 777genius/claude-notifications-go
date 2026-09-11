@@ -33,7 +33,7 @@ INSTALL_CONFIG_HELPER=""
 INSTALL_PRIVATE_DOWNLOAD=false
 
 cleanup_install_config() {
-    if [ -n "$INSTALL_CONFIG_STAGE" ] && [ "$INSTALL_CONFIG_STAGE_OWNER" = "$BASH_SUBSHELL" ]; then
+    if [ -n "$INSTALL_CONFIG_STAGE" ] && [ "$INSTALL_CONFIG_STAGE_OWNER" = "${BASHPID:-$BASH_SUBSHELL}" ]; then
         cleanup_install_stage "$INSTALL_CONFIG_STAGE"
     fi
     return 0
@@ -73,7 +73,7 @@ prepare_install_config_preflight() {
         return 1
     fi
     INSTALL_CONFIG_STAGE=$(mktemp -d "${TMPDIR:-${TEMP:-/tmp}}/install-config.XXXXXX") || return 1
-    INSTALL_CONFIG_STAGE_OWNER=$BASH_SUBSHELL
+    INSTALL_CONFIG_STAGE_OWNER="${BASHPID:-$BASH_SUBSHELL}"
     # Existing download/verification logic is confined to this new directory.
     if ! (
         SCRIPT_DIR="$INSTALL_CONFIG_STAGE"
@@ -1913,8 +1913,8 @@ stage_and_promote_runtime() (
     # The trap must still know which disposable staging directory to remove.
     stage=''
     stage=$(mktemp -d "$SCRIPT_DIR/.install-stage.XXXXXX") || exit 1
-    stage_owner=$BASH_SUBSHELL
-    trap 'if [ "$stage_owner" = "$BASH_SUBSHELL" ]; then cleanup_install_stage "$stage"; fi; cleanup_install_config' EXIT
+    stage_owner="${BASHPID:-$BASH_SUBSHELL}"
+    trap 'if [ "$stage_owner" = "${BASHPID:-$BASH_SUBSHELL}" ]; then cleanup_install_stage "$stage"; fi; cleanup_install_config' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
 

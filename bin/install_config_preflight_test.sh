@@ -47,7 +47,7 @@ isolation="""
 curl() { echo 'unexpected network request' >&2; return 99; }
 wget() { echo 'unexpected network request' >&2; return 99; }
 python3() {
-    if [ "$1" = -I ]; then command python3 "$@"; return; fi
+    if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
     echo 'unexpected Python environment creation' >&2
     return 99
 }
@@ -208,7 +208,7 @@ uname() { echo Darwin; }
 tmux() { :; }
 TERM_PROGRAM=iTerm.app
 python3() {
-    if [ "$1" = -I ]; then command python3 "$@"; return; fi
+    if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
     mkdir -p "$3/bin"
     printf '#!/bin/sh\\nexit 1\\n' > "$3/bin/pip"
     chmod +x "$3/bin/pip"
@@ -224,7 +224,7 @@ uname() { echo Darwin; }
 tmux() { :; }
 TERM_PROGRAM=iTerm.app
 python3() {
-    if [ "$1" = -I ]; then command python3 "$@"; return; fi
+    if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
     mkdir -p "$3/bin"
     printf '#!/bin/sh\\nrm @ALIAS@\\nln -s @VENV@ @ALIAS@\\nprintf protected > @VENV@/config.json\\nexit 1\\n' > "$3/bin/pip"
     chmod +x "$3/bin/pip"
@@ -248,7 +248,7 @@ uname() { echo Darwin; }
 tmux() { :; }
 TERM_PROGRAM=iTerm.app
 python3() {
-    if [ "$1" = -I ]; then command python3 "$@"; return; fi
+    if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
     mkdir -p "$3/bin"
     printf '#!/bin/sh\\nprintf protected > "%s/config.json"\\nrm @ALIAS@\\nln -s "%s" @ALIAS@\\nexit 1\\n' "$3" "$3" > "$3/bin/pip"
     chmod +x "$3/bin/pip"
@@ -264,7 +264,7 @@ uname() { echo Darwin; }
 tmux() { :; }
 TERM_PROGRAM=iTerm.app
 python3() {
-    if [ "$1" = -I ]; then command python3 "$@"; return; fi
+    if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
     mkdir -p "$3/bin"
     printf '{"path":"%s"}' "$3" > "$3/bin/config.json"
     cp "$3/bin/config.json" @BEFORE@
@@ -283,7 +283,7 @@ for kind in ('config', 'runtime'):
         selected=box/('cleanup-{}-{}'.format(kind,status)); selected.symlink_to(outside)
         body="""
 INSTALL_CONFIG_STAGE=$(mktemp -d "$TMPDIR/config-stage.XXXXXX")
-INSTALL_CONFIG_STAGE_OWNER=$BASH_SUBSHELL
+INSTALL_CONFIG_STAGE_OWNER="${BASHPID:-$BASH_SUBSHELL}"
 printf protected > "$INSTALL_CONFIG_STAGE/config.json"
 ( trap 'cleanup_install_config' EXIT; : )
 [ -f "$INSTALL_CONFIG_STAGE/config.json" ] || exit 99
@@ -299,7 +299,7 @@ detect_platform() {
     CHECKSUMS_PATH="$SCRIPT_DIR/.checksums.txt"
 }
 install_linux_notification_desktop_entry() {
-    ( trap 'if [ "$stage_owner" = "$BASH_SUBSHELL" ]; then cleanup_install_stage "$stage"; fi' EXIT; : )
+    ( trap 'if [ "$stage_owner" = "${BASHPID:-$BASH_SUBSHELL}" ]; then cleanup_install_stage "$stage"; fi' EXIT; : )
     [ -f "$BINARY_PATH" ] || exit 99
     printf protected > "$stage/config.json"
     rm @ALIAS@
@@ -318,7 +318,7 @@ stage_and_promote_runtime
 for status in (0,17):
     case,r=run('clean-exit-'+str(status),"""
 INSTALL_CONFIG_STAGE=$(mktemp -d "$TMPDIR/config-stage.XXXXXX")
-INSTALL_CONFIG_STAGE_OWNER=$BASH_SUBSHELL
+INSTALL_CONFIG_STAGE_OWNER="${BASHPID:-$BASH_SUBSHELL}"
 printf '%s' "$INSTALL_CONFIG_STAGE" > "$SCRIPT_DIR/stage-path"
 exit @STATUS@
 """.replace('@STATUS@',str(status)),outside,status==0)
@@ -326,7 +326,7 @@ exit @STATUS@
     assert not pathlib.Path((case/'stage-path').read_text()).exists()
 case,r=run('cleanup-no-helper',"""
 INSTALL_CONFIG_STAGE=$(mktemp -d "$TMPDIR/config-stage.XXXXXX")
-INSTALL_CONFIG_STAGE_OWNER=$BASH_SUBSHELL
+INSTALL_CONFIG_STAGE_OWNER="${BASHPID:-$BASH_SUBSHELL}"
 INSTALL_CONFIG_HELPER=/missing
 printf '%s' "$INSTALL_CONFIG_STAGE" > "$SCRIPT_DIR/stage-path"
 exit 0
@@ -350,7 +350,7 @@ uname() { echo Darwin; }
 tmux() { :; }
 TERM_PROGRAM=iTerm.app
 python3() {
-    if [ "$1" = -I ]; then command python3 "$@"; return; fi
+    if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
     mkdir -p "$3/bin"
     printf created > "$3/pyvenv.cfg"
     printf '#!/bin/sh\\nexit 0\\n' > "$3/bin/pip"

@@ -50,7 +50,7 @@ if [ "$PLATFORM" != windows ]; then
     tmux() { :; }
     TERM_PROGRAM=iTerm.app
     python3() {
-        if [ "$1" = -I ]; then command python3 "$@"; return; fi
+        if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
         mkdir -p "$3/bin"
         printf created > "$3/pyvenv.cfg"
         printf '#!/bin/sh\nexit 0\n' > "$3/bin/pip"
@@ -81,7 +81,7 @@ if [ "$PLATFORM" != windows ]; then
         if [ "$kind" = config ]; then
             (
                 INSTALL_CONFIG_STAGE=$(mktemp -d "$TMPDIR/native-stage.XXXXXX")
-                INSTALL_CONFIG_STAGE_OWNER=$BASH_SUBSHELL
+                INSTALL_CONFIG_STAGE_OWNER="${BASHPID:-$BASH_SUBSHELL}"
                 trap 'cleanup_install_config' EXIT
                 printf '{}' > "$INSTALL_CONFIG_STAGE/config.json"
                 rm "$selected"
@@ -110,7 +110,7 @@ if [ "$PLATFORM" != windows ]; then
     export AGENT_NOTIFICATIONS_CONFIG="$selected"
     rm -rf "$venv"
     python3() {
-        if [ "$1" = -I ]; then command python3 "$@"; return; fi
+        if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
         mkdir -p "$3/bin"
         printf '{"path":"%s"}' "$3" > "$3/bin/config.json"
         cp "$3/bin/config.json" "$sandbox/before.json"
@@ -128,7 +128,7 @@ if [ "$PLATFORM" != windows ]; then
     export HOME="$sandbox/home with spaces"
     venv="$HOME/.claude/claude-notifications-go/iterm2-venv"
     python3() {
-        if [ "$1" = -I ]; then command python3 "$@"; return; fi
+        if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
         command python3 -m venv --without-pip "$3" || return 1
         local site
         site=$("$3/bin/python3" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
