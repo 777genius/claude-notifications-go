@@ -1654,7 +1654,7 @@ setup_iterm2_venv() {
     guard_install_paths "$venv_stage"
     # venv entry points and activation scripts embed their creation path.
     if ! "$python3_path" -I - "$venv_stage/venv" "$VENV_DIR" <<'PYVENV'
-import os, shlex, sys
+import os, shlex, stat, sys, tempfile
 old, new = sys.argv[1:]
 for name in os.listdir(os.path.join(old, 'bin')):
     path = os.path.join(old, 'bin', name)
@@ -1695,8 +1695,21 @@ for name in os.listdir(os.path.join(old, 'bin')):
             data = text.replace(old, new).encode()
         else:
             data = data.replace(old.encode(), new.encode())
-        with open(path, 'wb') as f:
-            f.write(data)
+        # Replace the staged directory entry instead of truncating its inode.
+        # An explicit config outside the tree may be a hardlink to this file;
+        # atomic replacement keeps those selected bytes unchanged.
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+        fd, replacement = tempfile.mkstemp(prefix='.venv-rewrite-', dir=os.path.dirname(path))
+        try:
+            with os.fdopen(fd, 'wb') as f:
+                f.write(data)
+            os.chmod(replacement, mode)
+            os.replace(replacement, path)
+        finally:
+            try:
+                os.unlink(replacement)
+            except OSError:
+                pass
 PYVENV
     then
         guard_install_paths "$venv_stage"

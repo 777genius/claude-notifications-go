@@ -276,6 +276,27 @@ setup_iterm2_venv
     private_alias/'config.json',False)
 assert (private_alias/'config.json').read_bytes()==(box/'before-json').read_bytes()
 
+# Rewriting a staged text file must not mutate an external hardlink selected as
+# the explicit config, even though directory overlap cannot identify that inode.
+private_alias.unlink()
+run('pip-success-private-hardlink', """
+uname() { echo Darwin; }
+tmux() { :; }
+TERM_PROGRAM=iTerm.app
+python3() {
+    if [ "$1" = -I ]; then command python3 "$@"; return $?; fi
+    mkdir -p "$3/bin"
+    printf '{"path":"%s"}' "$3" > "$3/bin/config.json"
+    ln "$3/bin/config.json" @ALIAS@
+    cp "$3/bin/config.json" @BEFORE@
+    printf '#!/bin/sh\\nexit 0\\n' > "$3/bin/pip"
+    chmod +x "$3/bin/pip"
+}
+setup_iterm2_venv
+""".replace('@ALIAS@',q(private_alias)).replace('@BEFORE@',q(box/'before-hardlink')),
+    private_alias)
+assert private_alias.read_bytes()==(box/'before-hardlink').read_bytes()
+
 # Both stage owners recheck changed aliases at EXIT; child traps cannot clean
 # the parent's stage. Retention is silent except for fixed/canonical messages.
 for kind in ('config', 'runtime'):
