@@ -54,7 +54,11 @@ jobs:
           EXE=$(find "$INSTALL_TARGET_DIR" -iname "claude-notifications-windows-amd64.exe" | head -1)
           echo "exe=$EXE"
           EXPECTED=$(grep "claude-notifications-windows-amd64.exe" "$RUNNER_TEMP/checksums.txt" | awk '{print $1}')
+          # sha256sum prefixes the whole output line with a backslash when the
+          # file path itself contains one (GNU coreutils escaping convention);
+          # our path mixes \ and / on Windows, so strip that marker, not the hash.
           ACTUAL=$(sha256sum "$EXE" | awk '{print $1}')
+          ACTUAL="${ACTUAL#\\}"
           echo "expected=$EXPECTED actual=$ACTUAL"
           [ "$EXPECTED" = "$ACTUAL" ] || { echo "CHECKSUM MISMATCH"; exit 1; }
 
