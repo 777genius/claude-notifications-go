@@ -33,3 +33,16 @@ Existing valid config is a byte/mode/mtime-preserving no-op. Existing invalid co
 If assets/registration succeeded but init failed, report partial success and the safe error/path. Retry only `config init` after resolving the cause; do not repeat downloads or registration. Do not claim success after a failed command. Do not add config writes to low-level asset installers.
 
 Then run `/claude-notifications-go:settings` for [private revision-checked edits](settings.md). Save diagnostics privately; never print raw configuration or expanded secrets.
+
+After a successful plugin install, explicit `--configure-notifications` runs the same `setup-notifications configure` use case as bootstrap/`setup-codex`. Ordinary init does not enable the feature.
+
+```bash
+INSTALLER="${CLAUDE_PLUGIN_ROOT}/bin/install.sh"
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/install.sh -o "$INSTALLER"
+chmod +x "$INSTALLER"
+"$INSTALLER"
+if [ "${1:-}" = "--configure-notifications" ]; then
+  shift
+  "${CLAUDE_PLUGIN_ROOT}/bin/claude-notifications" setup-notifications configure --provider claude "$@"
+fi
+```

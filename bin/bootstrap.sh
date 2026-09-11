@@ -47,6 +47,9 @@ _KEEP_CONFIG_STAGE=false
 PRODUCT=""
 BOOTSTRAP_TAG=""
 _BOOTSTRAP_TMP=""  # temp file path for trap (set -u safe)
+CONFIGURE_NOTIFICATIONS=false
+CONFIGURE_BINARY=""
+CONFIGURE_ARGS=()
 
 # ──────────────────────────────────────────────
 
@@ -984,12 +987,47 @@ select_product() {
             --product)
                 [ "$#" -ge 2 ] && [ -z "$PRODUCT" ] || { echo "Use --product claude|codex|both once." >&2; return 1; }
                 PRODUCT="$2"; shift 2 ;;
+            --configure-notifications)
+                CONFIGURE_NOTIFICATIONS=true
+                shift ;;
+            --navigation|--app|--team-id|--allow-unknown-caller|--allow-caller-asserted|--codex-home)
+                [ "$#" -ge 2 ] || { echo "Missing value for $1" >&2; return 1; }
+                case "$1" in
+                    --navigation)
+                        [ "$2" = none ] || { echo "Invalid navigation: $2" >&2; return 1; } ;;
+                    --app)
+                        case "$2" in
+                            /*) ;;
+                            *) echo "App path must be absolute." >&2; return 1 ;;
+                        esac
+                        case "$2" in
+                            *..*) echo "App path must be a physical path." >&2; return 1 ;;
+                        esac ;;
+                    --codex-home)
+                        case "$2" in
+                            /*) ;;
+                            *) echo "codex-home must be absolute." >&2; return 1 ;;
+                        esac ;;
+                esac
+                CONFIGURE_ARGS+=("$1" "$2")
+                shift 2 ;;
+            --request-permission|--json)
+                CONFIGURE_ARGS+=("$1")
+                shift ;;
             --help|-h)
-                echo "Usage: bash bootstrap.sh [--product claude|codex|both]"
+                echo "Usage: bash bootstrap.sh [--product claude|codex|both] [--configure-notifications --navigation none]"
                 exit 0 ;;
             *) echo "Unknown option: $1" >&2; return 1 ;;
         esac
     done
+    if [ "$CONFIGURE_NOTIFICATIONS" = true ] && [ "${#CONFIGURE_ARGS[@]}" -eq 0 ]; then
+        echo "Configure requires an explicit route such as --navigation none." >&2
+        return 1
+    fi
+    if [ "$CONFIGURE_NOTIFICATIONS" != true ] && [ "${#CONFIGURE_ARGS[@]}" -ne 0 ]; then
+        echo "Route flags require --configure-notifications." >&2
+        return 1
+    fi
     if [ -z "$PRODUCT" ]; then
         if ! { exec 3<>/dev/tty; } 2>/dev/null; then
             echo "No controlling TTY. Specify --product claude|codex|both." >&2
@@ -1282,6 +1320,7 @@ install_codex() {
     CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" --dry-run </dev/null || return 1
     config_preflight || return 1
     CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" </dev/null || return $?
+    CONFIGURE_BINARY="$binary"
     echo "Codex installed. Start Codex, run /hooks, review and trust the entries."
 }
 
@@ -1292,6 +1331,7 @@ install_claude() {
     find_plugin_root || return 1
     download_binary || return 1
     setup_iterm2_venv || return 1
+    CONFIGURE_BINARY="${PLUGIN_ROOT}/bin/claude-notifications"
     if [ "$PRODUCT" = both ]; then
     echo "Agent Notifications installed; continuing with Codex."
     fi
@@ -1326,6 +1366,12 @@ main() {
         fi
     fi
     initialize_config || return 1
+    if [ "$CONFIGURE_NOTIFICATIONS" = true ]; then
+        if [ -z "$CONFIGURE_BINARY" ]; then
+            CONFIGURE_BINARY="${PLUGIN_ROOT}/bin/claude-notifications"
+        fi
+        "$CONFIGURE_BINARY" setup-notifications configure --provider "$PRODUCT" "${CONFIGURE_ARGS[@]}" || return 1
+    fi
     [ "$PRODUCT" != claude ] || print_success
 }
 

@@ -190,7 +190,7 @@ or the complete app/team/consent tuple). Route omission preserves existing share
 policy; adding Claude does not clear a Codex route. Claude informational calls use
 request-level `navigation: "none"` and an explicit request ID.
 
-Bootstrap and `setup-codex` accept `--configure-notifications`; bootstrap configures
+Bootstrap, Claude init, and `setup-codex` accept `--configure-notifications`; bootstrap configures
 once after all selected installs succeed. Ordinary install/update leaves intent
 unchanged. `--request-permission` is optional and explicit; when requested, only an allowed
 result continues to enable. Otherwise setup reads permission status without prompting

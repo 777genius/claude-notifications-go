@@ -13,8 +13,17 @@ import (
 	"testing"
 )
 
+func notificationRepoRoot(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("missing caller")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
+}
+
 func TestNotificationBootstrapOffline(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "bin", "bootstrap.sh"))
+	source, err := os.ReadFile(filepath.Join(notificationRepoRoot(t), "bin", "bootstrap.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,6 +56,10 @@ check_prerequisites() { :; }
 detect_platform() { :; }
 install_cleanup_traps() { :; }
 resolve_bootstrap_release() { :; }
+stage_config_helper() { :; }
+stage_historical_baselines() { :; }
+config_preflight() { :; }
+initialize_config() { :; }
 install_claude() { echo claude >> "$HOME/installs"; PLUGIN_ROOT="$HOME/bundle"; }
 install_codex() { echo codex >> "$HOME/installs"; CONFIGURE_BINARY="$HOME/fake-binary"; return `
 			if test.fail {
@@ -79,15 +92,22 @@ install_codex() { echo codex >> "$HOME/installs"; CONFIGURE_BINARY="$HOME/fake-b
 }
 
 func TestNotificationInitOfflineBranch(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "commands", "init.md"))
+	source, err := os.ReadFile(filepath.Join(notificationRepoRoot(t), "commands", "init.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	blocks := strings.Split(string(source), "```bash\n")
-	if len(blocks) < 2 {
-		t.Fatal("missing init script")
+	body := ""
+	for _, block := range blocks[1:] {
+		chunk := strings.SplitN(block, "```", 2)[0]
+		if strings.Contains(chunk, "setup-notifications configure") {
+			body = chunk
+			break
+		}
 	}
-	body := strings.SplitN(blocks[1], "```", 2)[0]
+	if body == "" {
+		t.Fatal("missing init configure script")
+	}
 	for _, optIn := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ordinary", true: "configure"}[optIn], func(t *testing.T) {
 			home := t.TempDir()
@@ -166,7 +186,7 @@ func TestNotificationBootstrapRealInstaller(t *testing.T) {
 	asset := filepath.Join(home, "asset")
 	write(asset, "#!/bin/sh\n# agent-notifications-managed-writer-protocol-v1\nexec \"$NOTIFICATION_TEST_EXECUTABLE\" -test.run=^TestNotificationShellHelper$ -- \"$@\"\n")
 	t.Setenv("NOTIFICATION_TEST_ASSET", asset)
-	installer, err := os.ReadFile(filepath.Join("..", "..", "bin", "install.sh"))
+	installer, err := os.ReadFile(filepath.Join(notificationRepoRoot(t), "bin", "install.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +200,7 @@ pin_release_urls() { :; }
 download_and_verify_binary() { cp "$NOTIFICATION_TEST_ASSET" "$BINARY_PATH"; }
 main "$@"
 `)
-	bootstrap, err := os.ReadFile(filepath.Join("..", "..", "bin", "bootstrap.sh"))
+	bootstrap, err := os.ReadFile(filepath.Join(notificationRepoRoot(t), "bin", "bootstrap.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +268,7 @@ func TestNotificationShellHelper(t *testing.T) {
 }
 
 func TestNotificationAcquisitionRefusesExistingOutput(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "bin", "install.sh"))
+	source, err := os.ReadFile(filepath.Join(notificationRepoRoot(t), "bin", "install.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}

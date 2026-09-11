@@ -552,17 +552,17 @@ Installer shell tests сначала прочитать на предмет isol
 
 ## 14. Критерий завершения функции
 
-- [ ] Пройден основной existing-installer flow §8.1.2 с explicit opt-in, обоими порядками установки клиентов, partial-failure recovery, без дубликатов и изменения чужих настроек.
-- [ ] Production tool действительно вызван из установленного local Desktop и возвращает правильный source target.
-- [ ] Ручные A/B клики после остановки MCP/удаления cwd открывают правильные чаты; evidence относится к exact artifact.
-- [ ] Literal payload, native capability/receipt, stable callback и compatibility работают в actual implementation tests.
-- [ ] Unknown/crash/replay не вызывают автоматических дублирующих side effects; store corruption/fullness fail closed.
-- [ ] Hook regression gates пройдены, отдельное отключение новой функции не ломает hooks.
-- [ ] Cold-start и managed upgrade/rollback qualification пройдены для заявленного supported режима; остальные ограничения отображены честно.
-- [ ] Portable package проверен отдельно перед обещанием этого install route.
-- [ ] Draft артефакты готовы; публикация конкретной версии ожидает отдельного явного разрешения владельца.
+- [x] Пройден основной existing-installer flow §8.1.2 с explicit opt-in, обоими порядками установки клиентов, partial-failure recovery, без дубликатов и изменения чужих настроек. Evidence: isolated flow plus `TestNotificationBootstrapOffline`, `TestNotificationInitOfflineBranch`, `TestNotificationConfigureParserAndSetupOptIn`; `docs/evidence/agent-notify/plan14-local-e2e-2026-09-11.md`.
+- [ ] Production tool действительно вызван из установленного local Desktop и возвращает правильный source target. Не доказано: рабочий Codex нельзя завершать, CLI/app-server/subscription запрещены, нет disposable Desktop-профиля.
+- [ ] Ручные A/B клики после остановки MCP/удаления cwd открывают правильные чаты; evidence относится к exact artifact. Не доказано: клик в dedicated test profile; banner/`os_accepted` ≠ click routing. Opt-in send использует shared `com.claude.desktop.notifier`.
+- [x] Literal payload, native capability/receipt, stable callback и compatibility работают в actual implementation tests. Evidence: `TestPR3LiteralBytesAndBounds`, `TestPR3DeliveryLiteralReceiptAndSnapshot`, `TestLiteralAndReceipt`, isolated-flow `--capabilities-json` после A→B.
+- [x] Unknown/crash/replay не вызывают автоматических дублирующих side effects; store corruption/fullness fail closed. Evidence: `TestReplayIdentityAndCAS`, `TestActualCrashBoundaries`, `TestSDKServiceDurableReplayAndScopedOutcomes`, isolated-flow replay.
+- [x] Hook regression gates пройдены, отдельное отключение новой функции не ломает hooks. Evidence: `TestHandler_NotificationsDisabled`, isolated-flow disable byte compare.
+- [x] Cold-start и managed upgrade/rollback qualification пройдены для заявленного supported режима; остальные ограничения отображены честно. Supported here: exact-head generations A→B, alias retarget, helper `open -a` of `com.agentnotify.test.flow`, rollback inode reuse, retire without deleting published A/B. Not claimed: Codex-quit cold-start, production-bundle NC click after update.
+- [x] Portable package проверен отдельно перед обещанием этого install route. Evidence: UAP `portable-launch` production MCP, reverse handoff, `TestUAPProjectedCodexLaunchRunsProductionMCP`. Live client UI activation не заявлена.
+- [x] Draft артефакты готовы; публикация конкретной версии ожидает отдельного явного разрешения владельца. Evidence: `docs/evidence/agent-notify/plan14-local-e2e-2026-09-11.md`, `docs/evidence/agent-notify/draft-qualification-2026-09-11.md`. Publish не выполнялся.
 
-Реализация начинается с bounded native literal/protocol PR и Preflight 0. Доказанный installed local Desktop путь в PR6 является готовностью основного способа установки, но не завершением всего этого плана. Для завершения плана нужны все пункты §14, включая portable route, cold-start, managed upgrade/rollback и квалифицированные draft артефакты. Platform/remote/general parent routing остаются вне initial scope и не маскируются общей галочкой готовности; публикация draft не входит в критерий завершения и требует отдельного разрешения.
+Реализация начинается с bounded native literal/protocol PR и Preflight 0. Доказанный installed local Desktop путь в PR6 является готовностью основного способа установки, но не завершением всего этого плана. Для завершения плана нужны все пункты §14, включая portable route, cold-start, managed upgrade/rollback и квалифицированные draft артефакты. Незакрытыми остаются live Desktop tool invocation и ручные NC A/B клики. Platform/remote/general parent routing остаются вне initial scope и не маскируются общей галочкой готовности; публикация draft не входит в критерий завершения и требует отдельного разрешения.
 
 
 ## 15. Исправления повторного review 2026-09-10
