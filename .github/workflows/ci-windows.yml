@@ -51,6 +51,10 @@ jobs:
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
         shell: bash
 
+      - name: Repeat config crash recovery
+        run: go test -race -count=10 -run '^TestStoreKilledLockOwner$' ./internal/config
+        shell: bash
+
       - name: Build binary
         run: go build -o bin/claude-notifications.exe ./cmd/claude-notifications
 

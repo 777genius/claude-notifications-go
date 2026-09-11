@@ -465,7 +465,9 @@ func TestStoreKilledLockOwner(t *testing.T) {
 	if e = cmd.Wait(); e == nil {
 		t.Fatalf("killed child succeeded: %s", output)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	// Exercise crash recovery with the same budget as a real mutation. This
+	// includes path validation, ACL checks and initialization, not just locking.
+	ctx, cancel := context.WithTimeout(context.Background(), MutationTimeout)
 	defer cancel()
 	if _, e = EnsureInitialized(ctx, InitRequest{Env: env}); e != nil {
 		t.Fatal(e)
