@@ -218,13 +218,22 @@ func (s *Sender) buildCustomPayload(runtimeCtx *runtimeContext, format string) (
 	}
 
 	// JSON format
+	//
+	// schema_version, notification_type, and agent_source form the stable
+	// notification-identity contract for machine consumers: agent_source says
+	// which agent produced the event (claude/codex/...), notification_type is
+	// an explicit alias for status kept separate so status can stay backward
+	// compatible if its meaning ever narrows. See docs/webhooks/custom.md.
 	payload := map[string]interface{}{
-		"status":     string(sendCtx.Status),
-		"message":    sendCtx.Message,
-		"timestamp":  runtimeCtx.now.Format(time.RFC3339),
-		"session_id": sendCtx.SessionID,
-		"source":     "claude-notifications",
-		"title":      runtimeCtx.statusInfo.Title,
+		"schema_version":    "1.0",
+		"status":            string(sendCtx.Status),
+		"notification_type": string(sendCtx.Status),
+		"agent_source":      normalizeAgentSource(sendCtx.AgentSource),
+		"message":           sendCtx.Message,
+		"timestamp":         runtimeCtx.now.Format(time.RFC3339),
+		"session_id":        sendCtx.SessionID,
+		"source":            "claude-notifications",
+		"title":             runtimeCtx.statusInfo.Title,
 	}
 
 	payloadWithFields, err := s.applyPayloadFields(payload, runtimeCtx)
