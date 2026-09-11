@@ -45,10 +45,7 @@ Custom webhooks receive a JSON payload:
 
 ```json
 {
-  "schema_version": "1.0",
   "status": "task_complete",
-  "notification_type": "task_complete",
-  "agent_source": "claude",
   "message": "[bold-cat] Created new authentication system with JWT tokens",
   "session_id": "abc-123",
   "timestamp": "2026-04-13T12:34:56Z",
@@ -58,19 +55,12 @@ Custom webhooks receive a JSON payload:
 ```
 
 **Fields:**
-- `schema_version` (string) - Payload contract version, currently `"1.0"`. Bumped only on breaking changes (field removed/renamed/retyped); new optional fields can be added without a bump.
-- `status` (string) - One of: `task_complete`, `review_complete`, `question`, `plan_ready`, `session_limit_reached`, `api_error`, `api_error_overloaded`, `permission_request`
-- `notification_type` (string) - Same enum and value as `status`. Kept as a separate field so it can be relied on for identity purposes even if `status` ever takes on request/response nuance beyond a plain type tag.
-- `agent_source` (string) - Which agent produced the event: `claude` or `codex`. More values will be added as more agents are supported; treat unknown values as forward-compatible rather than erroring.
+- `status` (string) - One of: `task_complete`, `review_complete`, `question`, `plan_ready`, `session_limit_reached`
 - `message` (string) - Notification message with session name
 - `session_id` (string) - Unique session identifier
 - `timestamp` (string) - RFC3339 timestamp
-- `source` (string) - Always `claude-notifications` (identifies the plugin, not the agent — see `agent_source` for that)
+- `source` (string) - Always `claude-notifications`
 - `title` (string) - Status title from config
-
-The formal contract also lives as a JSON Schema at [`docs/webhooks/payload-schema.json`](payload-schema.json), for consumers that want to validate payloads programmatically.
-
-Slack, Discord, Telegram, and Lark presets also now include the agent name (`Claude Code` / `Codex`) in their footer/author/username so it is visible to humans reading the chat message, not just to machine consumers of the custom JSON format.
 
 ## Dynamic Fields
 
@@ -109,7 +99,6 @@ You can inject runtime values into header values and extra JSON payload fields.
 ### Supported Templates
 
 - `${{status}}`, `${{title}}`, `${{message}}`
-- `${{agent_source}}` - originating agent, `claude` or `codex`
 - `${{session_id}}`, `${{session_name}}`
 - `${{cwd}}`, `${{folder}}`
 - `${{time.rfc3339}}`, `${{time.unix}}`, `${{time.unix_ms}}`

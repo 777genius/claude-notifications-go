@@ -34,7 +34,6 @@ type SendContext struct {
 	Folder        string // filepath.Base(CWD); empty when CWD is empty
 	RawBody       string // summary body without prefix/actions
 	ActionSummary string // action segment only (e.g. "📝 1 new  ▶ 2 cmds  ⏱ 41s")
-	AgentSource   string // originating agent, e.g. "claude" or "codex" (hooks.Product); "" for legacy callers
 }
 
 type runtimeContext struct {
@@ -193,8 +192,6 @@ func (c *runtimeContext) lookupTemplateValue(token string) (interface{}, bool, e
 		return sessionname.GenerateSessionLabel(c.sendCtx.SessionID), true, nil
 	case "source":
 		return "claude-notifications", true, nil
-	case "agent_source":
-		return normalizeAgentSource(c.sendCtx.AgentSource), true, nil
 	case "cwd":
 		return c.sendCtx.CWD, true, nil
 	case "folder":

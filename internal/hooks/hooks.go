@@ -778,17 +778,11 @@ func (h *Handler) sendNotifications(status analyzer.Status, body, actions, sessi
 
 	joined := joinMessageParts(body, actions)
 
-	// Format: "[sessionname|branch folder] message" or "[sessionname folder] message".
-	// When neither the session ID nor the cwd carried any usable info (e.g. a
-	// Codex event that arrived without session_id/cwd), skip the metadata block
-	// entirely instead of showing a garbage "[unknown .]" prefix.
+	// Format: "[sessionname|branch folder] message" or "[sessionname folder] message"
 	var enhancedMessage string
-	switch {
-	case sessionName == "unknown" && gitBranch == "" && folderName == ".":
-		enhancedMessage = joined
-	case gitBranch != "":
+	if gitBranch != "" {
 		enhancedMessage = fmt.Sprintf("[%s|%s %s] %s", sessionName, gitBranch, folderName, joined)
-	default:
+	} else {
 		enhancedMessage = fmt.Sprintf("[%s %s] %s", sessionName, folderName, joined)
 	}
 
@@ -810,7 +804,6 @@ func (h *Handler) sendNotifications(status analyzer.Status, body, actions, sessi
 			Folder:        folderName,
 			RawBody:       body,
 			ActionSummary: actions,
-			AgentSource:   string(h.product),
 		})
 		delivery.webhookQueued = true
 	} else {
