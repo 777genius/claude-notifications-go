@@ -34,6 +34,8 @@ import (
 
 func TestAgentNotifyIsolatedInstallFlowE2E(t *testing.T) {
 	proveConfigurePrimaryOrder(t, "claude")
+	proveConfigurePrimaryOrder(t, "codex")
+	proveConfigureSecondClientFailure(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	f, request, deps := configureFixture(t)
@@ -240,6 +242,10 @@ func TestAgentNotifyIsolatedInstallFlowE2E(t *testing.T) {
 	proveNotifyTargetsAfterCwdGone(t, cwd)
 
 	if native := nativeFlowApp(t); native != "" {
+		bin := filepath.Join(f.runtime, "bin")
+		if err := os.MkdirAll(bin, 0700); err != nil {
+			t.Fatal(err)
+		}
 		sourceA := native
 		change, err := installruntime.StageNative(ctx, f.control, sourceA)
 		if err != nil {
@@ -247,9 +253,10 @@ func TestAgentNotifyIsolatedInstallFlowE2E(t *testing.T) {
 		}
 		change.After.DecoderFloor = 1
 		pathA := change.After.Path
-		if _, err := installruntime.Commit(ctx, installruntime.Request{ControlRoot: f.control, RuntimeRoot: f.runtime, Owner: "existing-installer", ConsumerID: "hooks", Native: change}); err != nil {
+		if err := commitNativeWithHookAlias(t, ctx, f.control, f.runtime, bin, change); err != nil {
 			t.Fatal(err)
 		}
+		assertHookAlias(t, bin, pathA)
 		sendQueuedNativeFromActive(t, ctx, f.control, filepath.Join(f.root, "native-spool"), pathA)
 		next := nativeFlowApp(t)
 		change, err = installruntime.StageNative(ctx, f.control, next)
@@ -261,9 +268,10 @@ func TestAgentNotifyIsolatedInstallFlowE2E(t *testing.T) {
 			t.Fatal("native update reused callback identity")
 		}
 		pathB := change.After.Path
-		if _, err := installruntime.Commit(ctx, installruntime.Request{ControlRoot: f.control, RuntimeRoot: f.runtime, Owner: "existing-installer", ConsumerID: "hooks", Native: change}); err != nil {
+		if err := commitNativeWithHookAlias(t, ctx, f.control, f.runtime, bin, change); err != nil {
 			t.Fatal(err)
 		}
+		assertHookAlias(t, bin, pathB)
 		if _, err := os.Stat(pathA); err != nil {
 			t.Fatal("queued-callback generation A disappeared during flow E2E")
 		}
@@ -286,21 +294,22 @@ func TestAgentNotifyIsolatedInstallFlowE2E(t *testing.T) {
 		if rollback.After.Path != pathA {
 			t.Fatal("rollback restage of A assigned a new callback identity")
 		}
-		ledger, err := installruntime.Commit(ctx, installruntime.Request{ControlRoot: f.control, RuntimeRoot: f.runtime, Owner: "existing-installer", ConsumerID: "hooks", Native: rollback})
-		if err != nil {
+		if err := commitNativeWithHookAlias(t, ctx, f.control, f.runtime, bin, rollback); err != nil {
 			t.Fatal(err)
 		}
-		if ledger.Native == nil || ledger.Native.Path != pathA {
+		assertHookAlias(t, bin, pathA)
+		rolled, err := installruntime.ReadInstalledSnapshot(f.control)
+		if err != nil || rolled.Ledger.Native == nil || rolled.Ledger.Native.Path != pathA {
 			t.Fatal("active native path did not roll back to A")
 		}
 		if _, err := os.Stat(pathB); err != nil {
 			t.Fatal("generation B deleted during rollback")
 		}
-		if len(ledger.Native.Published) != publishedBefore {
-			t.Fatalf("rollback mutated published inventory %d -> %d", publishedBefore, len(ledger.Native.Published))
+		if len(rolled.Ledger.Native.Published) != publishedBefore {
+			t.Fatalf("rollback mutated published inventory %d -> %d", publishedBefore, len(rolled.Ledger.Native.Published))
 		}
 		launchGenerationAfterColdStart(t, ctx, pathA)
-		gen := ledger.Generation
+		gen := rolled.Ledger.Generation
 		if _, err := installruntime.Commit(ctx, installruntime.Request{ControlRoot: f.control, RuntimeRoot: f.runtime, Owner: "existing-installer", ConsumerID: "hooks", ExpectedGeneration: &gen, RetireNative: true}); err != nil {
 			t.Fatal(err)
 		}
@@ -310,6 +319,7 @@ func TestAgentNotifyIsolatedInstallFlowE2E(t *testing.T) {
 		if _, err := os.Stat(pathB); err != nil {
 			t.Fatal("retire removed published generation B")
 		}
+		assertHookAlias(t, bin, pathA)
 	}
 	snap, err = installruntime.ReadInstalledSnapshot(f.control)
 	if err != nil {
@@ -576,6 +586,31 @@ func proveConcurrentSameCwdNotifies(t *testing.T, service *agentnotify.Service, 
 		}()
 	}
 	wg.Wait()
+}
+
+func commitNativeWithHookAlias(t *testing.T, ctx context.Context, control, runtime, bin string, change *installruntime.NativeChange) error {
+	t.Helper()
+	aliases, err := installruntime.NativeAlias(change, bin)
+	if err != nil {
+		return err
+	}
+	_, err = installruntime.Commit(ctx, installruntime.Request{
+		ControlRoot: control, RuntimeRoot: runtime, Owner: "existing-installer", ConsumerID: "hooks",
+		Native: change, Files: aliases,
+	})
+	return err
+}
+
+func assertHookAlias(t *testing.T, bin, want string) {
+	t.Helper()
+	alias := filepath.Join(bin, "ClaudeNotifier.app")
+	got, err := os.Readlink(alias)
+	if err != nil || got != want {
+		t.Fatalf("hook alias %s -> %s want %s %v", alias, got, want, err)
+	}
+	if _, err := os.ReadFile(filepath.Join(alias, "Contents", "MacOS", "terminal-notifier-modern")); err != nil {
+		t.Fatalf("hook alias does not resolve to helper: %v", err)
+	}
 }
 
 func nativeFlowApp(t *testing.T) string {

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -60,8 +61,9 @@ func sendQueuedNativeFromActive(t *testing.T, ctx context.Context, control, spoo
 
 func launchGenerationAfterColdStart(t *testing.T, ctx context.Context, bundle string) {
 	t.Helper()
-	if os.Getenv("AGENT_NOTIFY_DARWIN_E2E") != "1" {
-		t.Log("skipping LaunchServices cold-start; set AGENT_NOTIFY_DARWIN_E2E=1 for operator-visible Darwin qualification")
+	id := nativeBundleID(bundle)
+	if id == "com.claude.desktop.notifier" && os.Getenv("AGENT_NOTIFY_DARWIN_E2E") != "1" {
+		t.Log("skipping LaunchServices cold-start of production bundle; set AGENT_NOTIFY_DARWIN_E2E=1")
 		return
 	}
 	physical, err := filepath.EvalSymlinks(bundle)
@@ -74,7 +76,9 @@ func launchGenerationAfterColdStart(t *testing.T, ctx context.Context, bundle st
 	}
 	exe := filepath.Join(physical, "Contents", "MacOS", "terminal-notifier-modern")
 	killHelpersAt(t, exe)
-	open := exec.CommandContext(ctx, "/usr/bin/open", "-n", "-W", "-a", physical, "--args", "--capabilities-json")
+	openCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	open := exec.CommandContext(openCtx, "/usr/bin/open", "-n", "-W", "-a", physical, "--args", "--capabilities-json")
 	open.Dir = "/"
 	if out, err := open.CombinedOutput(); err != nil {
 		t.Fatalf("cold-start LaunchServices launch of generation failed: %s %v", out, err)
@@ -125,6 +129,25 @@ func helpersRunningAt(exe string) bool {
 		return false
 	}
 	return strings.Contains(string(out), exe)
+}
+
+func nativeBundleID(bundle string) string {
+	data, err := os.ReadFile(filepath.Join(bundle, "Contents", "Info.plist"))
+	if err != nil {
+		return ""
+	}
+	key := []byte("<key>CFBundleIdentifier</key>")
+	i := bytes.Index(data, key)
+	if i < 0 {
+		return ""
+	}
+	rest := data[i+len(key):]
+	start := bytes.Index(rest, []byte("<string>"))
+	end := bytes.Index(rest, []byte("</string>"))
+	if start < 0 || end <= start {
+		return ""
+	}
+	return string(bytes.TrimSpace(rest[start+len("<string>"):end]))
 }
 
 func newFlowUUID(t *testing.T) string {

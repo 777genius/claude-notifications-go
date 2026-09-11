@@ -23,7 +23,7 @@ Path: `swift-notifier/.build/arm64-apple-macosx/release/terminal-notifier-modern
 | Info.plist bundle ID | `com.claude.desktop.notifier` |
 | Signature | adhoc, linker-signed; TeamIdentifier not set |
 | CDHash sha256 | `a1c7e4be0e9454b39b65f51670e9dd6917a80a9e` |
-| Isolated-flow resign | `codesign --force --sign - --timestamp=none --identifier com.claude.desktop.notifier` on each published generation copy |
+| Isolated-flow resign | Default: `codesign --force --sign - --timestamp=none --identifier com.agentnotify.test.flow`. Production identifier `com.claude.desktop.notifier` only when `AGENT_NOTIFY_DARWIN_E2E=1`. |
 
 `--capabilities-json`:
 

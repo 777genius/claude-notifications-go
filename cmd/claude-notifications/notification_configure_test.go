@@ -123,6 +123,11 @@ func TestNotificationConfigurePermissionPartial(t *testing.T) {
 	}
 }
 func TestNotificationConfigureSecondClientFailure(t *testing.T) {
+	proveConfigureSecondClientFailure(t)
+}
+
+func proveConfigureSecondClientFailure(t *testing.T) {
+	t.Helper()
 	f, request, deps := configureFixture(t)
 	checks := 0
 	deps.Inventory = func(ctx context.Context, p registration.Provider, home string) (notificationInventory, error) {
