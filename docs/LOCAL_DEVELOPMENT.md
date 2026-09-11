@@ -73,7 +73,7 @@ macOS / Linux:
 
 ```bash
 go build -o bin/claude-notifications ./cmd/claude-notifications
-./bin/claude-notifications version
+./bin/agent-notifications version
 ```
 
 Windows PowerShell:
@@ -88,7 +88,7 @@ Trigger a direct desktop notification with a minimal `PreToolUse` payload:
 macOS / Linux:
 
 ```bash
-echo '{"session_id":"local-debug","tool_name":"ExitPlanMode"}' | ./bin/claude-notifications handle-hook PreToolUse
+echo '{"session_id":"local-debug","tool_name":"ExitPlanMode"}' | ./bin/agent-notifications handle-hook PreToolUse
 ```
 
 Windows PowerShell:
@@ -221,3 +221,5 @@ For click-to-focus changes:
 - Claude process debug log: printed by `scripts/e2e-real-claude.sh` for each run
 
 If a smoke test fails, keep both logs and the command output together when opening an issue or PR.
+
+The checked-in `bin/agent-notifications` symlink delegates to `bin/claude-notifications`; building the legacy development target also makes the primary command available. Installation replaces both launchers with links to the same platform executable.

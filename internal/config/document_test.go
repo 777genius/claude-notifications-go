@@ -13,7 +13,7 @@ func TestStrictDocument(t *testing.T) {
 			t.Errorf("accepted invalid input of length %d", len(s))
 		}
 	}
-	_, err := ParseDocument([]byte(`{"schemaVersion":2}`), "/fixture", true)
+	_, err := ParseDocument([]byte(`{"schemaVersion":3}`), "/fixture", true)
 	var ce *Error
 	if !errors.As(err, &ce) || ce.Code != ConfigUnsupportedSchema {
 		t.Fatalf("schema: %v", err)

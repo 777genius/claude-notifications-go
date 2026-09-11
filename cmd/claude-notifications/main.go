@@ -88,7 +88,7 @@ func main() {
 	case "setup-codex":
 		runSetupCodex(os.Args[2:])
 	case "version", "--version", "-v":
-		fmt.Printf("claude-notifications v%s\n", version)
+		fmt.Printf("%s v%s\n", invocationName(), version)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -743,16 +743,18 @@ func parseFocusWindowOptions(args []string) (notifier.FocusWindowOptions, error)
 }
 
 func printUsage() {
-	fmt.Println("claude-notifications - Smart notifications for Claude Code")
+	fmt.Println("agent-notifications - Smart notifications for Claude Code and Codex")
 	fmt.Println()
 	fmt.Printf("Version: %s\n", version)
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  claude-notifications handle-hook <HookName>")
-	fmt.Println("  claude-notifications daemon")
-	fmt.Println("  claude-notifications windows-hooks [--exe <path>]")
-	fmt.Println("  claude-notifications version")
-	fmt.Println("  claude-notifications help")
+	fmt.Println("  agent-notifications handle-hook <HookName>")
+	fmt.Println("  agent-notifications daemon")
+	fmt.Println("  agent-notifications windows-hooks [--exe <path>]")
+	fmt.Println("  agent-notifications version")
+	fmt.Println("  agent-notifications config <path|inspect|init|edit|preflight-update>")
+	fmt.Println("  agent-notifications setup-codex --plugin-root <bundle>")
+	fmt.Println("  agent-notifications help")
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  handle-hook <HookName>  Handle a Claude Code hook event")
@@ -773,18 +775,28 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  # Handle PreToolUse hook (reads JSON from stdin)")
-	fmt.Println("  echo '{\"session_id\":\"test\",\"tool_name\":\"ExitPlanMode\"}' | claude-notifications handle-hook PreToolUse")
+	fmt.Println("  echo '{\"session_id\":\"test\",\"tool_name\":\"ExitPlanMode\"}' | agent-notifications handle-hook PreToolUse")
 	fmt.Println()
 	fmt.Println("  # Handle Stop hook")
-	fmt.Println("  echo '{\"session_id\":\"test\",\"transcript_path\":\"/path/to/transcript.jsonl\"}' | claude-notifications handle-hook Stop")
+	fmt.Println("  echo '{\"session_id\":\"test\",\"transcript_path\":\"/path/to/transcript.jsonl\"}' | agent-notifications handle-hook Stop")
 	fmt.Println()
 	fmt.Println("  # Run notification daemon (Linux only, started automatically)")
-	fmt.Println("  claude-notifications daemon")
+	fmt.Println("  agent-notifications daemon")
 	fmt.Println()
 	fmt.Println("  # Print Windows exec-form hook configuration")
-	fmt.Println("  claude-notifications windows-hooks")
+	fmt.Println("  agent-notifications windows-hooks")
 	fmt.Println()
 	fmt.Println("Environment Variables:")
-	fmt.Println("  CLAUDE_PLUGIN_ROOT  Plugin root directory (auto-detected if not set)")
+	fmt.Println("  AGENT_NOTIFICATIONS_ROOT  Resource bundle root for config placeholders")
+	fmt.Println("  CLAUDE_PLUGIN_ROOT        Permanent resource-root alias; Claude hook root")
 	fmt.Println()
+}
+
+// invocationName preserves the permanent legacy launcher's version identity.
+func invocationName() string {
+	name := strings.ToLower(filepath.Base(os.Args[0]))
+	if name == "agent-notifications" || name == "agent-notifications.exe" || (strings.HasPrefix(name, "claude-notifications-windows-") && os.Getenv("AGENT_NOTIFICATIONS_LAUNCHER") == "agent-notifications") {
+		return "agent-notifications"
+	}
+	return "claude-notifications"
 }

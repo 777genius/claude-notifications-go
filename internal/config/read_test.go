@@ -12,7 +12,7 @@ import (
 func TestReadDocumentSelectedErrorNeverFallsBack(t *testing.T) {
 	l := "/h/.claude/claude-notifications-go/config.json"
 	n := "/h/.config/agent-notifications/config.json"
-	for _, data := range []string{"", `null`, `{"schemaVersion":2}`, `{"notifications":{"desktop":{"volume":3}}}`} {
+	for _, data := range []string{"", `null`, `{"schemaVersion":3}`, `{"notifications":{"desktop":{"volume":3}}}`} {
 		r := ReadRequest{Env: fakeEnv("linux", map[string]string{"HOME": "/h"}, map[string]fs.FileMode{l: 0, n: 0}), ReadSnapshot: func(p string, limit int) (Snapshot, error) {
 			if p != l {
 				t.Fatal("fallback read")

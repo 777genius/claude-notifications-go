@@ -36,7 +36,7 @@ Edit the shared file selected by `config path` and set the `volume` field:
       "enabled": true,
       "sound": true,
       "volume": 0.5,
-      "appIcon": "${CLAUDE_PLUGIN_ROOT}/claude_icon.png"
+      "appIcon": "${AGENT_NOTIFICATIONS_ROOT}/claude_icon.png"
     },
     ...
   },
@@ -97,7 +97,7 @@ The same audio path is used by notifications and `cmd/sound-preview`.
       "enabled": true,
       "sound": true,
       "volume": 0.3,
-      "appIcon": "${CLAUDE_PLUGIN_ROOT}/claude_icon.png"
+      "appIcon": "${AGENT_NOTIFICATIONS_ROOT}/claude_icon.png"
     }
   }
 }
@@ -114,7 +114,7 @@ The same audio path is used by notifications and `cmd/sound-preview`.
       "enabled": true,
       "sound": true,
       "volume": 0.5,
-      "appIcon": "${CLAUDE_PLUGIN_ROOT}/claude_icon.png"
+      "appIcon": "${AGENT_NOTIFICATIONS_ROOT}/claude_icon.png"
     }
   }
 }
@@ -131,7 +131,7 @@ The same audio path is used by notifications and `cmd/sound-preview`.
       "enabled": true,
       "sound": true,
       "volume": 1.0,
-      "appIcon": "${CLAUDE_PLUGIN_ROOT}/claude_icon.png"
+      "appIcon": "${AGENT_NOTIFICATIONS_ROOT}/claude_icon.png"
     }
   }
 }
@@ -148,7 +148,7 @@ The same audio path is used by notifications and `cmd/sound-preview`.
       "enabled": true,
       "sound": false,
       "volume": 1.0,
-      "appIcon": "${CLAUDE_PLUGIN_ROOT}/claude_icon.png"
+      "appIcon": "${AGENT_NOTIFICATIONS_ROOT}/claude_icon.png"
     }
   }
 }

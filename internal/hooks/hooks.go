@@ -90,7 +90,7 @@ type Handler struct {
 // NewHandler creates a new hook handler
 func NewHandler(pluginRoot string) (*Handler, error) {
 	// Load config
-	cfg, err := config.LoadFromPluginRoot(pluginRoot)
+	cfg, err := config.LoadForAgent(pluginRoot, config.AgentClaude)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -102,7 +102,11 @@ func NewHandler(pluginRoot string) (*Handler, error) {
 // explicit product and event source. Unlike NewHandler, config warnings go to
 // the file log only: observation routes must not write to stderr.
 func NewHandlerWithSource(pluginRoot string, product Product, source EventSource) (*Handler, error) {
-	cfg, err := config.LoadFromPluginRootQuiet(pluginRoot)
+	agent, err := configAgent(product)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := config.LoadForAgentQuiet(pluginRoot, agent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -919,4 +923,15 @@ func (h *Handler) shouldEmitPermissionGuidance() bool {
 	}
 
 	return true
+}
+
+func configAgent(product Product) (config.AgentID, error) {
+	switch product {
+	case ProductClaude:
+		return config.AgentClaude, nil
+	case ProductCodex:
+		return config.AgentCodex, nil
+	default:
+		return "", fmt.Errorf("unsupported product: %q", product)
+	}
 }

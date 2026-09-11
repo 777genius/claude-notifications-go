@@ -39,6 +39,12 @@ func TestSeedMatchesShippedEffectiveDefaults(t *testing.T) {
 	if seed.SchemaVersion() != 1 || !bytes.Contains(seed.Bytes(), []byte(`"schemaVersion": 1`)) {
 		t.Fatal("seed schema")
 	}
+	if !bytes.Contains(configtemplate.Bytes(), []byte("${CLAUDE_PLUGIN_ROOT}")) ||
+		bytes.Contains(configtemplate.Bytes(), []byte("${AGENT_NOTIFICATIONS_ROOT}")) ||
+		!bytes.Contains(seed.Bytes(), []byte("${CLAUDE_PLUGIN_ROOT}")) ||
+		bytes.Contains(seed.Bytes(), []byte("${AGENT_NOTIFICATIONS_ROOT}")) {
+		t.Fatal("schema 1 template must retain the legacy asset placeholder")
+	}
 	if !bytes.HasSuffix(seed.Bytes(), []byte("\n")) || bytes.HasSuffix(seed.Bytes(), []byte("\n\n")) {
 		t.Fatal("seed newline")
 	}

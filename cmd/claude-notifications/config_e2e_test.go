@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -145,5 +147,48 @@ func TestConfigE2EExplicitImportAndWizardCAS(t *testing.T) {
 	}
 	if string(e2eRead(t, canonical)) != string(after) || string(e2eRead(t, legacy)) != string(legacyBytes) || string(e2eRead(t, source)) != raw {
 		t.Fatal("CAS/import changed unrelated bytes")
+	}
+}
+
+// This fixture invokes only version/config and a deliberately invalid Codex hook.
+// All homes, resource paths and the canonical document belong to t.TempDir.
+func TestUniversalConfigE2ELaunchersAndSilentCodex(t *testing.T) {
+	f := newSetupE2E(t)
+	binary := buildCLIBinary(t)
+	for _, name := range []string{"agent-notifications", "claude-notifications"} {
+		launcher := filepath.Join(f.root, name)
+		if runtime.GOOS == "windows" {
+			launcher += ".exe"
+			e2eWrite(t, launcher, e2eRead(t, binary))
+		} else if err := os.Symlink(binary, launcher); err != nil {
+			t.Fatal(err)
+		}
+		output, err := f.run(t, "", launcher, "version")
+		if err != nil || !strings.HasPrefix(output, name+" v") {
+			t.Fatalf("launcher %s: %s %v", name, output, err)
+		}
+		canonical := filepath.Join(f.home, ".claude", "claude-notifications-go", "config.json")
+		raw := []byte(`{"schemaVersion":2,"agents":{"claude":{"notifications":{"desktop":{"volume":0}}},"codex":{"notifications":{"desktop":{"sound":false}}}}}`)
+		e2eWrite(t, canonical, raw)
+		output, err = f.run(t, "", launcher, "config", "inspect", "--json")
+		if err != nil {
+			t.Fatalf("inspect: %s %v", output, err)
+		}
+		var inspection config.Inspection
+		if err := json.Unmarshal([]byte(output), &inspection); err != nil || !inspection.Valid || inspection.SchemaVersion != 2 {
+			t.Fatalf("inspection: %s %v", output, err)
+		}
+		if !bytes.Equal(raw, e2eRead(t, canonical)) {
+			t.Fatal("inspection rewrote config")
+		}
+	}
+	canonical := filepath.Join(f.home, ".claude", "claude-notifications-go", "config.json")
+	e2eWrite(t, canonical, []byte(`{"schemaVersion":2,"agents":{"claude":{"notifications":{"desktop":{"volume":2}}}}}`))
+	f.env = append(f.env, "PLUGIN_ROOT="+f.bundle)
+	result := runCLI(t, f.env, `{"session_id":"isolated","hook_event_name":"Stop","cwd":"`+filepath.ToSlash(f.root)+`"}`, "handle-hook", "Stop", "--product", "codex")
+	assertContained(t, "invalid inactive schema2 profile", result)
+	log := string(e2eRead(t, filepath.Join(f.bundle, "notification-debug.log")))
+	if !strings.Contains(log, "ConfigInvalid") {
+		t.Fatalf("missing ConfigInvalid diagnostic: %s", log)
 	}
 }

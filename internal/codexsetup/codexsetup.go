@@ -644,6 +644,10 @@ func stageBundle(src, dst string) (func() error, func(), error) {
 		}
 		names = append(names, name)
 	}
+	if err := installBundleLaunchers(filepath.Join(stage, "new", "bin"), runtime.GOOS, runtime.GOARCH); err != nil {
+		finish()
+		return nil, nil, err
+	}
 	var moved, installed []string
 	rollback := func() error {
 		retain = true
@@ -801,7 +805,7 @@ func SortedEvents() []string {
 
 func runtimeBinary(name string) bool {
 	switch name {
-	case "terminal-notifier.app", "codex-hook-wrapper.sh", "codex-hook-wrapper.cmd", "hook-wrapper.sh", "install.sh", "claude-notifications", "ClaudeNotifier.app":
+	case "terminal-notifier.app", "codex-hook-wrapper.sh", "codex-hook-wrapper.cmd", "hook-wrapper.sh", "install.sh", "claude-notifications", "agent-notifications", "claude-notifications.bat", "agent-notifications.bat", "claude-notifications.cmd", "agent-notifications.cmd", "ClaudeNotifier.app":
 		return true
 	}
 	for _, platform := range []string{"linux", "darwin", "windows"} {
@@ -839,6 +843,43 @@ func checkHooksSnapshot(path string, expected []byte, existed bool) error {
 	}
 	if existed != (err == nil) || !bytes.Equal(current, expected) {
 		return fmt.Errorf("hooks.json changed during setup; retry")
+	}
+	return nil
+}
+
+// Launchers are generated in the private staging tree before any live entry moves.
+// This also upgrades older bundles containing only the platform executable.
+func installBundleLaunchers(bin, platform, arch string) error {
+	binary := "claude-notifications-" + platform + "-" + arch
+	if platform == "windows" {
+		binary += ".exe"
+	}
+	info, err := os.Lstat(filepath.Join(bin, binary))
+	if os.IsNotExist(err) {
+		return nil
+	} // Lazy-install bundles may have no executable yet.
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("platform executable is not regular")
+	}
+	for _, name := range []string{"claude-notifications", "agent-notifications"} {
+		target := filepath.Join(bin, name)
+		if platform == "windows" {
+			target += ".bat"
+		}
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if platform == "windows" {
+			content := "@echo off\r\nsetlocal\r\nset AGENT_NOTIFICATIONS_LAUNCHER=" + name + "\r\n\"%~dp0" + binary + "\" %*\r\n"
+			if err := os.WriteFile(target, []byte(content), 0755); err != nil {
+				return err
+			}
+		} else if err := os.Symlink(binary, target); err != nil {
+			return err
+		}
 	}
 	return nil
 }

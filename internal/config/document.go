@@ -81,13 +81,16 @@ func ParseDocument(data []byte, physicalPath string, exists bool) (Document, err
 			if !valid || n == "0" {
 				return fail(ConfigInvalid, 0)
 			}
-			if n != "1" {
+			if n != "1" && n != "2" {
 				return fail(ConfigUnsupportedSchema, 0)
 			}
-			schema = 1
+			schema, _ = strconv.Atoi(n)
 		}
 	}
 	if count > 1 {
+		return fail(ConfigInvalid, 0)
+	}
+	if err := validateAgents(raw, schema); err != nil {
 		return fail(ConfigInvalid, 0)
 	}
 	// Typed decode checks known-field types while ignoring additive unknown fields.
@@ -97,6 +100,9 @@ func ParseDocument(data []byte, physicalPath string, exists bool) (Document, err
 	}
 	d := Document{original: bytes.Clone(data), schema: schema}
 	d.ambiguous = ambiguousFields(data, reflect.TypeOf(Config{}), "")
+	if schema == 2 && d.ambiguous != "" {
+		return fail(ConfigInvalid, 0)
+	}
 	h := sha256.New()
 	h.Write([]byte(physicalPath))
 	h.Write([]byte{0})
