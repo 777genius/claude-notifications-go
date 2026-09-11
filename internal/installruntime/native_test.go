@@ -14,7 +14,14 @@ import (
 	"time"
 )
 
-func nativeFixture(t *testing.T) string {
+func skipUnsupportedNative(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("native bundle promotion requires a supported native platform")
+	}
+}
+
+func nativeBundle(t *testing.T) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "ClaudeNotifier.app")
 	path := filepath.Join(root, "Contents", "MacOS", "terminal-notifier-modern")
@@ -26,6 +33,12 @@ func nativeFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func nativeFixture(t *testing.T) string {
+	t.Helper()
+	skipUnsupportedNative(t)
+	return nativeBundle(t)
 }
 func TestUnknownNativeNeverProbed(t *testing.T) {
 	ctx, r := request(t)
@@ -49,6 +62,55 @@ func TestUnknownNativeNeverProbed(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(change.Staged, "PROBED")); !os.IsNotExist(err) {
 		t.Fatal("staged legacy helper executed")
+	}
+}
+
+func TestNativeAliasRetargetsStableHookName(t *testing.T) {
+	ctx, r := request(t)
+	if err := os.MkdirAll(r.RuntimeRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	first, err := StageNative(ctx, r.ControlRoot, nativeFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliases, err := NativeAlias(first, r.RuntimeRoot)
+	if err != nil || len(aliases) != 1 {
+		t.Fatalf("alias: %v %+v", err, aliases)
+	}
+	if filepath.Base(aliases[0].Path) != "ClaudeNotifier.app" || aliases[0].Link != first.After.Path {
+		t.Fatalf("stable alias: %+v", aliases[0])
+	}
+	r.Native = first
+	r.Files = aliases
+	if _, err := Commit(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	second, err := StageNative(ctx, r.ControlRoot, nativeFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.After.Path == first.After.Path {
+		t.Fatal("update reused callback identity")
+	}
+	aliases, err = NativeAlias(second, r.RuntimeRoot)
+	if err != nil || len(aliases) != 1 {
+		t.Fatalf("retarget: %v %+v", err, aliases)
+	}
+	if aliases[0].Link != second.After.Path || filepath.Base(aliases[0].Path) != "ClaudeNotifier.app" {
+		t.Fatalf("retargeted alias: %+v", aliases[0])
+	}
+	r.Native = second
+	r.Files = aliases
+	if _, err := Commit(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.Readlink(filepath.Join(r.RuntimeRoot, "ClaudeNotifier.app"))
+	if err != nil || got != second.After.Path {
+		t.Fatalf("hook alias %s %v", got, err)
+	}
+	if _, err := os.Stat(first.After.Path); err != nil {
+		t.Fatal("generation A disappeared when alias retargeted")
 	}
 }
 func TestNativeRetentionAndExplicitPurge(t *testing.T) {
@@ -107,7 +169,7 @@ func TestDecoderDowngradeRefused(t *testing.T) {
 	}
 }
 func TestUnknownManifestRefusedBeforeProbe(t *testing.T) {
-	source := nativeFixture(t)
+	source := nativeBundle(t)
 	path := filepath.Join(source, "Contents", "Resources", "managed-runtime.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
@@ -126,7 +188,7 @@ func TestUnsupportedNativeSwapPreservesBoth(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("actual swap tested by Darwin filesystem gate")
 	}
-	old, new := nativeFixture(t), nativeFixture(t)
+	old, new := nativeBundle(t), nativeBundle(t)
 	before, err := treeFingerprint(old)
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +232,7 @@ func TestManagedNativeCapabilityFloor(t *testing.T) {
 }
 
 func TestSelfAssertedManifestWithoutFingerprintNeverProbed(t *testing.T) {
-	source := nativeFixture(t)
+	source := nativeBundle(t)
 	path := filepath.Join(source, "Contents", "Resources", "managed-runtime.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)

@@ -13,8 +13,9 @@ import (
 
 // nativeDrainCheck must prove absence of executable mappings and open resources,
 // not merely absence of a process with a particular name. It runs while the
-// component lock excludes new owned launches; all owned launches use the stable
-// live path and AcquireInstalledLease. Candidate paths are never callback routes.
+// component lock excludes new owned launches. Published generation paths are
+// not drained; qualifyRetirement applies only to leftover private .candidate-*
+// identities. Candidate paths are never callback routes.
 var nativeDrainCheck = verifyNativeDrain
 
 func qualifyRetirement(ctx context.Context, change *NativeChange) error {
@@ -23,12 +24,12 @@ func qualifyRetirement(ctx context.Context, change *NativeChange) error {
 	}
 	before, after := change.Before, change.After
 	if change.Purge || before.PreviousPath == "" || after.PreviousPath != "" || after.PreviousSHA256 != "" || after.Path != before.Path || after.SHA256 != before.SHA256 || after.DecoderFloor < 1 || after.DecoderFloor != before.DecoderFloor {
-		return fmt.Errorf("retirement must preserve the compatible stable callback reader")
+		return fmt.Errorf("retirement must preserve the active published generation")
 	}
 	expected := before
 	expected.PreviousPath, expected.PreviousSHA256, expected.PreviousDirectoryID = "", "", ""
 	if !reflect.DeepEqual(expected, after) {
-		return fmt.Errorf("retirement changed the stable reader identity")
+		return fmt.Errorf("retirement changed the active published generation")
 	}
 	if filepath.Dir(before.PreviousPath) != filepath.Dir(before.Path) || !strings.HasPrefix(filepath.Base(before.PreviousPath), ".candidate-") || change.Staged != before.PreviousPath {
 		return fmt.Errorf("retirement predecessor is not a private candidate identity")

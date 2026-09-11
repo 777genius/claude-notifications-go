@@ -249,10 +249,6 @@ func boundedCommand(ctx context.Context, path string, args ...string) ([]byte, e
 // Native OS verification is replaced only by inert protocol fixtures in tests.
 var nativePlatformCheck = verifyNativePlatform
 
-// Test seam exercises the transaction on an isolated filesystem without claiming
-// Darwin qualification. Production never substitutes a two-rename fallback.
-var nativeExchange = swapBundles
-
 func verifyNative(ctx context.Context, bundle, attestationPath string) (int, error) {
 	evidence, err := readRegularFile(attestationPath)
 	if err != nil && !os.IsNotExist(err) {
@@ -412,7 +408,7 @@ func promoteNative(change *NativeChange) error {
 		// the already-sent callback identity.
 		err = renameNative(change.Staged, change.After.Path, change.Parents, change.After.DirectoryID)
 	} else {
-		err = nativeExchange(change.Staged, change.After.Path, change.Parents)
+		return fmt.Errorf("new native bytes reused live callback identity")
 	}
 	if err != nil {
 		return err
@@ -420,13 +416,15 @@ func promoteNative(change *NativeChange) error {
 	return syncDir(filepath.Dir(change.After.Path))
 }
 
-// NativeAlias retains every pre-existing concrete bundle path. A fresh install
-// gets an atomic symlink to the persistent callback owner, never into a cache.
+// NativeAlias retains every pre-existing concrete bundle path. Hook discovery
+// uses a stable ClaudeNotifier.app name that is retargeted at the active
+// published generation. Retargeting that alias does not swap the queued
+// callback inode.
 func NativeAlias(change *NativeChange, bin string) ([]File, error) {
 	if change == nil {
 		return nil, nil
 	}
-	path := filepath.Join(bin, filepath.Base(change.After.Path))
+	path := filepath.Join(bin, "ClaudeNotifier.app")
 	info, err := os.Lstat(path)
 	if err == nil && info.IsDir() {
 		return nil, nil
@@ -629,10 +627,12 @@ func importNativeGenerations(record NativeRecord) []NativeGeneration {
 		seen[gen.Path] = true
 		out = append(out, gen)
 	}
+	// The live record is authoritative for the active generation, including
+	// qualification evidence patched after the original Published snapshot.
+	add(nativeGenerationOf(record))
 	for _, gen := range record.Published {
 		add(gen)
 	}
-	add(nativeGenerationOf(record))
 	if record.PreviousPath != "" && record.PreviousSHA256 != "" {
 		add(NativeGeneration{
 			DirectoryID: record.PreviousDirectoryID, Path: record.PreviousPath, SHA256: record.PreviousSHA256,

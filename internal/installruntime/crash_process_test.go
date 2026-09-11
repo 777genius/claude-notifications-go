@@ -12,6 +12,7 @@ import (
 // os.Exit bypasses every defer, including lock release and staging cleanup.
 // The parent must recover only from kernel lock release and durable evidence.
 func TestCrashProcessRecovery(t *testing.T) {
+	skipUnsupportedNative(t)
 	if root := os.Getenv("PR2_CRASH_ROOT"); root != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

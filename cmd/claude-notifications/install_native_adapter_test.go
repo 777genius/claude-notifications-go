@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,9 @@ import (
 func TestInstallAdapterSelectsSuppliedNativeOverOldExecutable(t *testing.T) {
 	for _, candidate := range []string{"missing", "unattested", "wrong-attestation"} {
 		t.Run(candidate, func(t *testing.T) {
+			if candidate != "missing" && runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+				t.Skip("native bundle promotion requires a supported native platform")
+			}
 			root := t.TempDir()
 			stage, target, control := filepath.Join(root, "stage"), filepath.Join(root, "bin"), filepath.Join(root, "control")
 			write := func(path, content string) {
@@ -69,6 +73,9 @@ func TestInstallAdapterSelectsSuppliedNativeOverOldExecutable(t *testing.T) {
 }
 
 func TestInstallAdapterOldHelperSelectsQualifiedSuppliedRelease(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("native bundle promotion requires a supported native platform")
+	}
 	root := t.TempDir()
 	stage, target, control := filepath.Join(root, "stage"), filepath.Join(root, "bin"), filepath.Join(root, "control")
 	write := func(path string, data []byte) {
