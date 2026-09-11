@@ -147,7 +147,7 @@ func nativeBundleID(bundle string) string {
 	if start < 0 || end <= start {
 		return ""
 	}
-	return string(bytes.TrimSpace(rest[start+len("<string>"):end]))
+	return string(bytes.TrimSpace(rest[start+len("<string>") : end]))
 }
 
 func newFlowUUID(t *testing.T) string {
