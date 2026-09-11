@@ -43,6 +43,8 @@ func GetAppID(terminalName string) string {
 		return "com.gexperts.Tilix.desktop"
 	case "terminator":
 		return "terminator.desktop"
+	case "warpterminal", "warp":
+		return "dev.warp.Warp.desktop"
 	default:
 		return strings.ToLower(terminalName) + ".desktop"
 	}
@@ -131,6 +133,8 @@ func GetGnomeWmClass(terminalName string) string {
 		return "Xfce4-terminal"
 	case "mate-terminal":
 		return "Mate-terminal"
+	case "warpterminal", "warp":
+		return "dev.warp.Warp"
 	default:
 		return terminalName
 	}
@@ -153,6 +157,8 @@ func GetWlrctlAppID(terminalName string) string {
 		return "org.gnome.Terminal"
 	case "konsole":
 		return "org.kde.konsole"
+	case "warpterminal", "warp":
+		return "dev.warp.Warp"
 	default:
 		return strings.ToLower(terminalName)
 	}
@@ -173,6 +179,8 @@ func GetKdotoolClass(terminalName string) string {
 		return "gnome-terminal-server"
 	case "konsole":
 		return "konsole"
+	case "warpterminal", "warp":
+		return "dev.warp.Warp"
 	default:
 		return strings.ToLower(terminalName)
 	}
@@ -201,6 +209,8 @@ func GetXdotoolClass(terminalName string) string {
 		return "Tilix"
 	case "terminator":
 		return "Terminator"
+	case "warpterminal", "warp":
+		return "dev.warp.Warp"
 	default:
 		return terminalName
 	}
@@ -213,6 +223,8 @@ func GetSearchTerm(terminalName string) string {
 		return "Visual Studio Code"
 	case "gnome-terminal":
 		return "Terminal"
+	case "warpterminal", "warp":
+		return "Warp"
 	default:
 		return terminalName
 	}
@@ -262,6 +274,10 @@ func GetTerminalName() string {
 	// more specific indicator wins when a supported terminal is nested inside it.
 	if os.Getenv("ALACRITTY_WINDOW_ID") != "" {
 		return "alacritty"
+	}
+
+	if os.Getenv("WARP_FOCUS_URL") != "" || os.Getenv("WARP_TERMINAL_SESSION_UUID") != "" || os.Getenv("WARP_IS_LOCAL_SHELL_SESSION") != "" {
+		return "WarpTerminal"
 	}
 
 	// Fallback to generic terminal

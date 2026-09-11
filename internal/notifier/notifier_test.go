@@ -1419,6 +1419,7 @@ func TestCwdToFileURL(t *testing.T) {
 
 func TestBuildFocusScript_RegularTerminal_UsesFocusWindow(t *testing.T) {
 	t.Setenv(iTerm2SessionIDEnv, "")
+	clearWarpFocusEnv(t)
 	script := buildFocusScript("dev.warp.Warp-Stable", "/home/user/my-project")
 	// Regular terminals now use focus-window subcommand instead of AppleScript.
 	// This avoids the Automation permission issue on macOS Tahoe (26.x).
@@ -1598,6 +1599,7 @@ func TestBuildTerminalNotifierArgs_WithCWD_UsesExecute(t *testing.T) {
 
 func TestBuildTerminalNotifierArgs_WithCWD_NonItermTerminalUsesFocusWindow(t *testing.T) {
 	t.Setenv(iTerm2SessionIDEnv, "")
+	clearWarpFocusEnv(t)
 	args := buildTerminalNotifierArgs("Title", "Message", "dev.warp.Warp-Stable", "/home/user/my-project", true)
 	execVal := getArgValue(args, "-execute")
 	if execVal == "" {

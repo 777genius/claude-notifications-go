@@ -26,6 +26,9 @@ func saveTerminalEnv(t *testing.T) func() {
 		"WEZTERM_PANE",
 		"WEZTERM_UNIX_SOCKET",
 		"ALACRITTY_WINDOW_ID",
+		"WARP_FOCUS_URL",
+		"WARP_TERMINAL_SESSION_UUID",
+		"WARP_IS_LOCAL_SHELL_SESSION",
 	}
 	type envState struct {
 		value string
@@ -545,6 +548,24 @@ func TestGetTerminalName_Fallback(t *testing.T) {
 	result := GetTerminalName()
 	if result != "Terminal" {
 		t.Errorf("GetTerminalName() fallback = %q, want %q", result, "Terminal")
+	}
+}
+
+func TestGetTerminalName_WarpFocusURL(t *testing.T) {
+	restore := saveTerminalEnv(t)
+	defer restore()
+
+	os.Setenv("WARP_FOCUS_URL", "warp://session/6b7be92641ae8ced80188a4d87e4b200")
+
+	result := GetTerminalName()
+	if result != "WarpTerminal" {
+		t.Errorf("GetTerminalName() with WARP_FOCUS_URL = %q, want %q", result, "WarpTerminal")
+	}
+}
+
+func TestGetGnomeWmClass_Warp(t *testing.T) {
+	if got := GetGnomeWmClass("WarpTerminal"); got != "dev.warp.Warp" {
+		t.Errorf("GetGnomeWmClass(WarpTerminal) = %q, want dev.warp.Warp", got)
 	}
 }
 

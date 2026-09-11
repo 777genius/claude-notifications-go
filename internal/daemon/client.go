@@ -38,6 +38,7 @@ func NewClient() (*Client, error) {
 // focusFolder is the project folder name for window-specific focus (may be empty).
 // focusWindowID and focusWindowTitle are optional exact window hints captured in the hook process.
 // wezTermPaneID and wezTermSocket are WezTerm-specific hints for tab-level focus (may be empty).
+// warpFocusURL is a Warp session deep link that focuses the originating pane (may be empty).
 func (c *Client) SendNotification(
 	title,
 	body,
@@ -46,7 +47,8 @@ func (c *Client) SendNotification(
 	focusWindowID,
 	focusWindowTitle,
 	wezTermPaneID,
-	wezTermSocket string,
+	wezTermSocket,
+	warpFocusURL string,
 	timeout int,
 ) (*NotifyResponse, error) {
 	req := Request{
@@ -61,6 +63,7 @@ func (c *Client) SendNotification(
 			FocusWindowTitle:   focusWindowTitle,
 			FocusWezTermPaneID: wezTermPaneID,
 			FocusWezTermSocket: wezTermSocket,
+			FocusWarpURL:       warpFocusURL,
 			Timeout:            timeout,
 		},
 	}

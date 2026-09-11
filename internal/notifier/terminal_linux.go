@@ -12,6 +12,7 @@ import (
 	"github.com/777genius/agent-notifications/internal/config"
 	"github.com/777genius/agent-notifications/internal/daemon"
 	"github.com/777genius/agent-notifications/internal/logging"
+	"github.com/777genius/agent-notifications/internal/warpfocus"
 	"github.com/gen2brain/beeep"
 )
 
@@ -101,8 +102,9 @@ func sendViaDaemon(title, body, cwd string) error {
 
 	// Capture WezTerm pane info only when the focus target is actually WezTerm.
 	wezTermPaneID, wezTermSocket := daemon.GetWezTermFocusHints(focusTarget)
+	warpFocusURL := warpfocus.FromEnv()
 
-	_, err = client.SendNotification(title, body, focusTarget, folderName, focusWindowID, focusWindowTitle, wezTermPaneID, wezTermSocket, 30)
+	_, err = client.SendNotification(title, body, focusTarget, folderName, focusWindowID, focusWindowTitle, wezTermPaneID, wezTermSocket, warpFocusURL, 30)
 	return err
 }
 

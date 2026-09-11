@@ -47,7 +47,7 @@ Notifications for Claude Code and Codex CLI (beta), with sounds, git branch disp
 
 - **Cross-platform**: macOS (Intel & Apple Silicon), Linux (x64 & ARM64), Windows 10+ (x64)
 - **Claude notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit, API Error
-- **Click-to-focus** (macOS, Linux): click notification to focus the exact project window and tab — Ghostty, VS Code, iTerm2, Warp, kitty, WezTerm, Alacritty, Hyper, Apple Terminal, GNOME Terminal, Konsole, Tilix, Terminator, XFCE4 Terminal, MATE Terminal
+- **Click-to-focus** (macOS, Linux, Windows): click notification to focus the exact project window and tab — Ghostty, VS Code, iTerm2, Warp (`WARP_FOCUS_URL`), kitty, WezTerm, Alacritty, Hyper, Apple Terminal, GNOME Terminal, Konsole, Tilix, Terminator, XFCE4 Terminal, MATE Terminal
 - **Multiplexers**: tmux (including iTerm2 -CC integration mode), zellij, WezTerm, kitty — click switches to the correct session/pane/tab
 - **Git branch in title**: `✅ Completed main [cat]`
 - **Sounds**: MP3/WAV/FLAC/OGG/AIFF, volume control, audio device selection
@@ -294,7 +294,8 @@ Clicking a notification activates your terminal window. Auto-detects terminal an
 | Ghostty | Exact tab focus via Ghostty AppleScript, with AXDocument fallback |
 | VS Code / Insiders / Cursor | AXTitle (focus-window subcommand) |
 | iTerm2 | Exact tab/pane targeting via iTerm2 Python API when available, otherwise app-level iTerm activation |
-| Warp, kitty, WezTerm, Alacritty, Hyper, Apple Terminal | AXTitle (focus-window subcommand) |
+| Warp | Exact window/tab/pane via `WARP_FOCUS_URL` (`warp://session/<uuid>`), AXTitle fallback on older Warp |
+| kitty, WezTerm, Alacritty, Hyper, Apple Terminal | AXTitle (focus-window subcommand) |
 | Any other (custom `terminalBundleId`) | AXTitle (focus-window subcommand) |
 
 **Linux** — via D-Bus daemon with automatic compositor detection:
@@ -302,10 +303,11 @@ Clicking a notification activates your terminal window. Auto-detects terminal an
 | Terminal | Supported compositors |
 |----------|----------------------|
 | VS Code | GNOME, KDE, Sway, X11 |
+| Warp | GNOME, KDE, Sway, X11 — exact pane via `WARP_FOCUS_URL` |
 | GNOME Terminal, Konsole, Alacritty, kitty, WezTerm, Tilix, Terminator, XFCE4 Terminal, MATE Terminal | GNOME, KDE, Sway, X11 |
 | Any other | Fallback by name |
 
-Linux focus methods (tried in order): GNOME extension, GNOME Shell Eval, GNOME FocusApp, wlrctl (Sway/wlroots), kdotool (KDE), xdotool (X11).
+Linux focus methods (tried in order): Warp session URL (`xdg-open`), GNOME extension, GNOME Shell Eval, GNOME FocusApp, wlrctl (Sway/wlroots), kdotool (KDE), xdotool (X11).
 
 **Multiplexers** (both platforms): tmux (including iTerm2 -CC integration mode), zellij, WezTerm, kitty — click switches to the correct pane/tab.
 
