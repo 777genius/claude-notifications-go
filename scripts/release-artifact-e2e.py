@@ -44,7 +44,7 @@ def _windows_acl_diagnostic(path, label):
     print(f'=== ACL diagnostic: {label} ===', flush=True)
     diag_env = dict(os.environ, DIAG_PATH=str(Path(path).resolve()))
     subprocess.run(
-        ['powershell', '-NoProfile', '-NonInteractive', '-Command', _WINDOWS_ACL_DIAGNOSTIC_SCRIPT],
+        ['pwsh', '-NoProfile', '-NonInteractive', '-Command', _WINDOWS_ACL_DIAGNOSTIC_SCRIPT],
         env=diag_env, text=True, timeout=30, check=False)
 
 
@@ -76,7 +76,7 @@ def _windows_private_scratch_root(path):
         return
     root_env = dict(os.environ, DIAG_PATH=str(Path(path).resolve()))
     subprocess.run(
-        ['powershell', '-NoProfile', '-NonInteractive', '-Command', _WINDOWS_PRIVATE_ROOT_SCRIPT],
+        ['pwsh', '-NoProfile', '-NonInteractive', '-Command', _WINDOWS_PRIVATE_ROOT_SCRIPT],
         env=root_env, text=True, timeout=30, check=True)
 
 
