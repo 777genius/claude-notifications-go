@@ -1,5 +1,7 @@
 # Фаза 4: документация и релиз
 
+> Superseded configuration policy: this historical plan predates shared E → existing L → N selection and revision-checked edits. See [current configuration and compatibility](../../../README.md#manual-configuration); historical path/copy guidance below is not an active recipe.
+
 > [!WARNING]
 > **ИСТОРИЧЕСКИЙ ДОКУМЕНТ. НЕ ИСПОЛЬЗОВАТЬ КАК АКТУАЛЬНЫЙ RELEASE PLAN.** Нормативные release
 > gate, selector, Go 1.22 floor и native marketplace contract находятся в

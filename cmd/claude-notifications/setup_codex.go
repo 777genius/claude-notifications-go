@@ -1,12 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/777genius/claude-notifications/internal/codexsetup"
+	"github.com/777genius/agent-notifications/internal/codexsetup"
 )
 
 type setupCodexOptions struct {
@@ -56,6 +57,10 @@ func runSetupCodex(args []string) {
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "setup-codex: %v\n", err)
+		var partial *codexsetup.InitializationError
+		if errors.As(err, &partial) {
+			os.Exit(3)
+		}
 		os.Exit(1)
 	}
 

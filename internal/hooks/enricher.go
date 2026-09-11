@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/777genius/claude-notifications/internal/analyzer"
-	"github.com/777genius/claude-notifications/internal/summary"
+	"github.com/777genius/agent-notifications/internal/analyzer"
+	"github.com/777genius/agent-notifications/internal/summary"
 )
 
 // TurnInsight is the policy-relevant view of a Codex event derived by an

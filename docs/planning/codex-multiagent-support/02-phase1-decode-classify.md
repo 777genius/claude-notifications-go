@@ -1,5 +1,7 @@
 # Фаза 1: декодирование Codex-событий, классификация, плюмбинг в существующий pipeline
 
+> Superseded configuration policy: this historical plan predates shared E → existing L → N selection and revision-checked edits. See [current configuration and compatibility](../../../README.md#manual-configuration); historical path/copy guidance below is not an active recipe.
+
 > [!WARNING]
 > **ИСТОРИЧЕСКИЙ ДОКУМЕНТ. НЕ РЕАЛИЗОВЫВАТЬ БУКВАЛЬНО.** Нормативный контракт находится в
 > `00-overview-and-decisions.md`. Устарели hand-rolled decoder, отдельный CLI и unlimited stdin;

@@ -1,10 +1,10 @@
-<h1 align="center">Claude Notifications (plugin)</h1>
+<h1 align="center"><a href="https://777genius.github.io/agent-notifications/">Agent Notifications</a></h1>
 
-[![Ubuntu CI](https://github.com/777genius/claude-notifications-go/workflows/Ubuntu%20CI/badge.svg)](https://github.com/777genius/claude-notifications-go/actions)
-[![macOS CI](https://github.com/777genius/claude-notifications-go/workflows/macOS%20CI/badge.svg)](https://github.com/777genius/claude-notifications-go/actions)
-[![Windows CI](https://github.com/777genius/claude-notifications-go/workflows/Windows%20CI/badge.svg)](https://github.com/777genius/claude-notifications-go/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/777genius/claude-notifications-go)](https://goreportcard.com/report/github.com/777genius/claude-notifications-go)
-[![codecov](https://codecov.io/gh/777genius/claude-notifications-go/branch/main/graph/badge.svg)](https://codecov.io/gh/777genius/claude-notifications-go)
+[![Ubuntu CI](https://github.com/777genius/agent-notifications/workflows/Ubuntu%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
+[![macOS CI](https://github.com/777genius/agent-notifications/workflows/macOS%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
+[![Windows CI](https://github.com/777genius/agent-notifications/workflows/Windows%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/777genius/agent-notifications)](https://goreportcard.com/report/github.com/777genius/agent-notifications)
+[![codecov](https://codecov.io/gh/777genius/agent-notifications/branch/main/graph/badge.svg)](https://codecov.io/gh/777genius/agent-notifications)
 
 <div>
 <table>
@@ -16,7 +16,7 @@
 </table>
 </div>
 
-Smart notifications for Claude Code with click-to-focus, git branch display, and webhook integrations.
+Notifications for Claude Code and Codex CLI (beta), with sounds, git branch display, and webhook integrations. See [Codex support and limitations](#codex-cli-support-beta) for differences between products.
 
 > **Boost your productivity** — check out the [advanced task manager for Claude with a convenient UI](https://github.com/777genius/claude_agent_teams_ui), from the creator of this plugin.
 
@@ -29,6 +29,7 @@ Smart notifications for Claude Code with click-to-focus, git branch display, and
     - [Manual Install](#manual-install)
     - [Updating](#updating)
   - [Supported Notification Types](#supported-notification-types)
+  - [Codex CLI Support (beta)](#codex-cli-support-beta)
   - [Platform Support](#platform-support)
     - [Click-to-Focus (macOS & Linux)](#click-to-focus-macos--linux)
   - [Configuration](#configuration)
@@ -44,7 +45,7 @@ Smart notifications for Claude Code with click-to-focus, git branch display, and
 ## Features
 
 - **Cross-platform**: macOS (Intel & Apple Silicon), Linux (x64 & ARM64), Windows 10+ (x64)
-- **6 notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit, API Error
+- **Claude notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit, API Error
 - **Click-to-focus** (macOS, Linux): click notification to focus the exact project window and tab — Ghostty, VS Code, iTerm2, Warp, kitty, WezTerm, Alacritty, Hyper, Apple Terminal, GNOME Terminal, Konsole, Tilix, Terminator, XFCE4 Terminal, MATE Terminal
 - **Multiplexers**: tmux (including iTerm2 -CC integration mode), zellij, WezTerm, kitty — click switches to the correct session/pane/tab
 - **Git branch in title**: `✅ Completed main [cat]`
@@ -56,25 +57,40 @@ Smart notifications for Claude Code with click-to-focus, git branch display, and
 
 ### Prerequisites
 
-- Claude Code
-- **Windows users:** Git Bash (included with [Git for Windows](https://git-scm.com/download/win))
-- **macOS/Linux users:** No additional software required
+- Claude Code and/or Codex CLI for the products you select
+- Python **3.6 or newer**, available as the `python3` command on PATH, is required for installer metadata and checksum validation. Check with `python3 --version`.
+- **Windows users:** Git Bash (included with [Git for Windows](https://git-scm.com/download/win)) and native Windows Python available as `python3` from Git Bash. A `python` or `py` command alone is insufficient; use native Python, not WSL Python.
+- **macOS/Linux users:** Ensure `python3` is installed and available in the shell running the installer.
 
 ### Quick Install (Recommended)
 
-One command to install everything:
+Prefer a guided setup? [Open the installation guide](https://777genius.github.io/agent-notifications/#install) to choose your agent, OS and task.
+
+One command to install or update the notifications plugin for Claude Code, Codex, or both. The interactive menu asks you to choose:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash
 ```
 
 > Windows users: open Git Bash from the Start menu and run this command there. Do not run the `curl ... | bash` command from PowerShell or Windows Terminal if `bash` opens WSL, because that targets Linux paths and binaries instead of Windows.
 
-Then restart Claude Code and optionally run `/claude-notifications-go:settings` to configure sounds.
+For automation or terminals without a controlling TTY, choose explicitly:
 
-The binary is downloaded once and cached locally. You can re-run `/claude-notifications-go:settings` anytime to reconfigure.
+```bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash -s -- --product codex
+```
 
-> If the bootstrap script doesn't work for your environment, use the [Manual Install](#manual-install) steps below inside Claude Code.
+Use `claude`, `codex`, or `both`. This installs the notifications plugin; the selected Claude Code / Codex CLI must already be on `PATH`.
+
+After installation:
+
+- **Claude:** restart Claude Code. Optionally run `/claude-notifications-go:settings` to configure sounds.
+- **Codex:** start Codex, run `/hooks`, then review and trust the installed hooks. The installer registers them automatically; no JSON editing or manual registration command is needed. Trust approval remains yours.
+- **Both:** complete both steps above.
+
+Codex requires a published stable plugin release v1.42.0 or newer. The installer downloads matching source and binaries, respects `CODEX_HOME`, and keeps a permanent runtime copy there. It reports an error if no supported release is published yet.
+
+> If installation fails, use [manual Claude installation](#manual-install) or [manual Codex registration](#manual-codex-registration), depending on the product.
 
 ### Manual Install
 
@@ -85,7 +101,7 @@ Run these slash commands in the Claude Code chat, not in your system terminal:
 
 ```text
 # 1) Add marketplace
-/plugin marketplace add 777genius/claude-notifications-go
+/plugin marketplace add 777genius/agent-notifications
 # 2) Install plugin
 /plugin install claude-notifications-go@claude-notifications-go
 # 3) Restart Claude Code
@@ -101,16 +117,16 @@ Run these slash commands in the Claude Code chat, not in your system terminal:
 
 ### Updating
 
-Run the same command as for installation — it will update both the plugin and the binary:
+Run the same command and choose the product(s) you want to update:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/bin/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/bootstrap.sh | bash
 ```
 
-Then restart Claude Code to apply the new version. Your settings in `~/.claude/claude-notifications-go/config.json` are preserved across updates.
+For Claude, restart Claude Code. For Codex, restart Codex and inspect `/hooks`; changed hook definitions may need trust approval again. The installer refreshes the Codex runtime and registration automatically. Existing foreign hooks and shared settings in the file selected by `config path` are preserved.
 
 <details>
-<summary>Manual update (if bootstrap didn't work)</summary>
+<summary>Manual Claude update (if bootstrap didn't work)</summary>
 
 Claude Code also periodically checks for plugin updates automatically. Binaries are updated on the next hook invocation when a version mismatch is detected.
 
@@ -124,6 +140,8 @@ If the binary auto-update didn't work (e.g. no internet at the time), run `/clau
 </details>
 
 ## Supported Notification Types
+
+The Claude triggers are listed below. Codex uses a different event mapping, described in [Codex support](#codex-cli-support-beta).
 
 | Status | Icon | Description | Trigger |
 |--------|------|-------------|---------|
@@ -141,58 +159,51 @@ The same binary can notify for OpenAI Codex CLI sessions.
 
 ### Setup
 
-The registration command is implemented in Go and does not require `jq`. You need a
-Codex-capable release (v1.42.0 or later) and its plugin bundle; an older binary cannot run
-`setup-codex`. The command is not automatically added to your `PATH` by the Claude plugin.
+Use the [one-command installer](#quick-install-recommended) and choose Codex or both.
+It downloads matching release source and binaries, registers the hooks, and keeps a stable
+runtime copy. Then start Codex and approve the entries in `/hooks`.
 
-For a Codex-only installation, download a bundle and its platform binary first. In a
-terminal with Git and Bash (Git Bash on Windows), run:
+### Manual Codex registration
 
-```bash
-git clone --depth 1 https://github.com/777genius/claude-notifications-go.git
-cd claude-notifications-go
-CN_PRODUCT=codex bash bin/install.sh
-```
+Skip this section if you used the one-command installer. For manual setup, download a
+matching release bundle and binary (v1.42.0 or newer). The Go registration command needs
+no `jq` and is not automatically added to your `PATH`.
 
-This downloads the notification binary; it does not install Claude Code. Keep this source
-directory for updates. The Codex registration below installs a separate stable runtime copy.
-
-From an already downloaded plugin bundle, run the binary by its path:
+From the bundle directory:
 
 ```bash
-./bin/claude-notifications setup-codex --plugin-root .
+./bin/agent-notifications setup-codex --plugin-root .
 ```
 
-On Windows, run the downloaded `claude-notifications-windows-amd64.exe` in PowerShell:
+On Windows, run the installed primary launcher in PowerShell (the downloaded
+`claude-notifications-windows-amd64.exe` remains compatible):
 
 ```powershell
-.\bin\claude-notifications-windows-amd64.exe setup-codex --plugin-root .
+.\bin\agent-notifications.bat setup-codex --plugin-root .
 ```
 
 Run these commands in the bundle directory. If you have explicitly added the binary to
-`PATH`, `claude-notifications setup-codex --plugin-root <bundle-directory>` also works.
+`PATH`, `agent-notifications setup-codex --plugin-root <bundle-directory>` also works.
 
 It installs a self-contained copy of the plugin at `~/.codex/claude-notifications-go` and writes
 the hook entries into `~/.codex/hooks.json`. Existing foreign hook definitions and unknown fields are preserved,
 and every run saves a uniquely named backup of the previous file next to it.
 
-Then start Codex, run `/hooks`, review the entries and trust them — Codex asks once.
+Then start Codex, run `/hooks`, review the entries and trust them.
 
 Useful flags: `--dry-run` shows what would change, `--print` outputs the JSON so you can merge it
 yourself, `--codex-home` and `--plugin-root` override the paths.
 
-After updating the plugin, run the command again to refresh the installed copy. The registration
-itself does not change, so Codex does not ask you to trust the hooks again.
-For the Git checkout above, update with `git pull --ff-only`, run `CN_PRODUCT=codex bash bin/install.sh --force`,
-then repeat the appropriate `setup-codex` command. Existing Claude plugin users can update
-their source bundle using the usual Claude plugin update process before repeating setup.
+For manual updates, run the registration command again to refresh the installed copy.
+Unchanged hook definitions retain trust; changed definitions require review again.
+The one-command installer handles this registration step automatically.
 
 Claude Code installation and updates continue to use the [existing installation steps](#installation).
-Both products share settings at `~/.claude/claude-notifications-go/config.json`; installing
+Both products share settings at the shared file selected by `config path`; installing
 Codex does not require installing Claude Code. Keep your existing settings file when updating.
 
 <details>
-<summary>Why a separate step is needed</summary>
+<summary>How registration works</summary>
 
 `setup-codex` registers user hooks explicitly, using a stable runtime directory independent
 of the plugin cache. This is the setup path covered by this project's installer tests.
@@ -231,7 +242,7 @@ Known limitations:
 - Windows support for the Codex route is not declared until the Windows launcher is proven.
 - Codex hooks require a trust review (`/hooks` inside Codex); changed definitions require review again.
 
-Both products share one config file (`~/.claude/claude-notifications-go/config.json`).
+Both products share one config file (the shared file selected by `config path`).
 
 ## Platform Support
 
@@ -286,19 +297,49 @@ See **[Click-to-Focus Guide](docs/CLICK_TO_FOCUS.md)** for configuration details
 
 ## Configuration
 
+The following workflow requires the coordinated config-capable runtime and installer; older releases may not provide these commands. Do not use a legacy full-file writer as a fallback.
+
 Run `/claude-notifications-go:settings` to configure sounds, volume, webhooks, and other options via an interactive wizard. You can re-run it anytime to reconfigure.
 
 ### Manual Configuration
 
-Config file location:
+Use the installed config-capable executable (shown as `$NOTIFICATIONS_BIN` in recipes):
 
-| Platform | Path |
-|----------|------|
-| macOS / Linux | `~/.claude/claude-notifications-go/config.json` |
-| Windows (Git Bash) | `~/.claude/claude-notifications-go/config.json` |
-| Windows (PowerShell) | `$env:USERPROFILE\.claude\claude-notifications-go\config.json` |
+```bash
+"$NOTIFICATIONS_BIN" config path --json
+"$NOTIFICATIONS_BIN" config inspect --json
+```
 
-Edit the config file directly:
+One file is selected per environment context: explicit **E**, otherwise existing **L**, otherwise **N**. Existing L is preserved; there is no automatic migration, copy, merge or synchronization.
+
+| Selection | Native file path |
+|---|---|
+| E: `AGENT_NOTIFICATIONS_CONFIG` | An absolute **file**, not a directory |
+| L: existing legacy file, macOS/Linux | `$HOME/.claude/claude-notifications-go/config.json` |
+| L: existing legacy file, Windows | `%USERPROFILE%\.claude\claude-notifications-go\config.json` |
+| N: fresh macOS | `$HOME/Library/Application Support/agent-notifications/config.json` |
+| N: fresh Linux | Absolute nonempty `$XDG_CONFIG_HOME/agent-notifications/config.json`, otherwise `$HOME/.config/agent-notifications/config.json` |
+| N: fresh Windows | `%APPDATA%\agent-notifications\config.json` |
+
+Relative XDG_CONFIG_HOME is ignored with a diagnostic. Windows uses USERPROFILE for L, not Git Bash HOME; missing/relative APPDATA without L is an error. macOS ignores XDG_CONFIG_HOME. Missing home in automatic mode is an error; a valid explicit E supports portable contexts without HOME/APPDATA.
+
+Unset E enables automatic selection; set-empty, whitespace-only, relative, `~/file` and invalid native paths are errors, never fallback. The resolver does not expand variables or tilde in E. Expand them in the calling shell if intended; Git Bash may use `cygpath -w` to supply a native absolute Windows path. Do not trim legitimate spaces in filenames.
+
+For writable targets, `.lock` filenames and generated `.tmp-<32 hex digits>` / `.backup-<32 hex digits>` names are reserved for coordination and recovery metadata. Choose another filename for a portable config.
+
+If L and N both exist, L wins with a diagnostic even if identical or N is newer. To intentionally select N, set E in **every** new adapter and CLI environment. Unsetting E restores legacy-first selection. Old binaries ignore E. `CODEX_HOME`, `CLAUDE_HOME`, `CLAUDE_CONFIG_DIR`, product, cwd and bundle/install paths do not select notification config. They retain their resource/installation meanings; permission markers, venv and state paths do not move.
+
+`config init` is create-only: existing valid config is a byte/mode/mtime-preserving no-op; invalid existing config is an error. Hooks never write config and use in-memory defaults only for truly missing automatic config after historical recovery checks. Explicit missing E, corrupt/unreadable canonical files and unresolved recovery artifacts are errors, with no bundle/default fallback.
+
+Use the [settings recipe](commands/settings.md) for `config edit --stdin --expect-revision TOKEN`: private input, only requested JSON Pointer leaf edits, raw values, and an explicit user decision after any conflict. A volume plus one status sound edit preserves every other raw field, status, channel, webhook secret/payload and future-agent setting. Inspect is a safe projection, not a replacement document; absent free-form values are not unset.
+
+Before any updater deletes/refreshes cache, personalized or unknown historical cache-only/custom-root settings require explicit import using a verified new helper: stop old writers, inspect the selected destination, then `config init --from FILE` only if that destination is missing. Never auto-copy a bundle, guess the newest cache, overwrite existing canonical config, or treat this as migration/reset. If preflight/helper is unavailable, stop the update and retain the old runtime. For existing invalid config, stop writers and explicitly repair/recover it while preserving damaged bytes; init cannot reset it.
+
+Existing L with v1-shaped JSON remains readable by the old Go reader, which ignores additive unknown fields. The old wizard loses unknown fields and is an unsupported concurrent writer. N/E require a bridge-aware runtime, or explicit stopped-writer recovery to a single legacy canonical file with a private backup and all contexts switched; two live copies are not a workaround. No downloadable bridge release is promised here. Native Windows replacement/ACL, macOS/Linux crash/concurrency and OS E2E qualification remain release gates, not results established by this documentation patch.
+
+For support, share only `config inspect --json`, never `cat` of config; keep saved diagnostics private and review paths before posting. The response includes selection (path/source/exists/diagnostics), revision, schemaVersion, valid, optional errorCode, and safe settings: desktopEnabled, desktopSound, volume and known-status enabled/desktopEnabled/webhookEnabled. It omits free-form sounds, webhook secrets/payloads and unknown fields.
+
+The following JSON illustrates the schema. Do not replace your existing document with it; apply only explicitly requested leaf edits:
 
 ```json
 {
@@ -311,7 +352,7 @@ Edit the config file directly:
       "clickToFocus": true,
       "terminalBundleId": "",
       "showSessionLabel": true,
-      "appIcon": "${CLAUDE_PLUGIN_ROOT}/claude_icon.png"
+      "appIcon": "${AGENT_NOTIFICATIONS_ROOT}/claude_icon.png"
     },
     "webhook": {
       "enabled": false,
@@ -342,31 +383,31 @@ Edit the config file directly:
   "statuses": {
     "task_complete": {
       "title": "✅ Completed",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/task-complete.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/task-complete.mp3"
     },
     "review_complete": {
       "title": "🔍 Review",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/review-complete.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/review-complete.mp3"
     },
     "question": {
       "title": "❓ Question",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3"
     },
     "plan_ready": {
       "title": "📋 Plan",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/plan-ready.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/plan-ready.mp3"
     },
     "session_limit_reached": {
       "title": "⏱️ Session Limit Reached",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/error.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/error.mp3"
     },
     "api_error": {
       "title": "🔴 API Error: 401",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/error.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/error.mp3"
     },
     "api_error_overloaded": {
       "title": "🔴 API Error",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/error.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/error.mp3"
     }
   }
 }
@@ -394,7 +435,7 @@ You can also override individual channels per status:
   "statuses": {
     "question": {
       "title": "❓ Question",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3",
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3",
       "desktop": { "enabled": true },
       "webhook": { "enabled": false }
     }
@@ -435,11 +476,11 @@ Unknown means "show the notification", not "suppress it".
 ### Sound Options
 
 **Built-in sounds** (included):
-- `${CLAUDE_PLUGIN_ROOT}/sounds/task-complete.mp3`
-- `${CLAUDE_PLUGIN_ROOT}/sounds/review-complete.mp3`
-- `${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3`
-- `${CLAUDE_PLUGIN_ROOT}/sounds/plan-ready.mp3`
-- `${CLAUDE_PLUGIN_ROOT}/sounds/error.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/task-complete.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/review-complete.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/plan-ready.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/error.mp3`
 
 **System sounds:**
 - macOS: `/System/Library/Sounds/Glass.aiff`, `/System/Library/Sounds/Hero.aiff`, etc.
@@ -482,7 +523,7 @@ bin/list-devices
 #   2: Immersed
 ```
 
-Then add the device name to your `~/.claude/claude-notifications-go/config.json`:
+Then add the device name to the shared file selected by `config path`:
 
 ```json
 {
@@ -527,11 +568,11 @@ The plugin is invoked automatically by Claude Code hooks. To test manually:
 ```bash
 # Test PreToolUse hook
 echo '{"session_id":"test","transcript_path":"/path/to/transcript.jsonl","tool_name":"ExitPlanMode"}' | \
-  claude-notifications handle-hook PreToolUse
+  agent-notifications handle-hook PreToolUse
 
 # Test Stop hook
 echo '{"session_id":"test","transcript_path":"/path/to/transcript.jsonl"}' | \
-  claude-notifications handle-hook Stop
+  agent-notifications handle-hook Stop
 ```
 
 ## Contributing
@@ -582,3 +623,6 @@ See **[Troubleshooting Guide](docs/troubleshooting.md)** for common issues:
 ## License
 
 GPL-3.0 - See [LICENSE](LICENSE) file for details.
+
+For per-agent sound and notification settings, see [shared configuration and schema 2 overrides](docs/AGENT_CONFIGURATION.md).
+The primary command is `agent-notifications`; `claude-notifications` remains a permanent compatibility alias.

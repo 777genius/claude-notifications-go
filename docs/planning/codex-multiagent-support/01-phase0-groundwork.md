@@ -1,5 +1,7 @@
 # Фаза 0: архитектурные решения для Codex notification support в claude-notifications-go
 
+> Superseded configuration policy: this historical plan predates shared E → existing L → N selection and revision-checked edits. See [current configuration and compatibility](../../../README.md#manual-configuration); historical path/copy guidance below is not an active recipe.
+
 > [!WARNING]
 > **ИСТОРИЧЕСКИЙ ДОКУМЕНТ. НЕ РЕАЛИЗОВЫВАТЬ БУКВАЛЬНО.** Нормативный контракт находится в
 > `00-overview-and-decisions.md`. В частности, устарели решения про manual installer, config,

@@ -1,5 +1,8 @@
 # Custom Webhook Integration
 
+Use the installed config-capable executable as `$NOTIFICATIONS_BIN`. Locate settings with `config path` and use [revision-checked leaf edits](../../commands/settings.md). JSON examples below illustrate fields, not whole-file replacements. Keep unrequested fields and literal environment templates unchanged. `config inspect --json` is the safe support output; it intentionally omits URLs, headers, payloads, free-form sounds and unknown fields. Never share raw config or assume omitted values are unset. Keep diagnostic files private and review logs for credentials before sharing.
+
+
 Integrate Claude Code notifications with any webhook-compatible service.
 
 ## Overview
@@ -15,7 +18,7 @@ Custom webhooks allow you to send notifications to any HTTP endpoint that accept
 
 ### Configuration
 
-Edit `~/.claude/claude-notifications-go/config.json`:
+Edit the shared file selected by `config path`:
 
 ```json
 {
@@ -309,7 +312,7 @@ _push notifications to Android/iOS/browsers/etc., FOSS_
 
 1. Install [any app](https://ntfy.sh/)
 2. Subscribe to `your_topic_name`
-3. Configure Claude Notifications:
+3. Configure Agent Notifications:
 
 ```json
 "webhook": {
@@ -333,7 +336,7 @@ You can also use ntfy <ins>as middleware transformer for other webhooks</ins> or
 
 1. Create a **Webhook by Zapier** trigger
 2. Copy the webhook URL
-3. Configure Claude Notifications:
+3. Configure Agent Notifications:
 
 ```json
 {
@@ -351,14 +354,14 @@ You can also use ntfy <ins>as middleware transformer for other webhooks</ins> or
 1. Add **Webhook** node to workflow
 2. Set method to `POST`
 3. Copy webhook URL
-4. Configure Claude Notifications with the URL
+4. Configure Agent Notifications with the URL
 
 ### Make (formerly Integromat)
 
 1. Create scenario with **Webhooks** module
 2. Add **Custom webhook**
 3. Copy webhook URL
-4. Configure Claude Notifications with the URL
+4. Configure Agent Notifications with the URL
 
 ### PagerDuty
 
@@ -405,7 +408,7 @@ Perfect for testing webhook payloads:
 
 1. Go to https://webhook.site/
 2. Copy your unique URL
-3. Configure Claude Notifications:
+3. Configure Agent Notifications:
 
 ```json
 {

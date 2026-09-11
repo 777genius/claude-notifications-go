@@ -1,16 +1,15 @@
 #!/bin/bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-env.sh"
+test_env_enter "$0" "$@"
 # Disposable offline wrapper + installer regression, also called by install_test.sh.
 set -eu
 src=$(cd "$(dirname "$0")" && pwd)
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
-mkdir -p "$root"/{home,tmp,cache,config,state,data,app,local,codex,stubs}
-# Every runtime process inherits only this allowlist.
-env -i PATH=/usr/bin:/bin HOME="$root/home" USERPROFILE="$root/home" \
- XDG_CACHE_HOME="$root/cache" XDG_CONFIG_HOME="$root/config" XDG_STATE_HOME="$root/state" \
- XDG_DATA_HOME="$root/data" APPDATA="$root/app" LOCALAPPDATA="$root/local" \
- CODEX_HOME="$root/codex" TMPDIR="$root/tmp" TMP="$root/tmp" TEMP="$root/tmp" \
- ROOT="$root" SRC="$src" bash <<'RUN'
+test_env_setup "$root"
+mkdir -p "$root/stubs"
+# The suite already entered an allowlist environment above.
+ROOT="$root" SRC="$src" bash <<'RUN'
 set -eu
 cd "$ROOT"
 # This fixture exercises the POSIX shared wrapper on every CI host. Native
@@ -105,12 +104,12 @@ for EXISTING in yes no; do main >/dev/null; done
 rm -rf "$venv"
 main >/dev/null
 [ ! -e "$venv" ]
-# Positive Claude control: the same failing pip fixture reaches old cleanup.
+# Positive Claude control: failed private pip preserves the broken live tree.
 unset CN_PRODUCT
 mkdir -p "$venv"
 echo keep > "$venv/canary"
 main >/dev/null
 [ -f "$ROOT/python-called" ]
-[ ! -e "$venv" ]
+[ "$(cat "$venv/canary")" = keep ]
 echo 'PASS: isolated Codex cache and installer regressions'
 RUN

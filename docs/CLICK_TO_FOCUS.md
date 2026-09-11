@@ -1,10 +1,12 @@
 # Click-to-Focus
 
+Use [shared OS path selection](../README.md#manual-configuration) and the [revision-checked settings recipe](../commands/settings.md). Examples show fields, not replacement documents. Keep unchanged by default, submit only requested leaf edits through private stdin, and ask for an explicit decision after CAS conflicts. Safe inspect omits free-form values; omission is not an instruction to reset them.
+
 Clicking a notification activates your terminal window — no more hunting for the right window.
 
 ## Configuration
 
-In `~/.claude/claude-notifications-go/config.json`:
+In the shared file selected by `config path`:
 
 ```json
 {
@@ -73,7 +75,7 @@ Falls back to standard notifications if no focus tool is available.
 If Linux click-to-focus focuses the wrong window, run the diagnostic script immediately after reproducing the failed click:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/777genius/claude-notifications-go/main/scripts/linux-focus-debug.sh | bash
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/scripts/linux-focus-debug.sh | bash
 ```
 
 It writes a report file in the current directory with:

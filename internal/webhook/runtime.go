@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/777genius/claude-notifications/internal/analyzer"
-	"github.com/777genius/claude-notifications/internal/config"
-	"github.com/777genius/claude-notifications/internal/logging"
-	"github.com/777genius/claude-notifications/internal/platform"
-	"github.com/777genius/claude-notifications/internal/sessionname"
+	"github.com/777genius/agent-notifications/internal/analyzer"
+	"github.com/777genius/agent-notifications/internal/config"
+	"github.com/777genius/agent-notifications/internal/logging"
+	"github.com/777genius/agent-notifications/internal/platform"
+	"github.com/777genius/agent-notifications/internal/sessionname"
 )
 
 var templatePattern = regexp.MustCompile(`\$\{\{\s*([^{}]+?)\s*\}\}`)
@@ -62,11 +62,11 @@ func (c *runtimeContext) resolveHeaders(headers map[string]string) map[string]st
 	for key, value := range headers {
 		rendered, ok, err := c.resolveString(value)
 		if err != nil {
-			logging.Warn("Skipping webhook header %q: %v", key, err)
+			logging.Warn("Skipping webhook header: invalid template")
 			continue
 		}
 		if !ok {
-			logging.Warn("Skipping webhook header %q because template value is unavailable", key)
+			logging.Warn("Skipping webhook header: template value unavailable")
 			continue
 		}
 		resolved[key] = stringifyTemplateValue(rendered)
@@ -104,7 +104,7 @@ func (c *runtimeContext) resolveValue(path string, value interface{}) (interface
 			return nil, false, err
 		}
 		if !ok && path != "" {
-			logging.Warn("Skipping webhook payload field %q because template value is unavailable", path)
+			logging.Warn("Skipping webhook payload field: template value unavailable")
 		}
 		return rendered, ok, nil
 	case map[string]interface{}:
@@ -281,7 +281,7 @@ func mergePayloadMaps(base, overrides map[string]interface{}) {
 				mergePayloadMaps(existingMap, overrideMap)
 				continue
 			}
-			logging.Debug("Webhook payloadFields overriding key %q", key)
+			logging.Debug("Webhook payload field overridden")
 		}
 		base[key] = value
 	}

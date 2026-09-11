@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/777genius/claude-notifications/internal/analyzer"
-	"github.com/777genius/claude-notifications/internal/config"
-	"github.com/777genius/claude-notifications/internal/logging"
-	"github.com/777genius/claude-notifications/internal/sessionname"
+	"github.com/777genius/agent-notifications/internal/analyzer"
+	"github.com/777genius/agent-notifications/internal/config"
+	"github.com/777genius/agent-notifications/internal/logging"
+	"github.com/777genius/agent-notifications/internal/sessionname"
 )
 
 const (
@@ -37,7 +37,7 @@ func (f *SlackFormatter) Format(ctx SendContext, statusInfo config.StatusInfo) (
 				"color":       color,
 				"title":       statusInfo.Title,
 				"text":        ctx.Message,
-				"footer":      fmt.Sprintf("Session: %s | Claude Notifications", ctx.SessionID),
+				"footer":      fmt.Sprintf("Session: %s | Agent Notifications", ctx.SessionID),
 				"footer_icon": "https://claude.ai/favicon.ico",
 				"ts":          time.Now().Unix(),
 				"mrkdwn_in":   []string{"text"},

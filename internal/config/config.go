@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/777genius/claude-notifications/internal/logging"
-	"github.com/777genius/claude-notifications/internal/platform"
+	"github.com/777genius/agent-notifications/internal/logging"
+	"github.com/777genius/agent-notifications/internal/platform"
 )
 
 // Config represents the plugin configuration
@@ -151,7 +151,7 @@ func defaultConfig(resolvedPluginRoot string) *Config {
 	// Get plugin root from environment, fallback to current directory
 	pluginRoot := resolvedPluginRoot
 	if pluginRoot == "" {
-		pluginRoot = platform.ExpandEnv("${CLAUDE_PLUGIN_ROOT}")
+		pluginRoot = assetRoot(AssetContext{LookupEnv: os.LookupEnv})
 	}
 	if isUnresolvedPluginRoot(pluginRoot) {
 		pluginRoot = "."
@@ -161,6 +161,8 @@ func defaultConfig(resolvedPluginRoot string) *Config {
 
 func isUnresolvedPluginRoot(pluginRoot string) bool {
 	return pluginRoot == "" ||
+		pluginRoot == "$AGENT_NOTIFICATIONS_ROOT" ||
+		pluginRoot == "${AGENT_NOTIFICATIONS_ROOT}" ||
 		pluginRoot == "$CLAUDE_PLUGIN_ROOT" ||
 		pluginRoot == "${CLAUDE_PLUGIN_ROOT}"
 }
@@ -289,7 +291,7 @@ func load(path, pluginRoot string) (*Config, error) {
 func defaultConfigForLoad(pluginRoot string) *Config {
 	resolvedRoot := pluginRoot
 	if resolvedRoot == "" {
-		resolvedRoot = os.Getenv("CLAUDE_PLUGIN_ROOT")
+		resolvedRoot = assetRoot(AssetContext{LookupEnv: os.LookupEnv})
 	}
 	if isUnresolvedPluginRoot(resolvedRoot) {
 		return buildDefaultConfig(".")
@@ -327,8 +329,8 @@ func mergeStatusOverrides(data []byte, config *Config, defaults map[string]Statu
 
 func expandEnv(value, pluginRoot string) string {
 	return os.Expand(value, func(key string) string {
-		if key == "CLAUDE_PLUGIN_ROOT" && pluginRoot != "" {
-			return pluginRoot
+		if key == AssetRootPlaceholder || key == LegacyAssetRootPlaceholder {
+			return assetRoot(AssetContext{PluginRoot: pluginRoot, LookupEnv: os.LookupEnv})
 		}
 		return os.Getenv(key)
 	})
@@ -361,15 +363,14 @@ func GetStableConfigPath() (string, error) {
 	return filepath.Join(dir, "config.json"), nil
 }
 
-// LoadFromPluginRoot loads configuration with a resilient fallback chain:
-// 1. Stable path (~/.claude/claude-notifications-go/config.json) — preferred
-// 2. Old path (pluginRoot/config/config.json) — fallback, auto-migrates to stable
-// 3. Default config — if neither path has valid config
-//
-// Corrupted config files are non-fatal: a warning is printed to stderr and
-// logged, then the next source in the chain is tried.
+// LoadFromPluginRoot reads the shared canonical Store. Bundle paths are
+// resources and historical evidence only; selected errors never fall back.
 func LoadFromPluginRoot(pluginRoot string) (*Config, error) {
-	return loadFromPluginRoot(pluginRoot, func(msg string) {
+	return LoadForAgent(pluginRoot, AgentClaude)
+}
+
+func LoadForAgent(pluginRoot string, agent AgentID) (*Config, error) {
+	return loadFromPluginRoot(pluginRoot, agent, func(msg string) {
 		fmt.Fprintln(os.Stderr, msg)
 		logging.Warn("%s", msg)
 	})
@@ -379,89 +380,24 @@ func LoadFromPluginRoot(pluginRoot string) (*Config, error) {
 // in the file log only. Observation hook routes (Codex) must never write to
 // the process stderr.
 func LoadFromPluginRootQuiet(pluginRoot string) (*Config, error) {
-	return loadFromPluginRoot(pluginRoot, func(msg string) {
+	return LoadForAgentQuiet(pluginRoot, AgentClaude)
+}
+
+func LoadForAgentQuiet(pluginRoot string, agent AgentID) (*Config, error) {
+	return loadFromPluginRoot(pluginRoot, agent, func(msg string) {
 		logging.Warn("%s", msg)
 	})
 }
 
-func loadFromPluginRoot(pluginRoot string, warn func(string)) (*Config, error) {
-	// 1. Try stable path
-	stablePath, stableErr := GetStableConfigPath()
-	if stableErr != nil {
-		warn(fmt.Sprintf("warning: cannot resolve stable config path: %v, using legacy path only", stableErr))
+func loadFromPluginRoot(pluginRoot string, agent AgentID, warn func(string)) (*Config, error) {
+	env := SnapshotEnv()
+	assets, legacy := ConsumerContext(pluginRoot)
+	assets.Agent = agent
+	_, cfg, selection, err := ReadDocumentSelection(ReadRequest{Env: env, Assets: assets, Legacy: legacy, ReadSnapshot: ReadFileSnapshot})
+	for _, diagnostic := range append(selection.Diagnostics, ConsumerDiagnostics()...) {
+		warn(string(diagnostic.Code))
 	}
-	if stableErr == nil {
-		if platform.FileExists(stablePath) {
-			cfg, err := load(stablePath, pluginRoot)
-			if err != nil {
-				// Corrupted stable config — warn and fall through to old path
-				warn(fmt.Sprintf("warning: failed to load config from %s: %v, trying legacy path", stablePath, err))
-			} else {
-				return cfg, nil
-			}
-		}
-	}
-
-	// 2. Try old path (pluginRoot/config/config.json)
-	oldPath := filepath.Join(pluginRoot, "config", "config.json")
-	if platform.FileExists(oldPath) {
-		cfg, err := load(oldPath, pluginRoot)
-		if err != nil {
-			// Corrupted old config — warn, return defaults (non-fatal)
-			warn(fmt.Sprintf("warning: corrupted config at %s, using defaults", oldPath))
-			return defaultConfig(pluginRoot), nil
-		}
-
-		// Migrate to stable path (best-effort)
-		if stableErr == nil && stablePath != "" {
-			if migErr := migrateConfig(oldPath, stablePath); migErr != nil {
-				warn(fmt.Sprintf("warning: config migration failed: %v", migErr))
-			}
-		}
-
-		return cfg, nil
-	}
-
-	// 3. Neither path has config — return defaults
-	return defaultConfig(pluginRoot), nil
-}
-
-// migrateConfig copies config from oldPath to stablePath atomically.
-// Uses temp file + rename in the same directory for safe atomic write.
-func migrateConfig(oldPath, stablePath string) error {
-	data, err := os.ReadFile(oldPath)
-	if err != nil {
-		return err
-	}
-
-	dir := filepath.Dir(stablePath)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-
-	// Create temp file in same dir — guarantees same filesystem for safe os.Rename
-	tmpFile, err := os.CreateTemp(dir, "config-*.json.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	defer func() { _ = os.Remove(tmpPath) }() // cleanup on any error path
-
-	if _, err := tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpPath, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, stablePath)
+	return cfg, err
 }
 
 // ApplyDefaults fills in missing fields with default values

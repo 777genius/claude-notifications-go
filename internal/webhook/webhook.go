@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/777genius/claude-notifications/internal/analyzer"
-	"github.com/777genius/claude-notifications/internal/config"
-	"github.com/777genius/claude-notifications/internal/errorhandler"
-	"github.com/777genius/claude-notifications/internal/logging"
+	"github.com/777genius/agent-notifications/internal/analyzer"
+	"github.com/777genius/agent-notifications/internal/config"
+	"github.com/777genius/agent-notifications/internal/errorhandler"
+	"github.com/777genius/agent-notifications/internal/logging"
 	"github.com/google/uuid"
 )
 
@@ -124,7 +124,7 @@ func (s *Sender) SendWithContext(sendCtx SendContext) error {
 	start := time.Now()
 
 	// Execute with retry and circuit breaker
-	err := s.sendWithRetryAndCircuitBreaker(requestID, sendCtx)
+	err := safeWebhookError(s.sendWithRetryAndCircuitBreaker(requestID, sendCtx))
 
 	// Record result
 	latency := time.Since(start)

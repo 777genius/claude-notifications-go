@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/777genius/agent-notifications/internal/testenv"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +19,7 @@ import (
 )
 
 // This offline fixture never starts Codex or reads credentials. Runtime children
-// receive an allowlist, not os.Environ. Builds alone use the Go build environment.
+// receive a shared allowlist. Builds retain only explicit Go toolchain settings.
 type setupE2E struct {
 	root, home, bundle string
 	env                []string
@@ -43,26 +44,21 @@ func e2eRead(t *testing.T, path string) []byte {
 }
 func newSetupE2E(t *testing.T) setupE2E {
 	t.Helper()
-	f := setupE2E{root: t.TempDir()}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := setupE2E{root: root}
 	f.home = filepath.Join(f.root, "home space")
 	f.bundle = filepath.Join(f.root, "bundle space")
-	for _, key := range []string{"HOME", "USERPROFILE", "CODEX_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "APPDATA", "LOCALAPPDATA", "TMPDIR", "TEMP", "TMP"} {
-		p := filepath.Join(f.home, key)
-		if key == "HOME" || key == "USERPROFILE" {
-			p = f.home
+	f.env = testenv.Env(t, f.home)
+	// Setup assertions use the conventional Codex installation location.
+	for i, value := range f.env {
+		if strings.HasPrefix(value, "CODEX_HOME=") {
+			f.env[i] = "CODEX_HOME=" + filepath.Join(f.home, ".codex")
 		}
-		if key == "CODEX_HOME" {
-			p = filepath.Join(f.home, ".codex")
-		}
-		if err := os.MkdirAll(p, 0700); err != nil {
-			t.Fatal(err)
-		}
-		f.env = append(f.env, key+"="+p)
 	}
-	f.env = append(f.env, "PATH="+os.Getenv("PATH"))
-	if runtime.GOOS == "windows" {
-		f.env = append(f.env, "SystemRoot="+os.Getenv("SystemRoot"), "ComSpec="+os.Getenv("ComSpec"))
-	}
+
 	for _, name := range []string{"hook-wrapper.sh", "codex-hook-wrapper.sh", "codex-hook-wrapper.cmd"} {
 		e2eWrite(t, filepath.Join(f.bundle, "bin", name), e2eRead(t, filepath.Join(repoRoot(t), "bin", name)))
 	}
@@ -204,7 +200,8 @@ func main(){if len(os.Args)==2&&os.Args[1]=="version"{fmt.Println("claude-notifi
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	c := exec.CommandContext(ctx, "go", "build", "-o", filepath.Join(f.bundle, "bin", name), src)
+	c := exec.CommandContext(ctx, "go", "build", "-p", "2", "-buildvcs=false", "-o", filepath.Join(f.bundle, "bin", name), src)
+	c.Env = testenv.Build(t, filepath.Join(f.root, "build-home"))
 	if out, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("fixture build: %v %s", err, out)
 	}
@@ -219,6 +216,21 @@ func main(){if len(os.Args)==2&&os.Args[1]=="version"{fmt.Println("claude-notifi
 			t.Fatal("registration not idempotent")
 		}
 	}
+	// Store initialization may publish a persistent coordination sidecar.
+	// Existing Claude data must remain byte-identical; hook invocations below
+	// must not add even sidecars after setup has finished.
+	afterSetup := e2eSnapshot(t, filepath.Join(f.home, ".claude"))
+	lockName := filepath.Join("claude-notifications-go", "config.json.lock")
+	if _, existed := claudeBefore[lockName]; !existed {
+		if value, exists := afterSetup[lockName]; exists && value != "" {
+			t.Fatal("unexpected lock contents")
+		}
+		delete(afterSetup, lockName)
+	}
+	if !reflect.DeepEqual(claudeBefore, afterSetup) {
+		t.Fatal("setup changed existing Claude data")
+	}
+	claudeBefore = e2eSnapshot(t, filepath.Join(f.home, ".claude"))
 	var doc struct {
 		Note  string `json:"note"`
 		Hooks map[string][]struct {
@@ -280,5 +292,84 @@ func main(){if len(os.Args)==2&&os.Args[1]=="version"{fmt.Println("claude-notifi
 	}
 	if !reflect.DeepEqual(claudeBefore, e2eSnapshot(t, filepath.Join(f.home, ".claude"))) {
 		t.Fatal("Codex setup/launch changed Claude files")
+	}
+}
+
+func TestSetupCodexE2EPartialInitializationExitStatus(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix directory mode fixture")
+	}
+	binary := buildCLIBinary(t)
+	f := newSetupE2E(t)
+	parent := filepath.Join(f.root, "public")
+	if err := os.Mkdir(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0777); err != nil {
+		t.Fatal(err)
+	}
+	canonical := filepath.Join(parent, "config.json")
+	f.env = append(f.env, "AGENT_NOTIFICATIONS_CONFIG="+canonical)
+	out, err := f.run(t, "", binary, "setup-codex", "--plugin-root", f.bundle)
+	exit, ok := err.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 3 || !strings.Contains(out, "config init") {
+		t.Fatalf("partial setup status: %v %s", err, out)
+	}
+	hooks := filepath.Join(f.home, ".codex", "hooks.json")
+	before := e2eRead(t, hooks)
+	if err := os.Chmod(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		out, err = f.run(t, "", binary, "config", "init", "--json")
+		if err != nil {
+			t.Fatalf("config-only retry: %v %s", err, out)
+		}
+	}
+	if string(e2eRead(t, hooks)) != string(before) {
+		t.Fatal("retry changed registration")
+	}
+}
+
+func TestSetupCodexE2EInstalledLaunchersSurviveReplacement(t *testing.T) {
+	binary := buildCLIBinary(t)
+	f := newSetupE2E(t)
+	platformName := "claude-notifications-" + runtime.GOOS + "-" + runtime.GOARCH
+	extension := ""
+	if runtime.GOOS == "windows" {
+		platformName += ".exe"
+		extension = ".bat"
+	}
+	// Model an older source bundle with only a platform executable and no aliases.
+	e2eWrite(t, filepath.Join(f.bundle, "bin", platformName), e2eRead(t, binary))
+	installed := filepath.Join(f.home, ".codex", "claude-notifications-go", "bin")
+	for pass := 0; pass < 2; pass++ {
+		output, err := f.run(t, "", binary, "setup-codex", "--plugin-root", f.bundle)
+		if err != nil {
+			t.Fatalf("setup pass %d: %s %v", pass, output, err)
+		}
+		for _, name := range []string{"agent-notifications", "claude-notifications"} {
+			launcher := filepath.Join(installed, name+extension)
+			if runtime.GOOS == "windows" {
+				output, err = f.run(t, "", "cmd.exe", "/d", "/s", "/c", `"`+launcher+`" version`)
+			} else {
+				output, err = f.run(t, "", launcher, "version")
+			}
+			if err != nil || !strings.HasPrefix(output, name+" v") {
+				t.Fatalf("installed %s pass %d: %s %v", name, pass, output, err)
+			}
+			if runtime.GOOS != "windows" {
+				target, err := os.Readlink(launcher)
+				if err != nil || target != platformName {
+					t.Fatalf("different platform target: %s %v", target, err)
+				}
+			}
+		}
+		// Replacing bin during update must recreate a deleted primary launcher too.
+		if pass == 0 {
+			if err := os.Remove(filepath.Join(installed, "agent-notifications"+extension)); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/777genius/claude-notifications/internal/logging"
+	"github.com/777genius/agent-notifications/internal/logging"
 )
 
 // ClaudeSource decodes the legacy Claude Code hook wire format into the

@@ -6,11 +6,20 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/777genius/agent-notifications/internal/testenv"
 )
 
 // fakeBundle builds a minimal plugin bundle that Run accepts.
 func fakeBundle(t *testing.T) string {
 	t.Helper()
+	home := t.TempDir()
+	testenv.Set(t, home)
+	canonical := filepath.Join(home, "fixture-config.json")
+	if err := os.WriteFile(canonical, []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENT_NOTIFICATIONS_CONFIG", canonical)
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -309,6 +318,7 @@ func TestRunRejectsNonBundle(t *testing.T) {
 }
 
 func TestRunRegistersInstalledBundle(t *testing.T) {
+	testenv.Set(t, t.TempDir())
 	codexHome := t.TempDir()
 	installDir := filepath.Join(codexHome, InstallDirName)
 	if err := os.MkdirAll(filepath.Join(installDir, "bin"), 0o755); err != nil {

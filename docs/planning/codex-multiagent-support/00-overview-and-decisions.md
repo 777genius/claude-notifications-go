@@ -1,5 +1,7 @@
 # Multi-agent + Codex support: authoritative implementation contract
 
+> Superseded configuration policy: this historical plan predates shared E → existing L → N selection and revision-checked edits. See [current configuration and compatibility](../../../README.md#manual-configuration); historical path/copy guidance below is not an active recipe.
+
 > [!IMPORTANT]
 > This is the only normative implementation plan in this directory. Documents `01` through `06`
 > preserve the investigation trail and are historical. If they conflict with this file, this file wins.

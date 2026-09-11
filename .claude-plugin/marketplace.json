@@ -5,19 +5,19 @@
         "email": "iliyazelenkog@gmail.com"
     },
     "metadata": {
-        "description": "Smart notifications marketplace for Claude Code (Go implementation)",
+        "description": "Agent Notifications marketplace for coding agents (Go implementation)",
         "version": "1.42.0"
     },
     "plugins": [{
         "name": "claude-notifications-go",
         "source": "./",
-        "description": "Smart notifications for Claude Code task statuses (Go implementation)",
+        "description": "Agent Notifications for Claude Code and Codex CLI (Go implementation)",
         "version": "1.42.0",
         "author": {
             "name": "777genius",
             "email": "iliyazelenkog@gmail.com"
         },
-        "repository": "https://github.com/777genius/claude-notifications-go",
+        "repository": "https://github.com/777genius/agent-notifications",
         "license": "GPL-3.0",
         "keywords": [
             "notifications",

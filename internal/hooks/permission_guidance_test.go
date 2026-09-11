@@ -3,12 +3,11 @@ package hooks
 import (
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/777genius/claude-notifications/internal/notifier"
+	"github.com/777genius/agent-notifications/internal/notifier"
 )
 
 func captureStdout(t *testing.T, fn func()) string {
@@ -45,8 +44,7 @@ func TestMaybeEmitDesktopPermissionGuidance_RateLimited(t *testing.T) {
 	}
 
 	tempHome := t.TempDir()
-	t.Setenv("HOME", tempHome)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(tempHome, ".cache"))
+	setTestHome(t, tempHome)
 
 	handler := &Handler{}
 	err := &notifier.NotificationPermissionDeniedError{Details: "Error: Notification permission denied. Enable in System Settings > Notifications."}
