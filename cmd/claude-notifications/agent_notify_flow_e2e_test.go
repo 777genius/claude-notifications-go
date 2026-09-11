@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -241,7 +242,11 @@ func TestAgentNotifyIsolatedInstallFlowE2E(t *testing.T) {
 	}
 	proveNotifyTargetsAfterCwdGone(t, cwd)
 
-	if native := nativeFlowApp(t); native != "" {
+	native := nativeFlowApp(t)
+	if runtime.GOOS == "darwin" && native == "" {
+		t.Fatal("Darwin isolated E2E requires a native generation fixture")
+	}
+	if native != "" {
 		bin := filepath.Join(f.runtime, "bin")
 		if err := os.MkdirAll(bin, 0700); err != nil {
 			t.Fatal(err)
@@ -615,6 +620,40 @@ func assertHookAlias(t *testing.T, bin, want string) {
 
 func nativeFlowApp(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Log("native generations are Darwin-only")
+		return ""
+	}
+	if app := exactHeadNativeFlowApp(t); app != "" {
+		return app
+	}
+	t.Log("exact-head helper is not built; using inert Darwin capability fixture")
+	return inertNativeFlowApp(t)
+}
+
+func nativeFlowBundleID() string {
+	if os.Getenv("AGENT_NOTIFY_DARWIN_E2E") == "1" {
+		return "com.claude.desktop.notifier"
+	}
+	return "com.agentnotify.test.flow"
+}
+
+func sealNativeFlowApp(t *testing.T, root, bundleID string) {
+	t.Helper()
+	marker := []byte(fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano()))
+	if err := os.MkdirAll(filepath.Join(root, "Contents", "Resources"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Contents", "Resources", "generation.marker"), marker, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("codesign", "--force", "--sign", "-", "--timestamp=none", "--identifier", bundleID, root).CombinedOutput(); err != nil {
+		t.Fatalf("codesign generation helper: %s %v", out, err)
+	}
+}
+
+func exactHeadNativeFlowApp(t *testing.T) string {
+	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("missing caller")
@@ -623,7 +662,6 @@ func nativeFlowApp(t *testing.T) string {
 	bin := filepath.Join(repo, "swift-notifier/.build/arm64-apple-macosx/release/terminal-notifier-modern")
 	plist := filepath.Join(repo, "swift-notifier/Resources/Info.plist")
 	if _, err := os.Stat(bin); err != nil {
-		t.Log("exact-head helper is not built; skipping native generation section")
 		return ""
 	}
 	root := filepath.Join(t.TempDir(), "ClaudeNotifier.app")
@@ -642,25 +680,60 @@ func nativeFlowApp(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundleID := "com.agentnotify.test.flow"
-	if os.Getenv("AGENT_NOTIFY_DARWIN_E2E") == "1" {
-		bundleID = "com.claude.desktop.notifier"
-	}
+	bundleID := nativeFlowBundleID()
 	info = bytes.Replace(info, []byte("com.claude.desktop.notifier"), []byte(bundleID), 1)
 	if err := os.WriteFile(filepath.Join(root, "Contents", "Info.plist"), info, 0644); err != nil {
 		t.Fatal(err)
 	}
-	marker := []byte(t.Name() + time.Now().String())
-	if err := os.MkdirAll(filepath.Join(root, "Contents", "Resources"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "Contents", "Resources", "generation.marker"), marker, 0644); err != nil {
-		t.Fatal(err)
-	}
-	if runtime.GOOS == "darwin" {
-		if out, err := exec.Command("codesign", "--force", "--sign", "-", "--timestamp=none", "--identifier", bundleID, root).CombinedOutput(); err != nil {
-			t.Fatalf("codesign generation helper: %s %v", out, err)
-		}
-	}
+	sealNativeFlowApp(t, root, bundleID)
 	return root
+}
+
+func inertNativeFlowApp(t *testing.T) string {
+	t.Helper()
+	const capabilities = `{"schemaVersion":1,"protocolVersions":[1],"actionKinds":["none"],"receiptSupport":true,"backend":"macos.usernotifications","explicitFeatureEnabledByDefault":false}`
+	root := filepath.Join(t.TempDir(), "ClaudeNotifier.app")
+	executable := filepath.Join(root, "Contents", "MacOS", "terminal-notifier-modern")
+	if err := os.MkdirAll(filepath.Dir(executable), 0755); err != nil {
+		t.Fatal(err)
+	}
+	bundleID := nativeFlowBundleID()
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>` + bundleID + `</string>
+<key>CFBundleExecutable</key><string>terminal-notifier-modern</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+</dict></plist>
+`
+	if err := os.WriteFile(filepath.Join(root, "Contents", "Info.plist"), []byte(plist), 0644); err != nil {
+		t.Fatal(err)
+	}
+	source := "#include <stdio.h>\n#include <string.h>\nint main(int argc, char **argv) {\n" +
+		"if (argc != 2 || strcmp(argv[1], \"--capabilities-json\") != 0) return 9;\n" +
+		"return puts(" + strconv.Quote(capabilities) + ") < 0 ? 1 : 0;\n}\n"
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	arch := "x86_64"
+	if runtime.GOARCH == "arm64" {
+		arch = "arm64"
+	}
+	cmd := exec.CommandContext(ctx, "/usr/bin/clang", "-arch", arch, "-x", "c", "-", "-o", executable)
+	cmd.Stdin = strings.NewReader(source)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("inert native fixture clang: %s %v", out, err)
+	}
+	sealNativeFlowApp(t, root, bundleID)
+	return root
+}
+
+func TestInertNativeFlowAppCapabilities(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("inert native fixture is Darwin-only")
+	}
+	app := inertNativeFlowApp(t)
+	out, err := exec.Command(filepath.Join(app, "Contents", "MacOS", "terminal-notifier-modern"), "--capabilities-json").CombinedOutput()
+	if err != nil || !bytes.Contains(out, []byte(`"actionKinds"`)) {
+		t.Fatalf("inert fixture capabilities: %s %v", out, err)
+	}
 }
