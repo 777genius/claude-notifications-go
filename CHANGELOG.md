@@ -7,11 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.43.0] - 2026-09-11
+
 ### Added
-- **Warp: exact pane/chat click-to-focus** — notification clicks open Warp's session deep link (`WARP_FOCUS_URL` / `warp://session/<uuid>`) so the originating window, tab, and pane (including the agent chat in that pane) come to the front. Falls back to the previous AXTitle `focus-window` path when the URL is absent or Warp cannot resolve it. Also works on Linux (`xdg-open`) and Windows (toast protocol), and composes with tmux/zellij inside Warp.
+- **Warp: exact pane/chat click-to-focus** — notification clicks open Warp's session deep link (`WARP_FOCUS_URL` / `warp://session/<uuid>`) so the originating window, tab, and pane (including the agent chat in that pane) come to the front. Falls back to the previous AXTitle `focus-window` path when the URL is absent or Warp cannot resolve it. Also works on Linux (`xdg-open`) and Windows (toast protocol), and composes with tmux/zellij inside Warp ([#175](https://github.com/777genius/agent-notifications/pull/175)).
+- **Webhook agent identity** — custom JSON payloads include `schema_version`, `notification_type`, and `agent_source` (`claude`/`codex`); Slack, Discord, Telegram, and Lark show the agent name; custom templates can use `${{agent_source}}` ([#170](https://github.com/777genius/agent-notifications/pull/170)).
+- **Landing: flag images in the language switcher** ([#173](https://github.com/777genius/agent-notifications/pull/173)).
+
+### Changed
+- Document the frozen `claude-notifications-go` Claude Code plugin identity ([#166](https://github.com/777genius/agent-notifications/pull/166)).
+- Add Uninstall instructions to the README ([#167](https://github.com/777genius/agent-notifications/pull/167)).
 
 ### Fixed
-- Ignore inherited `WARP_FOCUS_URL` in Cursor/VS Code launched from Warp so notification clicks stay on the editor instead of stealing focus back to Warp.
+- Ignore inherited `WARP_FOCUS_URL` in Cursor/VS Code launched from Warp so notification clicks stay on the editor instead of stealing focus back to Warp ([#175](https://github.com/777genius/agent-notifications/pull/175)).
+- Drop the garbage `[unknown .]` prefix when a notification has no usable session name or folder ([#172](https://github.com/777genius/agent-notifications/pull/172)).
+- Self-heal a marketplace still declared under the retired GitHub repo name so bootstrap and updates work after the rename to `agent-notifications` ([#174](https://github.com/777genius/agent-notifications/pull/174)).
+- Clarify the bootstrap version gate and silence the shared-config baseline traceback ([#171](https://github.com/777genius/agent-notifications/pull/171)).
+- Prefix landing flag image paths with the app base URL so they load on GitHub Pages ([#173](https://github.com/777genius/agent-notifications/pull/173)).
 
 ## [1.42.0] - 2026-09-11
 
