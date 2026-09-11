@@ -16,6 +16,36 @@ const (
 	discordEmbedFooterLimit = 2048
 )
 
+// normalizeAgentSource returns the machine-readable agent identity used in
+// structured payloads and templates, reusing the same config.AgentID enum
+// the config/composition-root layer already defines (internal/config/agents.go)
+// instead of a parallel string enum. Empty defaults to AgentClaude since every
+// pre-multi-agent caller only ever sent Claude events.
+func normalizeAgentSource(source string) string {
+	if source == "" {
+		return string(config.AgentClaude)
+	}
+	return source
+}
+
+// agentDisplayName returns the human-readable product name shown in chat
+// notifications (Slack/Discord/Telegram/Lark). Unrecognized agent_source
+// values (a future agent not yet given a friendly name here) fall back to
+// the normalized source string itself rather than being mislabeled as
+// Claude Code, per the forward-compatibility contract documented for
+// agent_source in docs/webhooks/custom.md.
+func agentDisplayName(source string) string {
+	normalized := normalizeAgentSource(source)
+	switch config.AgentID(normalized) {
+	case config.AgentCodex:
+		return "Codex"
+	case config.AgentClaude:
+		return "Claude Code"
+	default:
+		return normalized
+	}
+}
+
 // Formatter renders a SendContext into a preset-specific webhook payload.
 //
 // Implementations should treat ctx.Message as the pre-joined notification text
@@ -37,7 +67,7 @@ func (f *SlackFormatter) Format(ctx SendContext, statusInfo config.StatusInfo) (
 				"color":       color,
 				"title":       statusInfo.Title,
 				"text":        ctx.Message,
-				"footer":      fmt.Sprintf("Session: %s | Agent Notifications", ctx.SessionID),
+				"footer":      fmt.Sprintf("Session: %s | %s", ctx.SessionID, agentDisplayName(ctx.AgentSource)),
 				"footer_icon": "https://claude.ai/favicon.ico",
 				"ts":          time.Now().Unix(),
 				"mrkdwn_in":   []string{"text"},
@@ -79,7 +109,7 @@ func (f *DiscordFormatter) Format(ctx SendContext, statusInfo config.StatusInfo)
 	}
 
 	return map[string]interface{}{
-		"username": "Claude Code",
+		"username": agentDisplayName(ctx.AgentSource),
 		"embeds":   []map[string]interface{}{embed},
 	}, nil
 }
@@ -113,12 +143,15 @@ func buildDiscordAuthor(ctx SendContext) string {
 
 // buildDiscordFooter returns the embed footer text.
 // Uses the raw session UUID so the footer is not redundant with the friendly
-// label that already appears in the author line.
+// label that already appears in the author line. Agent identity is shown via
+// the top-level "username" field only (see Format below), not repeated here,
+// so there is a single place to update per agent instead of two that could
+// drift out of sync.
 func buildDiscordFooter(ctx SendContext) string {
 	if ctx.SessionID == "" {
-		return "Claude Code"
+		return "Agent Notifications"
 	}
-	return truncateMiddle(fmt.Sprintf("Session: %s · Claude Code", ctx.SessionID), discordEmbedFooterLimit)
+	return truncateMiddle(fmt.Sprintf("Session: %s", ctx.SessionID), discordEmbedFooterLimit)
 }
 
 // truncateMiddle keeps both the start and end of a string visible while
@@ -218,8 +251,8 @@ type TelegramFormatter struct {
 
 func (f *TelegramFormatter) Format(ctx SendContext, statusInfo config.StatusInfo) (interface{}, error) {
 	emoji := getEmojiForStatus(ctx.Status)
-	text := fmt.Sprintf("<b>%s %s</b>\n\n%s\n\n<i>Session: %s</i>",
-		emoji, statusInfo.Title, ctx.Message, ctx.SessionID)
+	text := fmt.Sprintf("<b>%s %s</b>\n\n%s\n\n<i>Session: %s · %s</i>",
+		emoji, statusInfo.Title, ctx.Message, ctx.SessionID, agentDisplayName(ctx.AgentSource))
 
 	return map[string]interface{}{
 		"chat_id":    f.ChatID,
@@ -314,7 +347,7 @@ func (f *LarkFormatter) Format(ctx SendContext, statusInfo config.StatusInfo) (i
 					"tag": "div",
 					"text": map[string]interface{}{
 						"tag":     "plain_text",
-						"content": fmt.Sprintf("Session: %s", ctx.SessionID),
+						"content": fmt.Sprintf("Session: %s · %s", ctx.SessionID, agentDisplayName(ctx.AgentSource)),
 					},
 				},
 			},

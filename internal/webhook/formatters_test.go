@@ -634,7 +634,7 @@ func TestDiscordFormatter_AuthorAndFields(t *testing.T) {
 	}
 
 	footer := embed["footer"].(map[string]interface{})
-	wantFooter := "Session: 439d1884-b53d-42f2-922a-203d086a158d · Claude Code"
+	wantFooter := "Session: 439d1884-b53d-42f2-922a-203d086a158d"
 	if text := footer["text"].(string); text != wantFooter {
 		t.Errorf("footer = %q, want %q", text, wantFooter)
 	}
@@ -799,6 +799,31 @@ func TestParseActionSummary(t *testing.T) {
 						t.Errorf("field[%d].%s = %v, want %v", i, k, got[i][k], v)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestAgentDisplayName(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{"empty defaults to claude", "", "Claude Code"},
+		{"claude", "claude", "Claude Code"},
+		{"codex", "codex", "Codex"},
+		{
+			name:   "unknown future agent falls back to the raw source, not Claude Code",
+			source: "gemini",
+			want:   "gemini",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := agentDisplayName(tt.source); got != tt.want {
+				t.Errorf("agentDisplayName(%q) = %q, want %q", tt.source, got, tt.want)
 			}
 		})
 	}

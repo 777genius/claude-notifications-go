@@ -804,6 +804,7 @@ func (h *Handler) sendNotifications(status analyzer.Status, body, actions, sessi
 			Folder:        folderName,
 			RawBody:       body,
 			ActionSummary: actions,
+			AgentSource:   string(h.product),
 		})
 		delivery.webhookQueued = true
 	} else {
