@@ -15,6 +15,10 @@ import tempfile
 import threading
 
 
+# Diagnostic: prints Sddl/Owner/Access for path and every ancestor to the
+# drive root. checkWindowsACL/openStoreParent (store_windows.go) walk every
+# path component from the volume root down, so this identifies which
+# ancestor (if any) carries a disqualifying ACE. Never modifies anything.
 _WINDOWS_ACL_DIAGNOSTIC_SCRIPT = (
     '$p = $env:DIAG_PATH\n'
     'while ($true) {\n'
@@ -34,22 +38,46 @@ _WINDOWS_ACL_DIAGNOSTIC_SCRIPT = (
 )
 
 
-def _windows_acl_diagnostic(path):
-    """Diagnostic only, fires solely on a 'config init' failure: prints
-    Sddl/Owner/Access (Get-Acl) for the sandbox path and every ancestor up to
-    the drive root in one subprocess call, to identify which ancestor (if
-    any) carries an ACE that trips internal/config/store_windows.go's
-    checkWindowsACL walk in openStoreParent (it checks every path component
-    from the volume root down, not just the leaf directory). The path is
-    passed via an env var, never interpolated into the PowerShell command
-    text. Never modifies any ACL or file. No-op on non-Windows."""
+def _windows_acl_diagnostic(path, label):
     if os.name != 'nt':
         return
+    print(f'=== ACL diagnostic: {label} ===', flush=True)
     diag_env = dict(os.environ, DIAG_PATH=str(Path(path).resolve()))
     subprocess.run(
-        ['powershell', '-NoProfile', '-NonInteractive', '-Command', '-'],
-        input=_WINDOWS_ACL_DIAGNOSTIC_SCRIPT, env=diag_env, text=True,
-        timeout=30, check=False)
+        ['powershell', '-NoProfile', '-NonInteractive', '-Command', _WINDOWS_ACL_DIAGNOSTIC_SCRIPT],
+        env=diag_env, text=True, timeout=30, check=False)
+
+
+# Mirrors internal/config/store_windows_test.go's prepareTestRoot(): a single
+# protected DACL (current user + SYSTEM, FullControl, inheritable) set once
+# on the scratch root so everything created under it inherits it via normal
+# NTFS inheritance. os.mkdir(mode=...) is a no-op on Windows before Python
+# 3.13. Scope is the new scratch root only -- no ancestor, no real profile,
+# no product ACL check loosened.
+_WINDOWS_PRIVATE_ROOT_SCRIPT = (
+    '$ErrorActionPreference = "Stop"\n'
+    '$p = $env:DIAG_PATH\n'
+    '$user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User\n'
+    '$system = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-18")\n'
+    '$acl = New-Object System.Security.AccessControl.DirectorySecurity\n'
+    '$acl.SetAccessRuleProtection($true, $false)\n'
+    '$acl.SetOwner($user)\n'
+    '$inherit = [System.Security.AccessControl.InheritanceFlags]"ContainerInherit, ObjectInherit"\n'
+    '$none = [System.Security.AccessControl.PropagationFlags]::None\n'
+    '$allow = [System.Security.AccessControl.AccessControlType]::Allow\n'
+    '$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($user, "FullControl", $inherit, $none, $allow)))\n'
+    '$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($system, "FullControl", $inherit, $none, $allow)))\n'
+    'Set-Acl -LiteralPath $p -AclObject $acl\n'
+)
+
+
+def _windows_private_scratch_root(path):
+    if os.name != 'nt':
+        return
+    root_env = dict(os.environ, DIAG_PATH=str(Path(path).resolve()))
+    subprocess.run(
+        ['powershell', '-NoProfile', '-NonInteractive', '-Command', _WINDOWS_PRIVATE_ROOT_SCRIPT],
+        env=root_env, text=True, timeout=30, check=True)
 
 
 def main():
@@ -77,6 +105,9 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix='notification-release-e2e-') as scratch:
             root = Path(scratch).resolve()
+            _windows_acl_diagnostic(root, 'before private-root normalization')
+            _windows_private_scratch_root(root)
+            _windows_acl_diagnostic(root, 'after private-root normalization')
             for case in ('fresh', 'legacy', 'explicit'):
                 home = root / case
                 home.mkdir()
@@ -119,7 +150,7 @@ def main():
                 try:
                     run('config', 'init')
                 except AssertionError:
-                    _windows_acl_diagnostic(root)
+                    _windows_acl_diagnostic(root, 'on config init failure')
                     raise
                 assert selected.exists()
                 if case != 'legacy':
