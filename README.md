@@ -111,6 +111,11 @@ Run these slash commands in the Claude Code chat, not in your system terminal:
 /claude-notifications-go:settings
 ```
 
+> **Compatibility:** `claude-notifications-go` is the frozen Claude Code marketplace,
+> plugin, and command namespace. The public product is **Agent Notifications**, but changing
+> these technical identifiers breaks existing installations and updates. See
+> [Claude plugin identity compatibility](docs/CLAUDE_PLUGIN_IDENTITY.md).
+
 </details>
 
 > Having issues with installation? See [Troubleshooting](#troubleshooting).
