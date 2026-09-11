@@ -51,8 +51,8 @@ def _windows_acl_diagnostic(path, label):
 # Mirrors internal/config/store_windows_test.go's prepareTestRoot(): a single
 # protected DACL (current user + SYSTEM, FullControl, inheritable) set once
 # on the scratch root so everything created under it inherits it via normal
-# NTFS inheritance. os.mkdir(mode=...) is a no-op on Windows before Python
-# 3.13. Scope is the new scratch root only -- no ancestor, no real profile,
+# NTFS inheritance. Python 3.12.4+ applies an OWNER RIGHTS ACL for mode 0700;
+# children use default Windows inheritance instead. No ancestor, real profile,
 # no product ACL check loosened.
 _WINDOWS_PRIVATE_ROOT_SCRIPT = (
     '$ErrorActionPreference = "Stop"\n'
@@ -119,7 +119,7 @@ def main():
                             'APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME',
                             'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR', 'TMP', 'TEMP'):
                     folder = home / key
-                    folder.mkdir(mode=0o700)
+                    folder.mkdir(mode=0o777 if os.name == 'nt' else 0o700)
                     env[key] = str(folder)
                 bundle = home / 'bundle'
                 bundle.mkdir()
@@ -137,7 +137,7 @@ def main():
                 if case == 'explicit':
                     env['AGENT_NOTIFICATIONS_CONFIG'] = str(home / 'custom' / 'config.json')
                 if case == 'legacy':
-                    legacy.parent.mkdir(parents=True, mode=0o700)
+                    legacy.parent.mkdir(parents=True, mode=0o777 if os.name == 'nt' else 0o700)
                     legacy.write_text('{}')
                     legacy.chmod(0o600)
                 selected = Path(run('config', 'path').stdout.strip())
@@ -150,7 +150,7 @@ def main():
                 try:
                     run('config', 'init')
                 except AssertionError:
-                    _windows_acl_diagnostic(root, 'on config init failure')
+                    _windows_acl_diagnostic(selected.parent, 'on config init failure')
                     raise
                 assert selected.exists()
                 if case != 'legacy':
