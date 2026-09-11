@@ -257,6 +257,83 @@ setup_iterm2_venv
 """.replace('@ALIAS@',q(private_alias)),private_alias/'config.json',False)
 assert (private_alias/'config.json').read_text()=='protected'
 
+# Successful pip selects a staged JSON containing the exact rewrite source.
+private_alias.unlink(); private_alias.symlink_to(box/'initially-missing',target_is_directory=True)
+run('pip-success-private-json', """
+uname() { echo Darwin; }
+tmux() { :; }
+TERM_PROGRAM=iTerm.app
+python3() {
+    if [ "$1" = -I ]; then command python3 "$@"; return; fi
+    mkdir -p "$3/bin"
+    printf '{"path":"%s"}' "$3" > "$3/bin/config.json"
+    cp "$3/bin/config.json" @BEFORE@
+    printf '#!/bin/sh\\nrm @ALIAS@\\nln -s "%s/bin" @ALIAS@\\nexit 0\\n' "$3" > "$3/bin/pip"
+    chmod +x "$3/bin/pip"
+}
+setup_iterm2_venv
+""".replace('@ALIAS@',q(private_alias)).replace('@BEFORE@',q(box/'before-json')),
+    private_alias/'config.json',False)
+assert (private_alias/'config.json').read_bytes()==(box/'before-json').read_bytes()
+
+# Both stage owners recheck changed aliases at EXIT; child traps cannot clean
+# the parent's stage. Retention is silent except for fixed/canonical messages.
+for kind in ('config', 'runtime'):
+    for status in (0, 17):
+        selected=box/('cleanup-{}-{}'.format(kind,status)); selected.symlink_to(outside)
+        body="""
+INSTALL_CONFIG_STAGE=$(mktemp -d "$TMPDIR/config-stage.XXXXXX")
+INSTALL_CONFIG_STAGE_OWNER=$BASH_SUBSHELL
+printf protected > "$INSTALL_CONFIG_STAGE/config.json"
+( trap 'cleanup_install_config' EXIT; : )
+[ -f "$INSTALL_CONFIG_STAGE/config.json" ] || exit 99
+rm @ALIAS@
+ln -s "$INSTALL_CONFIG_STAGE/config.json" @ALIAS@
+exit @STATUS@
+""" if kind=='config' else """
+download_and_verify_binary() { cp @HELPER@ "$BINARY_PATH"; }
+verify_executable() { :; }
+detect_platform() {
+    PLATFORM=linux ARCH=amd64 BINARY_NAME=claude-notifications-linux-amd64
+    BINARY_PATH="$SCRIPT_DIR/$BINARY_NAME"
+    CHECKSUMS_PATH="$SCRIPT_DIR/.checksums.txt"
+}
+install_linux_notification_desktop_entry() {
+    ( trap 'if [ "$stage_owner" = "$BASH_SUBSHELL" ]; then cleanup_install_stage "$stage"; fi' EXIT; : )
+    [ -f "$BINARY_PATH" ] || exit 99
+    printf protected > "$stage/config.json"
+    rm @ALIAS@
+    ln -s "$stage/config.json" @ALIAS@
+    exit @STATUS@
+}
+stage_and_promote_runtime
+"""
+        case,r=run('trap-{}-{}'.format(kind,status),body.replace('@ALIAS@',q(selected)).replace('@HELPER@',q(helper)).replace('@STATUS@',str(status)),selected,status==0)
+        assert r.returncode==status
+        assert selected.exists(), (r.stderr, (case/'trace').read_text(), os.readlink(selected))
+        assert selected.read_text()=='protected'
+        assert b'Private installer stage retained' in r.stderr, (kind,status,r.stderr)
+        assert str(selected).encode() not in r.stderr
+# Ordinary cleanup must be silent and preserve either success or failure.
+for status in (0,17):
+    case,r=run('clean-exit-'+str(status),"""
+INSTALL_CONFIG_STAGE=$(mktemp -d "$TMPDIR/config-stage.XXXXXX")
+INSTALL_CONFIG_STAGE_OWNER=$BASH_SUBSHELL
+printf '%s' "$INSTALL_CONFIG_STAGE" > "$SCRIPT_DIR/stage-path"
+exit @STATUS@
+""".replace('@STATUS@',str(status)),outside,status==0)
+    assert r.returncode==status and r.stderr==b''
+    assert not pathlib.Path((case/'stage-path').read_text()).exists()
+case,r=run('cleanup-no-helper',"""
+INSTALL_CONFIG_STAGE=$(mktemp -d "$TMPDIR/config-stage.XXXXXX")
+INSTALL_CONFIG_STAGE_OWNER=$BASH_SUBSHELL
+INSTALL_CONFIG_HELPER=/missing
+printf '%s' "$INSTALL_CONFIG_STAGE" > "$SCRIPT_DIR/stage-path"
+exit 0
+""",outside)
+assert pathlib.Path((case/'stage-path').read_text()).is_dir()
+assert b'Private installer stage retained' in r.stderr
+
 # A reverse child alias must not be followed by venv creation.
 for child in ('pyvenv.cfg', 'bin'):
     shutil.rmtree(venv)

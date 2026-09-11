@@ -34,8 +34,23 @@ INSTALL_PRIVATE_DOWNLOAD=false
 
 cleanup_install_config() {
     if [ -n "$INSTALL_CONFIG_STAGE" ] && [ "$INSTALL_CONFIG_STAGE_OWNER" = "$BASH_SUBSHELL" ]; then
-        rm -rf "$INSTALL_CONFIG_STAGE"
+        cleanup_install_stage "$INSTALL_CONFIG_STAGE"
     fi
+    return 0
+}
+
+# Never bootstrap from an EXIT trap. An unavailable helper means retention.
+# Return success so cleanup cannot mask the installation's pending exit status.
+cleanup_install_stage() {
+    [ -n "$1" ] || return 0
+    if install_config_preflight "$1"; then
+        if ! rm -rf -- "$1" 2>/dev/null; then
+            echo 'Private installer stage retained; cleanup failed.' >&2
+        fi
+    else
+        echo 'Private installer stage retained; config safety could not be established.' >&2
+    fi
+    return 0
 }
 trap 'cleanup_install_config' EXIT
 
@@ -423,7 +438,7 @@ acquire_lock() {
     fi
 
     # Set trap to release lock on exit
-    trap 'rmdir "$LOCKFILE" 2>/dev/null; cleanup_install_config' EXIT
+    trap 'rmdir "$LOCKFILE" 2>/dev/null || :; cleanup_install_config' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
     return 0
@@ -1635,9 +1650,11 @@ setup_iterm2_venv() {
         echo -e "${YELLOW}  ⚠ Could not install iterm2 module${NC}"
         return 0
     fi
+    # Pip may have changed the selected alias into any part of this tree.
+    guard_install_paths "$venv_stage"
     # venv entry points and activation scripts embed their creation path.
     if ! "$python3_path" -I - "$venv_stage/venv" "$VENV_DIR" <<'PYVENV'
-import os, sys
+import os, shlex, sys
 old, new = sys.argv[1:]
 for name in os.listdir(os.path.join(old, 'bin')):
     path = os.path.join(old, 'bin', name)
@@ -1646,8 +1663,40 @@ for name in os.listdir(os.path.join(old, 'bin')):
     with open(path, 'rb') as f:
         data = f.read()
     if b'\0' not in data and old.encode() in data:
+        # Kernel shebangs cannot quote paths with spaces. Use the portable
+        # shell/Python trampoline used by Python packaging entry points.
+        first, sep, rest = data.partition(b'\n')
+        if first.startswith(b'#!' + old.encode() + b'/'):
+            command = shlex.split(first[2:].decode())
+            command[0] = new + command[0][len(old):]
+            header = "#!/bin/sh\n'''exec' " + ' '.join(shlex.quote(arg) for arg in command)
+            header += ' "$0" "$@"\n' + "' '''\n"
+            data = header.encode() + rest.replace(old.encode(), new.encode())
+        elif name in ('activate', 'activate.csh', 'activate.fish'):
+            # Activation scripts created under the private staging path may
+            # contain unquoted assignments. Quote the promoted path before the
+            # generic replacement so HOME values with spaces remain valid.
+            text = data.decode()
+            if name == 'activate':
+                text = text.replace(
+                    'VIRTUAL_ENV=$(cygpath ' + old + ')',
+                    'VIRTUAL_ENV=$(cygpath ' + shlex.quote(new) + ')')
+                text = text.replace(
+                    'export VIRTUAL_ENV=' + old,
+                    'export VIRTUAL_ENV=' + shlex.quote(new))
+            elif name == 'activate.csh':
+                text = text.replace(
+                    'setenv VIRTUAL_ENV ' + old,
+                    'setenv VIRTUAL_ENV ' + shlex.quote(new))
+            elif name == 'activate.fish':
+                text = text.replace(
+                    'set -gx VIRTUAL_ENV ' + old,
+                    'set -gx VIRTUAL_ENV ' + shlex.quote(new))
+            data = text.replace(old, new).encode()
+        else:
+            data = data.replace(old.encode(), new.encode())
         with open(path, 'wb') as f:
-            f.write(data.replace(old.encode(), new.encode()))
+            f.write(data)
 PYVENV
     then
         guard_install_paths "$venv_stage"
@@ -1864,7 +1913,8 @@ stage_and_promote_runtime() (
     # The trap must still know which disposable staging directory to remove.
     stage=''
     stage=$(mktemp -d "$SCRIPT_DIR/.install-stage.XXXXXX") || exit 1
-    trap 'rm -rf "$stage"; cleanup_install_config' EXIT
+    stage_owner=$BASH_SUBSHELL
+    trap 'if [ "$stage_owner" = "$BASH_SUBSHELL" ]; then cleanup_install_stage "$stage"; fi; cleanup_install_config' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
 
@@ -1922,6 +1972,7 @@ stage_and_promote_runtime() (
 
     guard_install_paths "$live_binary"
     mv -f "$BINARY_PATH" "$live_binary" || exit 1
+    INSTALL_CONFIG_HELPER="$live_binary"
 )
 
 # Main installation flow
