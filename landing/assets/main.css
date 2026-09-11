@@ -154,8 +154,13 @@ h3 {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }
-.language-switcher__glyph {
-  font-size: 13px;
+.language-switcher__flag {
+  width: 20px;
+  height: 15px;
+  object-fit: cover;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 12%);
+  flex-shrink: 0;
 }
 .language-switcher__chevron {
   width: 10px;
@@ -244,17 +249,10 @@ h3 {
   stroke: #5edeea;
   stroke-width: 2;
 }
-.language-switcher__code {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 23px;
-  border: 1px solid #31505b;
-  border-radius: 4px;
-  color: #69dce8;
-  background: #101b27;
-  font-size: 8px;
-  letter-spacing: 0.7px;
+.language-switcher__options .language-switcher__flag {
+  width: 24px;
+  height: 18px;
+  margin: 0 auto;
 }
 .language-switcher__empty {
   padding: 13px 9px 8px;

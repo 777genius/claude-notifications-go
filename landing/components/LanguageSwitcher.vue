@@ -98,7 +98,15 @@ onBeforeUnmount(() =>
       @keydown.down.prevent="open = true"
       @keydown.esc="close"
     >
-      <span class="language-switcher__glyph" aria-hidden="true">文</span>
+      <img
+        class="language-switcher__flag"
+        :src="`/flags/${currentLocale.flag}.svg`"
+        alt=""
+        aria-hidden="true"
+        width="20"
+        height="15"
+        loading="eager"
+      />
       <span>{{ currentLocale.name }}</span>
       <svg class="language-switcher__chevron" viewBox="0 0 12 8" aria-hidden="true">
         <path d="m1 1 5 5 5-5" />
@@ -133,7 +141,15 @@ onBeforeUnmount(() =>
           :class="{ active: item.code === locale }"
           @click="selectLanguage(item.code)"
         >
-          <span class="language-switcher__code" aria-hidden="true">{{ item.code.toUpperCase() }}</span>
+          <img
+            class="language-switcher__flag"
+            :src="`/flags/${item.flag}.svg`"
+            alt=""
+            aria-hidden="true"
+            width="20"
+            height="15"
+            loading="lazy"
+          />
           <span>{{ item.name }}</span>
           <svg v-if="item.code === locale" viewBox="0 0 16 16" aria-hidden="true">
             <path d="m3 8 3 3 7-7" />
