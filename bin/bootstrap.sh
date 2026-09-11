@@ -1006,7 +1006,7 @@ resolve_bootstrap_release() {
     done
     major="${version%%.*}"; minor="${version#*.}"; minor="${minor%%.*}"
     if [ "$major" -lt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -lt 42 ]; }; then
-        echo "Codex requires published release v1.42.0 or newer; found $BOOTSTRAP_TAG." >&2
+        echo "Agent Notifications requires published release v1.42.0 or newer (the shared config preflight needs it, for every product); found $BOOTSTRAP_TAG." >&2
         return 1
     fi
 }
@@ -1095,8 +1095,12 @@ PYVERSIONS
         fetch_bootstrap_file "$base/checksums.txt" "$dir/checksums.txt" 2>/dev/null || continue
         # Only request a template explicitly included in the release manifest.
         python3 -I - "$dir/checksums.txt" <<'PYHAS' || continue
+# Older releases may not publish a config.json checksum entry; skip this
+# baseline quietly rather than let assert dump a traceback to the user.
 import sys
-assert any(len(e)==2 and e[1].lstrip('*')=='config.json' for e in (line.split() for line in open(sys.argv[1])))
+has_entry = any(len(e) == 2 and e[1].lstrip('*') == 'config.json'
+                for e in (line.split() for line in open(sys.argv[1])))
+sys.exit(0 if has_entry else 1)
 PYHAS
         fetch_bootstrap_file "$base/config.json" "$dir/config.json" 2>/dev/null || continue
         python3 -I - "$dir" <<'PYBASE' || continue
@@ -1104,7 +1108,8 @@ import hashlib,pathlib,sys
 p=pathlib.Path(sys.argv[1])
 entries=[line.split() for line in (p/'checksums.txt').read_text().splitlines()]
 h=[e[0] for e in entries if len(e)==2 and e[1].lstrip('*')=='config.json']
-assert len(h)==1 and hashlib.sha256((p/'config.json').read_bytes()).hexdigest()==h[0].lower()
+if len(h)!=1 or hashlib.sha256((p/'config.json').read_bytes()).hexdigest()!=h[0].lower():
+    sys.exit(1)
 (p/'verified').write_text(h[0].lower())
 PYBASE
     done < "$_CONFIG_STAGE/versions"
