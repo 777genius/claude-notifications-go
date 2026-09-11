@@ -28,6 +28,7 @@ Notifications for Claude Code and Codex CLI (beta), with sounds, git branch disp
     - [Quick Install (Recommended)](#quick-install-recommended)
     - [Manual Install](#manual-install)
     - [Updating](#updating)
+    - [Uninstalling](#uninstalling)
   - [Supported Notification Types](#supported-notification-types)
   - [Codex CLI Support (beta)](#codex-cli-support-beta)
   - [Platform Support](#platform-support)
@@ -143,6 +144,20 @@ To update manually via Claude Code UI:
 If the binary auto-update didn't work (e.g. no internet at the time), run `/claude-notifications-go:init` to download it manually. If hook definitions changed in the new version, restart Claude Code to apply them.
 
 </details>
+
+### Uninstalling
+
+**Claude:**
+
+```text
+/plugin uninstall claude-notifications-go@claude-notifications-go
+```
+
+Optionally also remove the marketplace registration: `/plugin marketplace remove claude-notifications-go`.
+
+**Codex:** Codex has no plugin manager, so removal is manual. Delete the hook entries this installer added from `~/.codex/hooks.json` (`%USERPROFILE%\.codex\hooks.json` on Windows), then remove the installed copy at `~/.codex/claude-notifications-go` (`%USERPROFILE%\.codex\claude-notifications-go` on Windows). This does not touch hooks you registered yourself for other tools.
+
+**Configuration:** uninstalling does not delete your saved settings. Run `agent-notifications config path` to find the active file, and remove it yourself if you no longer want it.
 
 ## Supported Notification Types
 
