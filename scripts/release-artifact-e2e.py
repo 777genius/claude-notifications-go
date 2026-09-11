@@ -15,6 +15,43 @@ import tempfile
 import threading
 
 
+_WINDOWS_ACL_DIAGNOSTIC_SCRIPT = (
+    '$p = $env:DIAG_PATH\n'
+    'while ($true) {\n'
+    '  try {\n'
+    '    $acl = Get-Acl -LiteralPath $p\n'
+    '    "--- $p ---"\n'
+    '    "Owner: $($acl.Owner)"\n'
+    '    "Sddl: $($acl.Sddl)"\n'
+    '    $acl.Access | Format-Table -AutoSize | Out-String -Width 4096\n'
+    '  } catch {\n'
+    '    "--- $p (Get-Acl failed: $_) ---"\n'
+    '  }\n'
+    '  $parent = Split-Path -Path $p -Parent\n'
+    '  if ([string]::IsNullOrEmpty($parent) -or $parent -eq $p) { break }\n'
+    '  $p = $parent\n'
+    '}\n'
+)
+
+
+def _windows_acl_diagnostic(path):
+    """Diagnostic only, fires solely on a 'config init' failure: prints
+    Sddl/Owner/Access (Get-Acl) for the sandbox path and every ancestor up to
+    the drive root in one subprocess call, to identify which ancestor (if
+    any) carries an ACE that trips internal/config/store_windows.go's
+    checkWindowsACL walk in openStoreParent (it checks every path component
+    from the volume root down, not just the leaf directory). The path is
+    passed via an env var, never interpolated into the PowerShell command
+    text. Never modifies any ACL or file. No-op on non-Windows."""
+    if os.name != 'nt':
+        return
+    diag_env = dict(os.environ, DIAG_PATH=str(Path(path).resolve()))
+    subprocess.run(
+        ['powershell', '-NoProfile', '-NonInteractive', '-Command', '-'],
+        input=_WINDOWS_ACL_DIAGNOSTIC_SCRIPT, env=diag_env, text=True,
+        timeout=30, check=False)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', type=Path, required=True)
@@ -79,7 +116,11 @@ def main():
                     assert selected == Path(env['AGENT_NOTIFICATIONS_CONFIG'])
                 else:
                     assert selected != legacy
-                run('config', 'init')
+                try:
+                    run('config', 'init')
+                except AssertionError:
+                    _windows_acl_diagnostic(root)
+                    raise
                 assert selected.exists()
                 if case != 'legacy':
                     assert not legacy.exists()
