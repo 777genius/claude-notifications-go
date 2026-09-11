@@ -77,5 +77,40 @@
       "description": "Status title, e.g. \"✅ Completed\"."
     }
   },
+  "allOf": [
+    {
+      "description": "notification_type must always equal status (see their descriptions above).",
+      "if": { "properties": { "status": { "const": "task_complete" } } },
+      "then": { "properties": { "notification_type": { "const": "task_complete" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "review_complete" } } },
+      "then": { "properties": { "notification_type": { "const": "review_complete" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "question" } } },
+      "then": { "properties": { "notification_type": { "const": "question" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "plan_ready" } } },
+      "then": { "properties": { "notification_type": { "const": "plan_ready" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "session_limit_reached" } } },
+      "then": { "properties": { "notification_type": { "const": "session_limit_reached" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "api_error" } } },
+      "then": { "properties": { "notification_type": { "const": "api_error" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "api_error_overloaded" } } },
+      "then": { "properties": { "notification_type": { "const": "api_error_overloaded" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "permission_request" } } },
+      "then": { "properties": { "notification_type": { "const": "permission_request" } } }
+    }
+  ],
   "additionalProperties": true
 }

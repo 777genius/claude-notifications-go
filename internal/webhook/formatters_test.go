@@ -803,3 +803,28 @@ func TestParseActionSummary(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentDisplayName(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{"empty defaults to claude", "", "Claude Code"},
+		{"claude", "claude", "Claude Code"},
+		{"codex", "codex", "Codex"},
+		{
+			name:   "unknown future agent falls back to the raw source, not Claude Code",
+			source: "gemini",
+			want:   "gemini",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := agentDisplayName(tt.source); got != tt.want {
+				t.Errorf("agentDisplayName(%q) = %q, want %q", tt.source, got, tt.want)
+			}
+		})
+	}
+}

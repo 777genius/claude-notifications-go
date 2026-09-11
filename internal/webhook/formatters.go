@@ -29,13 +29,20 @@ func normalizeAgentSource(source string) string {
 }
 
 // agentDisplayName returns the human-readable product name shown in chat
-// notifications (Slack/Discord/Telegram/Lark).
+// notifications (Slack/Discord/Telegram/Lark). Unrecognized agent_source
+// values (a future agent not yet given a friendly name here) fall back to
+// the normalized source string itself rather than being mislabeled as
+// Claude Code, per the forward-compatibility contract documented for
+// agent_source in docs/webhooks/custom.md.
 func agentDisplayName(source string) string {
-	switch config.AgentID(normalizeAgentSource(source)) {
+	normalized := normalizeAgentSource(source)
+	switch config.AgentID(normalized) {
 	case config.AgentCodex:
 		return "Codex"
-	default:
+	case config.AgentClaude:
 		return "Claude Code"
+	default:
+		return normalized
 	}
 }
 

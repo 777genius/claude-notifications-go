@@ -196,7 +196,7 @@ func (s *Sender) buildPayload(runtimeCtx *runtimeContext) ([]byte, string, error
 		if err != nil {
 			return nil, "", err
 		}
-		payload, err = s.applyPayloadFields(payload, runtimeCtx)
+		payload, err = s.applyPayloadFields(payload, runtimeCtx, nil)
 		if err != nil {
 			return nil, "", err
 		}
@@ -236,7 +236,7 @@ func (s *Sender) buildCustomPayload(runtimeCtx *runtimeContext, format string) (
 		"title":             runtimeCtx.statusInfo.Title,
 	}
 
-	payloadWithFields, err := s.applyPayloadFields(payload, runtimeCtx)
+	payloadWithFields, err := s.applyPayloadFields(payload, runtimeCtx, reservedCustomPayloadKeys)
 	if err != nil {
 		return nil, "", err
 	}
@@ -245,7 +245,23 @@ func (s *Sender) buildCustomPayload(runtimeCtx *runtimeContext, format string) (
 	return data, "application/json", err
 }
 
-func (s *Sender) applyPayloadFields(base interface{}, runtimeCtx *runtimeContext) (interface{}, error) {
+// reservedCustomPayloadKeys are the generated notification-identity fields in
+// the custom JSON payload. payloadFields must never be able to override them:
+// external consumers rely on schema_version/status/notification_type/agent_source
+// being exactly what the plugin computed, not arbitrary user config (which
+// could even set the wrong type, e.g. agent_source as a number).
+var reservedCustomPayloadKeys = map[string]bool{
+	"schema_version":    true,
+	"status":            true,
+	"notification_type": true,
+	"agent_source":      true,
+}
+
+// applyPayloadFields merges the webhook.payloadFields config into base.
+// Keys listed in protectedKeys are kept at their generated value; any
+// payloadFields entry attempting to override one is dropped with a warning
+// instead of silently winning.
+func (s *Sender) applyPayloadFields(base interface{}, runtimeCtx *runtimeContext, protectedKeys map[string]bool) (interface{}, error) {
 	extraFields, err := runtimeCtx.resolvePayloadFields(s.cfg.Notifications.Webhook.PayloadFields)
 	if err != nil {
 		return nil, err
@@ -257,6 +273,13 @@ func (s *Sender) applyPayloadFields(base interface{}, runtimeCtx *runtimeContext
 	baseMap, ok := base.(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("payloadFields are only supported for JSON webhook payloads")
+	}
+
+	for key := range protectedKeys {
+		if _, overridden := extraFields[key]; overridden {
+			logging.Warn("Ignoring payloadFields override of reserved key %q", key)
+			delete(extraFields, key)
+		}
 	}
 
 	mergePayloadMaps(baseMap, extraFields)

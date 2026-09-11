@@ -70,7 +70,9 @@ Custom webhooks receive a JSON payload:
 
 The formal contract also lives as a JSON Schema at [`docs/webhooks/payload-schema.json`](payload-schema.json), for consumers that want to validate payloads programmatically.
 
-Slack, Discord, Telegram, and Lark presets also now include the agent name (`Claude Code` / `Codex`) in their footer/author/username so it is visible to humans reading the chat message, not just to machine consumers of the custom JSON format.
+Slack, Discord, Telegram, and Lark presets also now include the agent name (`Claude Code` / `Codex`) in their footer/author/username so it is visible to humans reading the chat message, not just to machine consumers of the custom JSON format. Discord shows it once, via the top-level `username` field, rather than repeating it in the footer.
+
+`schema_version`, `status`, `notification_type`, and `agent_source` are reserved: `payloadFields` cannot override them, even if your config sets one of those keys. Any such entry is dropped (with a warning in the debug log) instead of silently corrupting the identity contract other systems rely on.
 
 ## Dynamic Fields
 
