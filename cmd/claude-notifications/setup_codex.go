@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/777genius/agent-notifications/internal/codexsetup"
@@ -54,9 +55,10 @@ func runSetupCodex(args []string) {
 	}
 
 	result, err := codexsetup.Run(codexsetup.Options{
-		CodexHome:  opts.codexHome,
-		PluginRoot: pluginRoot,
-		DryRun:     opts.dryRun,
+		CodexHome:     opts.codexHome,
+		PluginRoot:    pluginRoot,
+		DryRun:        opts.dryRun,
+		RequireNative: opts.configure && runtime.GOOS == "darwin",
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "setup-codex: %v\n", err)
@@ -92,7 +94,7 @@ func runSetupCodex(args []string) {
 	}
 	fmt.Println()
 	if opts.configure {
-		code := executeNotificationConfigure(context.Background(), append([]string{"--provider", "codex"}, opts.configureArgs...), os.Stdout, pluginRoot)
+		code := executeNotificationConfigure(context.Background(), append([]string{"--provider", "codex"}, opts.configureArgs...), os.Stdout, result.InstallDir)
 		if code != 0 {
 			os.Exit(code)
 		}

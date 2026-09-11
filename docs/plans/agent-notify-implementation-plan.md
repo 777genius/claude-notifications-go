@@ -552,7 +552,7 @@ Installer shell tests сначала прочитать на предмет isol
 
 ## 14. Критерий завершения функции
 
-- [x] Пройден основной existing-installer flow §8.1.2 с explicit opt-in, обоими порядками установки клиентов, partial-failure recovery, без дубликатов и изменения чужих настроек. Evidence: isolated flow plus `TestNotificationBootstrapOffline`, `TestNotificationInitOfflineBranch`, `TestNotificationConfigureParserAndSetupOptIn`; `docs/evidence/agent-notify/plan14-local-e2e-2026-09-11.md`.
+- [x] Пройден основной existing-installer flow §8.1.2 с explicit opt-in, обоими порядками установки клиентов, partial-failure recovery, без дубликатов и изменения чужих настроек. Evidence: isolated flow plus `TestNotificationBootstrapOffline`, `TestNotificationInitOfflineBranch`, `TestNotificationConfigureParserAndSetupOptIn`, `TestSetupCodexE2EConfigureNotifications`; bootstrap configure uses committed Codex runtime after staging delete; `docs/evidence/agent-notify/plan14-local-e2e-2026-09-11.md`.
 - [ ] Production tool действительно вызван из установленного local Desktop и возвращает правильный source target. Не доказано: рабочий Codex нельзя завершать, CLI/app-server/subscription запрещены, нет disposable Desktop-профиля.
 - [ ] Ручные A/B клики после остановки MCP/удаления cwd открывают правильные чаты; evidence относится к exact artifact. Не доказано: клик в dedicated test profile; banner/`os_accepted` ≠ click routing. Opt-in send использует shared `com.claude.desktop.notifier`.
 - [x] Literal payload, native capability/receipt, stable callback и compatibility работают в actual implementation tests. Evidence: `TestPR3LiteralBytesAndBounds`, `TestPR3DeliveryLiteralReceiptAndSnapshot`, `TestLiteralAndReceipt`, isolated-flow `--capabilities-json` после A→B.

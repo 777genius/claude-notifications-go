@@ -200,6 +200,17 @@ func TestNotificationConfigureParserAndSetupOptIn(t *testing.T) {
 	}
 }
 
+func TestNotificationConfigureRejectsUnownedBundle(t *testing.T) {
+	_, request, deps := configureFixture(t)
+	deps.BundleRoot = filepath.Join(t.TempDir(), "source-bundle")
+	if err := os.Mkdir(deps.BundleRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := configureNotifications(setupCommandContext(t), request, deps); err == nil {
+		t.Fatal("source bundle accepted")
+	}
+}
+
 func TestNotificationConfigurePrimaryOrders(t *testing.T) {
 	for _, first := range []string{"codex", "claude"} {
 		t.Run(first, func(t *testing.T) {

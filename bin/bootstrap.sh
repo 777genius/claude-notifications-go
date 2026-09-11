@@ -1320,7 +1320,13 @@ install_codex() {
     CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" --dry-run </dev/null || return 1
     config_preflight || return 1
     CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" </dev/null || return $?
-    CONFIGURE_BINARY="$binary"
+    CONFIGURE_BINARY="${CODEX_HOME:-$HOME/.codex}/claude-notifications-go/bin/claude-notifications"
+    if [ ! -x "$CONFIGURE_BINARY" ]; then
+        echo "Committed Codex runtime binary missing after setup-codex." >&2
+        return 1
+    fi
+    rm -rf "$_BOOTSTRAP_STAGE"
+    _BOOTSTRAP_STAGE=""
     echo "Codex installed. Start Codex, run /hooks, review and trust the entries."
 }
 

@@ -373,3 +373,47 @@ func TestSetupCodexE2EInstalledLaunchersSurviveReplacement(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupCodexE2EConfigureNotifications(t *testing.T) {
+	bin := buildCLIBinary(t)
+	f := newSetupE2E(t)
+	body, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e2eWrite(t, filepath.Join(f.bundle, "bin", "claude-notifications"), body)
+	if err := os.Chmod(filepath.Join(f.bundle, "bin", "claude-notifications"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	e2eWrite(t, filepath.Join(f.bundle, "config", "config.json"), []byte(`{"notifications":{"desktop":{"enabled":false,"sound":false,"clickToFocus":false}}}`))
+	e2eWrite(t, filepath.Join(f.bundle, "skills", "agent-notify", "SKILL.md"), []byte("canonical test skill"))
+	if runtime.GOOS == "darwin" {
+		installerNativeFixture(t, filepath.Join(f.bundle, "bin"))
+	}
+	source := f.bundle
+	out, err := f.run(t, "", bin, "setup-codex", "--plugin-root", source, "--configure-notifications", "--navigation", "none")
+	installDir := filepath.Join(f.home, ".codex", "claude-notifications-go")
+	command := filepath.Join(installDir, "bin", "claude-notifications")
+	if runtime.GOOS != "darwin" {
+		if err == nil {
+			t.Fatal("configure succeeded without qualified native")
+		}
+		if strings.Contains(out, "installed_bundle_required") {
+			t.Fatal("configure used the source plugin root", out)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("setup-codex configure: %v %s", err, out)
+	}
+	if err := os.RemoveAll(source); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(e2eRead(t, filepath.Join(f.home, ".codex", "config.toml")))
+	if !strings.Contains(raw, command) || strings.Contains(raw, source) {
+		t.Fatalf("configure command is not the committed runtime: %s", raw)
+	}
+	if string(e2eRead(t, filepath.Join(f.home, ".codex", "skills", "agent-notify", "SKILL.md"))) != "canonical test skill" {
+		t.Fatal("skill missing after source bundle removal")
+	}
+}
