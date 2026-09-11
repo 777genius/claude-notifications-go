@@ -16,12 +16,14 @@ const (
 	discordEmbedFooterLimit = 2048
 )
 
-// normalizeAgentSource returns the machine-readable agent identity ("claude",
-// "codex", ...) used in structured payloads and templates. Empty defaults to
-// "claude" since every pre-multi-agent caller only ever sent Claude events.
+// normalizeAgentSource returns the machine-readable agent identity used in
+// structured payloads and templates, reusing the same config.AgentID enum
+// the config/composition-root layer already defines (internal/config/agents.go)
+// instead of a parallel string enum. Empty defaults to AgentClaude since every
+// pre-multi-agent caller only ever sent Claude events.
 func normalizeAgentSource(source string) string {
 	if source == "" {
-		return "claude"
+		return string(config.AgentClaude)
 	}
 	return source
 }
@@ -29,8 +31,8 @@ func normalizeAgentSource(source string) string {
 // agentDisplayName returns the human-readable product name shown in chat
 // notifications (Slack/Discord/Telegram/Lark).
 func agentDisplayName(source string) string {
-	switch normalizeAgentSource(source) {
-	case "codex":
+	switch config.AgentID(normalizeAgentSource(source)) {
+	case config.AgentCodex:
 		return "Codex"
 	default:
 		return "Claude Code"
@@ -134,13 +136,15 @@ func buildDiscordAuthor(ctx SendContext) string {
 
 // buildDiscordFooter returns the embed footer text.
 // Uses the raw session UUID so the footer is not redundant with the friendly
-// label that already appears in the author line.
+// label that already appears in the author line. Agent identity is shown via
+// the top-level "username" field only (see Format below), not repeated here,
+// so there is a single place to update per agent instead of two that could
+// drift out of sync.
 func buildDiscordFooter(ctx SendContext) string {
-	agent := agentDisplayName(ctx.AgentSource)
 	if ctx.SessionID == "" {
-		return agent
+		return "Agent Notifications"
 	}
-	return truncateMiddle(fmt.Sprintf("Session: %s · %s", ctx.SessionID, agent), discordEmbedFooterLimit)
+	return truncateMiddle(fmt.Sprintf("Session: %s", ctx.SessionID), discordEmbedFooterLimit)
 }
 
 // truncateMiddle keeps both the start and end of a string visible while

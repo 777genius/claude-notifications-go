@@ -634,7 +634,7 @@ func TestDiscordFormatter_AuthorAndFields(t *testing.T) {
 	}
 
 	footer := embed["footer"].(map[string]interface{})
-	wantFooter := "Session: 439d1884-b53d-42f2-922a-203d086a158d · Claude Code"
+	wantFooter := "Session: 439d1884-b53d-42f2-922a-203d086a158d"
 	if text := footer["text"].(string); text != wantFooter {
 		t.Errorf("footer = %q, want %q", text, wantFooter)
 	}
