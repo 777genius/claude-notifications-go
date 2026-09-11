@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Source-neutral event pipeline** - Claude and Codex use separate decoders with a shared notification pipeline. Both products share the selected config file, with optional per-agent overrides; existing webhooks also receive Codex notifications unless overridden.
 
 ### Fixed
+- Deliver macOS notifications whose text or title is `-help` or `--help` instead of interpreting their content as a CLI help request.
 - Preserve the Windows GUI focus helper when installing the stable Codex runtime.
 - Keep Codex update stamps separate from Claude, preserve distinct concurrent Codex notifications, reject destructive destination symlinks, and skip Claude iTerm2 setup during Codex installation and updates.
 
