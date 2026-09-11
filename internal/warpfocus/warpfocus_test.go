@@ -63,7 +63,16 @@ func TestFromSessionUUID(t *testing.T) {
 	}
 }
 
+func setWarpHost(t *testing.T) {
+	t.Helper()
+	t.Setenv("__CFBundleIdentifier", "dev.warp.Warp-Stable")
+	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+	t.Setenv("VSCODE_INJECTION", "")
+	t.Setenv("VSCODE_GIT_IPC_HANDLE", "")
+}
+
 func TestFromEnv_PrefersFocusURL(t *testing.T) {
+	setWarpHost(t)
 	t.Setenv(FocusURLEnv, "warposs://session/"+validHex)
 	t.Setenv(SessionUUIDEnv, "ffffffffffffffffffffffffffffffff")
 	t.Setenv("TMUX", "")
@@ -73,6 +82,7 @@ func TestFromEnv_PrefersFocusURL(t *testing.T) {
 }
 
 func TestFromEnv_UUIDFallback(t *testing.T) {
+	setWarpHost(t)
 	t.Setenv(FocusURLEnv, "")
 	t.Setenv(SessionUUIDEnv, validHex)
 	t.Setenv("TMUX", "")
@@ -82,11 +92,57 @@ func TestFromEnv_UUIDFallback(t *testing.T) {
 }
 
 func TestFromEnv_Empty(t *testing.T) {
+	setWarpHost(t)
 	t.Setenv(FocusURLEnv, "")
 	t.Setenv(SessionUUIDEnv, "")
 	t.Setenv("TMUX", "")
 	if got := FromEnv(); got != "" {
 		t.Errorf("FromEnv() = %q, want empty", got)
+	}
+}
+
+func TestFromEnv_IgnoresInheritedURLOutsideWarp(t *testing.T) {
+	t.Setenv("__CFBundleIdentifier", "com.todesktop.230313mzl4w4u92")
+	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+	t.Setenv("VSCODE_INJECTION", "1")
+	t.Setenv(FocusURLEnv, "warp://session/"+validHex)
+	t.Setenv(SessionUUIDEnv, validHex)
+	t.Setenv("TMUX", "")
+	if got := FromEnv(); got != "" {
+		t.Errorf("FromEnv() = %q, want empty when Cursor inherited Warp env", got)
+	}
+}
+
+func TestFromEnv_TmuxInsideWarp(t *testing.T) {
+	t.Setenv("__CFBundleIdentifier", "dev.warp.Warp-Stable")
+	t.Setenv("TERM_PROGRAM", "tmux")
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
+	t.Setenv(FocusURLEnv, "warp://session/"+validHex)
+	t.Setenv(SessionUUIDEnv, "")
+	if got := FromEnv(); got != "warp://session/"+validHex {
+		t.Errorf("FromEnv() inside Warp tmux = %q, want session URL", got)
+	}
+}
+
+func TestFromEnv_LinuxWarpWithoutBundle(t *testing.T) {
+	t.Setenv("__CFBundleIdentifier", "")
+	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+	t.Setenv("VSCODE_INJECTION", "")
+	t.Setenv("VSCODE_GIT_IPC_HANDLE", "")
+	t.Setenv("TMUX", "")
+	t.Setenv(FocusURLEnv, "warp://session/"+validHex)
+	t.Setenv(SessionUUIDEnv, "")
+	if got := FromEnv(); got != "warp://session/"+validHex {
+		t.Errorf("FromEnv() on Linux Warp = %q, want session URL", got)
+	}
+}
+
+func TestIsWarpHost_CursorBundle(t *testing.T) {
+	t.Setenv("__CFBundleIdentifier", "com.todesktop.230313mzl4w4u92")
+	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+	t.Setenv("VSCODE_INJECTION", "")
+	if IsWarpHost() {
+		t.Fatal("Cursor launched from Warp is not a Warp host")
 	}
 }
 

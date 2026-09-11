@@ -27,10 +27,20 @@ func clearWarpFocusEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv(warpfocus.FocusURLEnv, "")
 	t.Setenv(warpfocus.SessionUUIDEnv, "")
+	t.Setenv("TMUX", "")
+}
+
+func setWarpHost(t *testing.T) {
+	t.Helper()
+	t.Setenv("__CFBundleIdentifier", "dev.warp.Warp-Stable")
+	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+	t.Setenv("VSCODE_INJECTION", "")
+	t.Setenv("VSCODE_GIT_IPC_HANDLE", "")
 }
 
 func TestBuildFocusScript_WarpUsesSessionURL(t *testing.T) {
 	clearWarpFocusEnv(t)
+	setWarpHost(t)
 	t.Setenv(warpfocus.FocusURLEnv, warpTestFocusURL)
 	t.Setenv(iTerm2SessionIDEnv, "")
 
@@ -51,6 +61,7 @@ func TestBuildFocusScript_WarpUsesSessionURL(t *testing.T) {
 
 func TestBuildFocusScript_WarpURLWorksWithoutCWD(t *testing.T) {
 	clearWarpFocusEnv(t)
+	setWarpHost(t)
 	t.Setenv(warpfocus.FocusURLEnv, "warposs://session/"+warpTestSessionHex)
 	t.Setenv(iTerm2SessionIDEnv, "")
 
@@ -65,6 +76,7 @@ func TestBuildFocusScript_WarpURLWorksWithoutCWD(t *testing.T) {
 
 func TestBuildFocusScript_WarpUUIDFallback(t *testing.T) {
 	clearWarpFocusEnv(t)
+	setWarpHost(t)
 	t.Setenv(warpfocus.FocusURLEnv, "")
 	t.Setenv(warpfocus.SessionUUIDEnv, warpTestSessionHex)
 	t.Setenv(iTerm2SessionIDEnv, "")
@@ -77,6 +89,7 @@ func TestBuildFocusScript_WarpUUIDFallback(t *testing.T) {
 
 func TestBuildFocusScript_WarpIgnoresConversationURL(t *testing.T) {
 	clearWarpFocusEnv(t)
+	setWarpHost(t)
 	t.Setenv(warpfocus.FocusURLEnv, "warp://conversation/"+warpTestSessionHex)
 	t.Setenv(iTerm2SessionIDEnv, "")
 
@@ -91,6 +104,7 @@ func TestBuildFocusScript_WarpIgnoresConversationURL(t *testing.T) {
 
 func TestBuildTerminalNotifierArgs_WarpSessionURL(t *testing.T) {
 	clearWarpFocusEnv(t)
+	setWarpHost(t)
 	t.Setenv(warpfocus.FocusURLEnv, warpTestFocusURL)
 	t.Setenv(iTerm2SessionIDEnv, "")
 
@@ -103,6 +117,7 @@ func TestBuildTerminalNotifierArgs_WarpSessionURL(t *testing.T) {
 
 func TestInjectWarpFocusURL_PrependsOpenToTmuxExecute(t *testing.T) {
 	clearWarpFocusEnv(t)
+	setWarpHost(t)
 	t.Setenv(warpfocus.FocusURLEnv, warpTestFocusURL)
 
 	args := []string{
@@ -130,11 +145,29 @@ func TestInjectWarpFocusURL_NoopWithoutWarp(t *testing.T) {
 	}
 }
 
+func TestBuildFocusScript_IgnoresInheritedWarpURLForCursor(t *testing.T) {
+	clearWarpFocusEnv(t)
+	t.Setenv("__CFBundleIdentifier", "com.todesktop.230313mzl4w4u92")
+	t.Setenv("TERM_PROGRAM", "WarpTerminal")
+	t.Setenv("VSCODE_INJECTION", "1")
+	t.Setenv(warpfocus.FocusURLEnv, warpTestFocusURL)
+	t.Setenv(iTerm2SessionIDEnv, "")
+
+	script := buildFocusScript("com.todesktop.230313mzl4w4u92", "/home/user/proj")
+	if strings.Contains(script, "open '") {
+		t.Fatalf("Cursor launched from Warp must not open WARP_FOCUS_URL, got: %s", script)
+	}
+	if !strings.Contains(script, "focus-window") {
+		t.Fatalf("Cursor click should keep focus-window, got: %s", script)
+	}
+}
+
 func TestWarpFocusExecute_IsValidShell(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh is not available")
 	}
 	clearWarpFocusEnv(t)
+	setWarpHost(t)
 	t.Setenv(warpfocus.FocusURLEnv, warpTestFocusURL)
 	t.Setenv(iTerm2SessionIDEnv, "")
 
@@ -153,6 +186,7 @@ func TestWarpFocusURL_LiveHostEnvIsSessionLink(t *testing.T) {
 	if got == "" {
 		t.Fatalf("host WARP_FOCUS_URL is not a session deep link: %q", hostWarpFocusURL)
 	}
+	setWarpHost(t)
 	t.Setenv(warpfocus.FocusURLEnv, hostWarpFocusURL)
 	script := buildFocusScript("dev.warp.Warp-Stable", "/tmp/proj")
 	if !strings.Contains(script, "open '"+got+"'") {

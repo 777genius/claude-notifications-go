@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/777genius/agent-notifications/internal/warpfocus"
 )
 
 const claudeNotificationsDesktopEntryID = "claude-notifications"
@@ -244,9 +246,12 @@ func GetSearchTermWithFolder(terminalName, folderName string) string {
 
 // GetTerminalName detects the current terminal from environment variables.
 func GetTerminalName() string {
-	// Try TERM_PROGRAM first (set by many terminals)
+	// Try TERM_PROGRAM first (set by many terminals). Skip an inherited
+	// WarpTerminal value when this process is Cursor/VS Code/etc.
 	if termProg := os.Getenv("TERM_PROGRAM"); termProg != "" {
-		return termProg
+		if termProg != "WarpTerminal" || warpfocus.IsWarpHost() {
+			return termProg
+		}
 	}
 
 	// Check VS Code indicators
@@ -276,7 +281,7 @@ func GetTerminalName() string {
 		return "alacritty"
 	}
 
-	if os.Getenv("WARP_FOCUS_URL") != "" || os.Getenv("WARP_TERMINAL_SESSION_UUID") != "" || os.Getenv("WARP_IS_LOCAL_SHELL_SESSION") != "" {
+	if warpfocus.IsWarpHost() && (os.Getenv("WARP_FOCUS_URL") != "" || os.Getenv("WARP_TERMINAL_SESSION_UUID") != "" || os.Getenv("WARP_IS_LOCAL_SHELL_SESSION") != "") {
 		return "WarpTerminal"
 	}
 

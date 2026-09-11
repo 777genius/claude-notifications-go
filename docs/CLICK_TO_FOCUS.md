@@ -33,7 +33,7 @@ Auto-detects your terminal via `TERM_PROGRAM` / `__CFBundleIdentifier`. Uses `te
 | Ghostty | Exact tab focus via Ghostty AppleScript, with AXDocument retry fallback |
 | VS Code / Insiders / Cursor | AXTitle via focus-window subcommand |
 | iTerm2 | Exact tab/pane targeting via iTerm2 Python API when available, otherwise app-level iTerm activation |
-| Warp | Exact window/tab/pane via `WARP_FOCUS_URL` (`open warp://session/<uuid>`), with AXTitle `focus-window` fallback on older Warp |
+| Warp | Exact window/tab/pane via `WARP_FOCUS_URL` (`open warp://session/<uuid>`) when the hook ran inside Warp, with AXTitle `focus-window` fallback on older Warp. Cursor/VS Code launched from Warp keep editor focus. |
 | kitty, WezTerm, Alacritty, Hyper, Apple Terminal | AXTitle via focus-window subcommand |
 | Any other (custom `terminalBundleId`) | AXTitle via focus-window subcommand |
 

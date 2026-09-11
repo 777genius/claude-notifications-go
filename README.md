@@ -47,7 +47,7 @@ Notifications for Claude Code and Codex CLI (beta), with sounds, git branch disp
 
 - **Cross-platform**: macOS (Intel & Apple Silicon), Linux (x64 & ARM64), Windows 10+ (x64)
 - **Claude notification types**: Task Complete, Review Complete, Question, Plan Ready, Session Limit, API Error
-- **Click-to-focus** (macOS, Linux, Windows): click notification to focus the exact project window and tab — Ghostty, VS Code, iTerm2, Warp (`WARP_FOCUS_URL`), kitty, WezTerm, Alacritty, Hyper, Apple Terminal, GNOME Terminal, Konsole, Tilix, Terminator, XFCE4 Terminal, MATE Terminal
+- **Click-to-focus** (macOS, Linux): click notification to focus the exact project window and tab — Ghostty, VS Code, iTerm2, Warp (`WARP_FOCUS_URL`), kitty, WezTerm, Alacritty, Hyper, Apple Terminal, GNOME Terminal, Konsole, Tilix, Terminator, XFCE4 Terminal, MATE Terminal. Windows focuses the originating window; Warp on Windows can still select the pane via `WARP_FOCUS_URL`.
 - **Multiplexers**: tmux (including iTerm2 -CC integration mode), zellij, WezTerm, kitty — click switches to the correct session/pane/tab
 - **Git branch in title**: `✅ Completed main [cat]`
 - **Sounds**: MP3/WAV/FLAC/OGG/AIFF, volume control, audio device selection

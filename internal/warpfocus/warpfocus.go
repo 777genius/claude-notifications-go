@@ -30,8 +30,13 @@ var allowedSchemes = map[string]bool{
 // FromEnv returns a validated Warp session focus URL from the current process
 // environment. Prefers WARP_FOCUS_URL (channel-aware). Falls back to
 // WARP_TERMINAL_SESSION_UUID as warp://session/<hex>, then to tmux's copy of
-// those variables when the process is inside tmux.
+// those variables when the process is inside tmux. Empty when this process is
+// not a Warp host (for example Cursor or VS Code launched from a Warp pane,
+// which inherit Warp's environment).
 func FromEnv() string {
+	if !IsWarpHost() {
+		return ""
+	}
 	if url := Normalize(os.Getenv(FocusURLEnv)); url != "" {
 		return url
 	}
@@ -45,6 +50,44 @@ func FromEnv() string {
 		return url
 	}
 	return FromSessionUUID(tmuxEnvironment(SessionUUIDEnv))
+}
+
+// IsWarpHost reports whether this process is running in a Warp terminal
+// session, as opposed to an app that merely inherited Warp's environment
+// (Cursor, VS Code, Ghostty launched from a Warp pane).
+func IsWarpHost() bool {
+	if isEditorHost() {
+		return false
+	}
+	if bundleID := strings.TrimSpace(os.Getenv("__CFBundleIdentifier")); bundleID != "" {
+		return strings.HasPrefix(bundleID, "dev.warp.Warp")
+	}
+	switch os.Getenv("TERM_PROGRAM") {
+	case "WarpTerminal":
+		return true
+	case "tmux", "zellij":
+		return os.Getenv("TMUX") != "" || os.Getenv("ZELLIJ") != ""
+	case "":
+		if os.Getenv("TMUX") != "" || os.Getenv("ZELLIJ") != "" {
+			return true
+		}
+		return os.Getenv(FocusURLEnv) != "" || os.Getenv(SessionUUIDEnv) != "" || os.Getenv("WARP_IS_LOCAL_SHELL_SESSION") != ""
+	default:
+		return false
+	}
+}
+
+func isEditorHost() bool {
+	if os.Getenv("VSCODE_INJECTION") != "" || os.Getenv("VSCODE_GIT_IPC_HANDLE") != "" {
+		return true
+	}
+	if os.Getenv("TERM_PROGRAM") == "vscode" {
+		return true
+	}
+	bundleID := os.Getenv("__CFBundleIdentifier")
+	return strings.HasPrefix(bundleID, "com.todesktop.") ||
+		strings.HasPrefix(bundleID, "com.microsoft.VSCode") ||
+		strings.HasPrefix(bundleID, "com.visualstudio.code")
 }
 
 // FromSessionUUID builds warp://session/<hex> from a 32-char hex UUID or a

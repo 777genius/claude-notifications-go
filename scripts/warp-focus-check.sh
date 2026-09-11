@@ -25,7 +25,38 @@ EOF
 focus_url="${WARP_FOCUS_URL:-}"
 uuid="${WARP_TERMINAL_SESSION_UUID:-}"
 
+open_focus_url() {
+	case "$(uname -s)" in
+	Darwin)
+		open "$1"
+		;;
+	Linux)
+		if ! command -v xdg-open >/dev/null 2>&1; then
+			echo "xdg-open not found. Install xdg-utils, or open this URL yourself: $1" >&2
+			exit 1
+		fi
+		xdg-open "$1"
+		;;
+	*)
+		echo "open is supported on macOS and Linux. URL: $1" >&2
+		exit 1
+		;;
+	esac
+}
+
 require_warp() {
+	case "${__CFBundleIdentifier:-}" in
+	com.todesktop.* | com.microsoft.VSCode* | com.visualstudio.code*)
+		echo "This looks like Cursor/VS Code that inherited Warp's environment." >&2
+		echo "Run this script inside a Warp pane, not from an editor launched from Warp." >&2
+		exit 1
+		;;
+	esac
+	if [[ "${TERM_PROGRAM:-}" == "vscode" || -n "${VSCODE_INJECTION:-}" ]]; then
+		echo "This looks like VS Code/Cursor that inherited Warp's environment." >&2
+		echo "Run this script inside a Warp pane, not from an editor launched from Warp." >&2
+		exit 1
+	fi
 	if [[ -z "$focus_url" ]]; then
 		echo "WARP_FOCUS_URL is empty. This shell is not a Warp pane (or Warp is older than v0.2026.05.27)." >&2
 		echo "TERM_PROGRAM=${TERM_PROGRAM:-}  __CFBundleIdentifier=${__CFBundleIdentifier:-}" >&2
@@ -57,10 +88,14 @@ env | "")
 open)
 	require_warp
 	echo "Opening $focus_url"
-	open "$focus_url"
+	open_focus_url "$focus_url"
 	;;
 notify)
 	require_warp
+	if [[ "$(uname -s)" != Darwin ]]; then
+		echo "notify sends a macOS clickable banner. On this OS use: $0 open" >&2
+		exit 1
+	fi
 	execute_cmd="open '$focus_url'"
 	echo "Sending notification."
 	echo "Click action: $execute_cmd"
@@ -86,9 +121,10 @@ notify)
 	fi
 
 	echo "No terminal-notifier / ClaudeNotifier.app found." >&2
-	echo "Falling back to Warp URL only (no banner). This still proves session focus:" >&2
-	open "$focus_url"
-	echo "If this pane just came to the front, Warp's deep link works. For a clickable banner, brew install terminal-notifier and rerun: $0 notify" >&2
+	echo "notify needs a macOS notifier binary; not opening the Warp URL as a silent fallback." >&2
+	echo "Install terminal-notifier (brew install terminal-notifier) and rerun: $0 notify" >&2
+	echo "To prove the session URL without a banner: $0 open" >&2
+	exit 1
 	;;
 -h | --help | help)
 	usage
