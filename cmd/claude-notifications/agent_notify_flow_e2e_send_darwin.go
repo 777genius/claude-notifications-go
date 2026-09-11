@@ -21,6 +21,10 @@ import (
 
 func sendQueuedNativeFromActive(t *testing.T, ctx context.Context, control, spool, bundle string) {
 	t.Helper()
+	if os.Getenv("AGENT_NOTIFY_DARWIN_E2E") != "1" {
+		t.Log("skipping Notification Center send; set AGENT_NOTIFY_DARWIN_E2E=1 for operator-visible Darwin qualification")
+		return
+	}
 	if err := os.MkdirAll(spool, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +60,10 @@ func sendQueuedNativeFromActive(t *testing.T, ctx context.Context, control, spoo
 
 func launchGenerationAfterColdStart(t *testing.T, ctx context.Context, bundle string) {
 	t.Helper()
+	if os.Getenv("AGENT_NOTIFY_DARWIN_E2E") != "1" {
+		t.Log("skipping LaunchServices cold-start; set AGENT_NOTIFY_DARWIN_E2E=1 for operator-visible Darwin qualification")
+		return
+	}
 	physical, err := filepath.EvalSymlinks(bundle)
 	if err != nil {
 		t.Fatal(err)

@@ -609,6 +609,11 @@ func nativeFlowApp(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	bundleID := "com.agentnotify.test.flow"
+	if os.Getenv("AGENT_NOTIFY_DARWIN_E2E") == "1" {
+		bundleID = "com.claude.desktop.notifier"
+	}
+	info = bytes.Replace(info, []byte("com.claude.desktop.notifier"), []byte(bundleID), 1)
 	if err := os.WriteFile(filepath.Join(root, "Contents", "Info.plist"), info, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +625,7 @@ func nativeFlowApp(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if runtime.GOOS == "darwin" {
-		if out, err := exec.Command("codesign", "--force", "--sign", "-", "--timestamp=none", "--identifier", "com.claude.desktop.notifier", root).CombinedOutput(); err != nil {
+		if out, err := exec.Command("codesign", "--force", "--sign", "-", "--timestamp=none", "--identifier", bundleID, root).CombinedOutput(); err != nil {
 			t.Fatalf("codesign generation helper: %s %v", out, err)
 		}
 	}
