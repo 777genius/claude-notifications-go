@@ -292,6 +292,14 @@ jobs:
             binary: claude-notifications-windows-amd64.exe
 
     steps:
+      - name: Checkout artifact qualification tests
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
       - name: Download binary artifacts
         uses: actions/download-artifact@v8
         with:
@@ -342,4 +350,10 @@ jobs:
           list_sounds="${MAIN_BINARY/claude-notifications/list-sounds}"
           "./dist/$sound_preview" --help
           "./dist/$list_sounds" --help
+        shell: bash
+
+      - name: Qualify configuration and notification delivery
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/release-artifact-e2e.py --binary "dist/${{ matrix.binary }}" --version "$RELEASE_TAG"
         shell: bash
