@@ -682,8 +682,9 @@ test_lock_created() {
     cat > "$fake_bin/curl" <<'FAKE_CURL_EOF'
 #!/bin/sh
 if [ "$1" = "--help" ]; then
-    sleep 5
+    exit 0
 fi
+sleep 5
 exit 28
 FAKE_CURL_EOF
     chmod +x "$fake_bin/curl"

@@ -1,4 +1,5 @@
 #!/bin/bash
+TEST_ENV_HANDOFF_GOMODCACHE=1
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test-env.sh"
 test_env_enter "$0" "$@"
 # install_test.sh - Tests for install.sh functions
@@ -241,6 +242,18 @@ echo ""
 
 # Discover the disposable product-isolation regression in the existing CI entrypoint.
 if bash "$SCRIPT_DIR/codex-hook-wrapper_test.sh"; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+if bash "$SCRIPT_DIR/install_config_preflight_test.sh"; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+if bash "$SCRIPT_DIR/install_config_native_test.sh"; then
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
     TESTS_FAILED=$((TESTS_FAILED + 1))

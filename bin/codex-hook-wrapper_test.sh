@@ -104,12 +104,12 @@ for EXISTING in yes no; do main >/dev/null; done
 rm -rf "$venv"
 main >/dev/null
 [ ! -e "$venv" ]
-# Positive Claude control: the same failing pip fixture reaches old cleanup.
+# Positive Claude control: failed private pip preserves the broken live tree.
 unset CN_PRODUCT
 mkdir -p "$venv"
 echo keep > "$venv/canary"
 main >/dev/null
 [ -f "$ROOT/python-called" ]
-[ ! -e "$venv" ]
+[ "$(cat "$venv/canary")" = keep ]
 echo 'PASS: isolated Codex cache and installer regressions'
 RUN
