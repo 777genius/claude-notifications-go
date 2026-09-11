@@ -132,8 +132,13 @@ func (s Service) CommitBinding(ctx context.Context, req Request) (portable.Bindi
 	if err != nil {
 		return portable.Binding{}, err
 	}
+	snap, err := installruntime.ReadInstalledSnapshot(req.Binding.ControlRoot)
+	if err != nil {
+		return portable.Binding{}, err
+	}
+	_, existed := snap.Ledger.Consumers[key]
 	gen := req.ExpectedGeneration
-	_, err = installruntime.Commit(ctx, installruntime.Request{
+	ledger, err := installruntime.Commit(ctx, installruntime.Request{
 		ControlRoot: req.Binding.ControlRoot, Owner: req.Binding.Owner, RuntimeRoot: req.Binding.RuntimeRoot,
 		ConsumerID: key, Consumer: consumer, ExpectedGeneration: &gen, RefreshOnly: false,
 	})
@@ -141,10 +146,13 @@ func (s Service) CommitBinding(ctx context.Context, req Request) (portable.Bindi
 		return portable.Binding{}, err
 	}
 	if _, err = portable.Publish(req.Binding); err != nil {
-		_, _ = installruntime.Commit(ctx, installruntime.Request{
-			ControlRoot: req.Binding.ControlRoot, Owner: req.Binding.Owner, RuntimeRoot: req.Binding.RuntimeRoot,
-			ConsumerID: key, RemoveConsumer: true,
-		})
+		if !existed {
+			next := ledger.Generation
+			_, _ = installruntime.Commit(ctx, installruntime.Request{
+				ControlRoot: req.Binding.ControlRoot, Owner: req.Binding.Owner, RuntimeRoot: req.Binding.RuntimeRoot,
+				ConsumerID: key, RemoveConsumer: true, ExpectedGeneration: &next,
+			})
+		}
 		return portable.Binding{}, err
 	}
 	return req.Binding, nil

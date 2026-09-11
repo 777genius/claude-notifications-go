@@ -298,3 +298,64 @@ func TestInstallRefusesUnownedDiscoveryConflict(t *testing.T) {
 		t.Fatal("locator published after refused handoff")
 	}
 }
+
+func TestCommitBindingPublishFailureRemovesOnlyNewConsumer(t *testing.T) {
+	b, ledger := bindingFixture(t)
+	key, _, _, err := b.Registration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := b.Filename()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.DataRoot, name), []byte(`{"conflict":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Service{}).CommitBinding(testCtx(t), Request{Binding: b, ExpectedGeneration: ledger.Generation}); err == nil {
+		t.Fatal("conflicting locator accepted")
+	}
+	snap, err := installruntime.ReadInstalledSnapshot(b.ControlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := snap.Ledger.Consumers[key]; ok {
+		t.Fatal("new consumer survived failed publish")
+	}
+	if _, ok := snap.Ledger.Consumers["existing"]; !ok {
+		t.Fatal("unrelated consumer removed during publish compensation")
+	}
+}
+
+func TestCommitBindingPublishFailureKeepsExistingConsumer(t *testing.T) {
+	b, ledger := bindingFixture(t)
+	svc := Service{}
+	if _, err := svc.CommitBinding(testCtx(t), Request{Binding: b, ExpectedGeneration: ledger.Generation}); err != nil {
+		t.Fatal(err)
+	}
+	key, _, _, err := b.Registration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := b.Filename()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.DataRoot, name), []byte(`{"conflict":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := installruntime.ReadInstalledSnapshot(b.ControlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CommitBinding(testCtx(t), Request{Binding: b, ExpectedGeneration: snap.Ledger.Generation}); err == nil {
+		t.Fatal("conflicting locator accepted")
+	}
+	snap, err = installruntime.ReadInstalledSnapshot(b.ControlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := snap.Ledger.Consumers[key]; !ok {
+		t.Fatal("publish failure unregistered existing portable consumer")
+	}
+}
