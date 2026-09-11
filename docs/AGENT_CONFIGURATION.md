@@ -52,8 +52,9 @@ field to inherit instead. Known-field casing collisions and invalid types fail.
 
 Agent IDs must match `[a-z][a-z0-9_-]{0,63}`. Overrides allow only `notifications`,
 `statuses`, and `debug`; nested agent sections and schema metadata are forbidden.
-Unknown valid agent IDs and additive settings are preserved for future runtimes.
-Current runtimes apply only `claude` and `codex`.
+Unknown valid agent IDs and additive top-level settings are preserved for future
+runtimes. Unknown fields inside `agents.<id>` are rejected by strict agent
+validation rather than preserved. Current runtimes apply only `claude` and `codex`.
 
 `config edit` and the settings wizard edit global fields only and preserve agent
 sections. `/agents/...` edits are rejected; use a text editor for these sections.

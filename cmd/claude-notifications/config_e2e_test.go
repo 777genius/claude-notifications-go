@@ -187,4 +187,8 @@ func TestUniversalConfigE2ELaunchersAndSilentCodex(t *testing.T) {
 	f.env = append(f.env, "PLUGIN_ROOT="+f.bundle)
 	result := runCLI(t, f.env, `{"session_id":"isolated","hook_event_name":"Stop","cwd":"`+filepath.ToSlash(f.root)+`"}`, "handle-hook", "Stop", "--product", "codex")
 	assertContained(t, "invalid inactive schema2 profile", result)
+	log := string(e2eRead(t, filepath.Join(f.bundle, "notification-debug.log")))
+	if !strings.Contains(log, "ConfigInvalid") {
+		t.Fatalf("missing ConfigInvalid diagnostic: %s", log)
+	}
 }
