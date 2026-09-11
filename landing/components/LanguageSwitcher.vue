@@ -2,6 +2,7 @@
 import { isLocaleCode, supportedLocales, type LocaleCode } from "~/data/i18n";
 
 const { locale, setLocale, t, te } = useI18n();
+const base = useRuntimeConfig().app.baseURL;
 const root = ref<HTMLElement>();
 const searchInput = ref<HTMLInputElement>();
 const open = ref(false);
@@ -100,7 +101,7 @@ onBeforeUnmount(() =>
     >
       <img
         class="language-switcher__flag"
-        :src="`/flags/${currentLocale.flag}.svg`"
+        :src="`${base}flags/${currentLocale.flag}.svg`"
         alt=""
         aria-hidden="true"
         width="20"
@@ -143,7 +144,7 @@ onBeforeUnmount(() =>
         >
           <img
             class="language-switcher__flag"
-            :src="`/flags/${item.flag}.svg`"
+            :src="`${base}flags/${item.flag}.svg`"
             alt=""
             aria-hidden="true"
             width="20"
