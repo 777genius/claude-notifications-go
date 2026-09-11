@@ -31,6 +31,29 @@ There is no documented alias or atomic rename mechanism that migrates existing m
 registrations, installed-plugin records, cache paths, enabled state, and command namespaces.
 The GitHub repository URL may change independently and does not require changing these IDs.
 
+## Repository renames still break existing installs
+
+Even though the marketplace/plugin *name* stays `claude-notifications-go`, users who declared
+that marketplace before a repository rename (e.g. the `claude-notifications-go` ->
+`agent-notifications` rename) get stuck: Claude Code stores the declared source
+(`extraKnownMarketplaces` in settings) and refuses to silently re-point an existing declaration
+at a different repo, failing `marketplace add` with `its network source differs from the one
+declared for it in settings`. There is no officially documented transparent migration for a
+marketplace *source* change (the `renames` map in `marketplace.json`, added in Claude Code
+2.1.193, only covers plugin name changes within a marketplace, not the marketplace's own
+repo). Confirmed against the official docs and reproduced end to end on 2026-09-11.
+
+`marketplace update` (the path used by the in-app "Update marketplace" action and Claude
+Code's periodic background check) is unaffected — it pulls the existing clone via git, which
+follows GitHub's redirect from the old repo name. Only `marketplace add` — which
+`bin/bootstrap.sh` always tries first, including on repeat runs — hits the conflict. `setup_marketplace()`
+in `bin/bootstrap.sh` detects this specific error, confirms the currently declared repo is one
+of our own retired names (`LEGACY_MARKETPLACE_REPOS`), and re-registers the marketplace
+(`remove` + `add`) automatically. This only resets the marketplace/plugin *registration*; the
+user's saved notification settings live in a separate config file and are untouched, and the
+rest of the script reinstalls the plugin right after. Any future repository rename must add the
+old repo slug to `LEGACY_MARKETPLACE_REPOS` in `bin/bootstrap.sh`.
+
 ## Rule for a future migration
 
 Do not change these identifiers unless a dedicated migration ships with disposable-profile
