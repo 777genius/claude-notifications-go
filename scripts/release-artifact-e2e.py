@@ -117,6 +117,14 @@ def main():
                     assert len(deliveries) == count + 1, (case, product, deliveries)
                     expected = '/shared' if case == 'legacy' else '/' + product
                     assert deliveries[-1][0] == expected and marker in deliveries[-1][1], deliveries[-1]
+                    if product == 'codex':
+                        assert marker in json.loads(deliveries[-1][1])['attachments'][0]['text']
+                payload.update(session_id=case + '-literal-help', turn_id='literal-help',
+                               last_assistant_message='--help')
+                count = len(deliveries)
+                run('handle-hook', 'Stop', '--product', 'codex', data=json.dumps(payload))
+                assert len(deliveries) == count + 1
+                assert '--help' in json.loads(deliveries[-1][1])['attachments'][0]['text']
                 assert selected.read_bytes() == before
                 selected.write_text('{invalid-config')
                 count = len(deliveries)
