@@ -77,7 +77,7 @@ The config Store owns selection and raw patch writes; see [OS paths and recovery
 
 **Features**:
 - JSON-based configuration
-- Environment variable expansion (`${CLAUDE_PLUGIN_ROOT}`)
+- Environment variable expansion (`${AGENT_NOTIFICATIONS_ROOT}`)
 - Sensible defaults for all settings
 - Validation for webhook presets, formats, required fields
 

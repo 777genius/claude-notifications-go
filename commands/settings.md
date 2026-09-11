@@ -49,7 +49,7 @@ Keep the opaque revision from the successful inspect for saving. Free-form sound
 Use AskUserQuestion to identify the settings the user wants to change. Every question defaults to **Keep unchanged**. Skipped or unanswered questions produce no operation. A request for volume and ONE status sound must yield exactly two leaf edits; every other status, channel override, webhook secret/header/payload, filter and future-agent field stays untouched.
 
 - Volume: keep unchanged, or choose 0–100% mapped to a JSON number 0–1 (70% → 0.7; zero is valid).
-- Status sound: ask which status, then keep unchanged or choose an available sound. Discover built-in files from the installed resources; macOS can also use `/System/Library/Sounds/*.aiff`. Reject unknown choices instead of silently substituting a sound. Store built-ins literally as `${CLAUDE_PLUGIN_ROOT}/sounds/<file>`; resource expansion is for playback only.
+- Status sound: ask which status, then keep unchanged or choose an available sound. Discover built-in files from the installed resources; macOS can also use `/System/Library/Sounds/*.aiff`. Reject unknown choices instead of silently substituting a sound. Store built-ins literally as `${AGENT_NOTIFICATIONS_ROOT}/sounds/<file>`; resource expansion is for playback only.
 - Status enabled: ask separately for each requested status. Never turn an unselected list of statuses into disabled statuses. Set only `/statuses/<status>/enabled` when explicitly requested.
 - Desktop enabled/sound, per-status desktop/webhook enabled, and audio device: change only the specific requested leaf. System-default device is an explicit empty string choice, not the default answer.
 - Webhooks: keep unchanged by default. An explicit disable changes only `/notifications/webhook/enabled`; it does not reset preset, URL, headers or payload. For new setup collect only the requested supported leaves from the [webhook guide](../docs/webhooks/README.md). Never insert placeholder URLs or replace the entire webhook object. Prefer literal environment references for credentials; never echo credentials in summaries.
@@ -64,7 +64,7 @@ Summarize only requested changes, redacting secret values, and confirm ambiguous
 {
   "set": {
     "/notifications/desktop/volume": 0.7,
-    "/statuses/question/sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3"
+    "/statuses/question/sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3"
   },
   "remove": []
 }
@@ -83,7 +83,7 @@ For the non-secret two-edit example above, this Bash recipe preserves the litera
   PATCH_DIR=$(mktemp -d "${TMPDIR:-/tmp}/agent-notifications-edit.XXXXXXXX") || exit 1
   trap 'rm -rf -- "$PATCH_DIR"' EXIT
   cat > "$PATCH_DIR/patch.json" <<'JSON'
-{"set":{"/notifications/desktop/volume":0.7,"/statuses/question/sound":"${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3"},"remove":[]}
+{"set":{"/notifications/desktop/volume":0.7,"/statuses/question/sound":"${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3"},"remove":[]}
 JSON
   "$NOTIFICATIONS_BIN" config edit --stdin --expect-revision "$REVISION" < "$PATCH_DIR/patch.json"
 )
@@ -98,3 +98,5 @@ On `ConfigConflict`, keep the user's answers privately, inspect again, and expla
 After confirmed success, run `config inspect --json` again. Report the selected path and only the requested changes; do not claim untouched fields were reset or infer omitted secret/sound values. Report failures honestly. Sound previews remain optional and user-requested.
 
 See [configuration paths and compatibility](../README.md#manual-configuration). Resource, permission-marker, venv and state paths, executable names and plugin IDs remain unchanged.
+
+Schema 2 agent overrides are manual-only. This wizard edits global settings only; never submit `/agents` edits or flatten an effective agent profile into the document. Existing agent overrides are preserved by `config edit`.

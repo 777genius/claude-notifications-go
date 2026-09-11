@@ -4,7 +4,7 @@
       "enabled": true,
       "sound": true,
       "volume": 1.0,
-      "appIcon": "${CLAUDE_PLUGIN_ROOT}/claude_icon.png",
+      "appIcon": "${AGENT_NOTIFICATIONS_ROOT}/claude_icon.png",
       "clickToFocus": true,
       "terminalBundleId": ""
     },
@@ -24,35 +24,35 @@
   "statuses": {
     "task_complete": {
       "title": "✅ Completed",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/task-complete.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/task-complete.mp3"
     },
     "review_complete": {
       "title": "🔍 Review",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/review-complete.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/review-complete.mp3"
     },
     "question": {
       "title": "❓ Question",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3"
     },
     "plan_ready": {
       "title": "📋 Plan",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/plan-ready.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/plan-ready.mp3"
     },
     "session_limit_reached": {
       "title": "⏱️ Session Limit Reached",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3"
     },
     "api_error": {
       "title": "🔴 API Error: 401",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3"
     },
     "api_error_overloaded": {
       "title": "🔴 API Error",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3"
     },
     "permission_request": {
       "title": "🔐 Permission Request",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3"
     }
   }
 }

@@ -1232,9 +1232,15 @@ windows_native_hooks_update_required() {
 
 # Create symlink for hooks
 create_symlink() {
+    create_named_launcher claude-notifications || return 1
+    create_named_launcher agent-notifications
+}
+
+create_named_launcher() {
+    local launcher_name="$1"
     # On Windows, create a .bat wrapper instead of symlink
     if [ "$PLATFORM" = "windows" ]; then
-        local final_bat_path="${SCRIPT_DIR}/claude-notifications.bat"
+        local final_bat_path="${SCRIPT_DIR}/${launcher_name}.bat"
         local bat_path="${final_bat_path}.tmp.$$"
 
         guard_install_paths "$bat_path" "$final_bat_path"
@@ -1244,16 +1250,17 @@ create_symlink() {
         # Create .bat wrapper that calls the platform-specific binary
         cat > "$bat_path" << EOF
 @echo off
-REM claude-notifications Windows wrapper
+REM ${launcher_name} Windows wrapper
 REM Automatically runs the platform-specific binary
 
 setlocal
 set SCRIPT_DIR=%~dp0
+set AGENT_NOTIFICATIONS_LAUNCHER=${launcher_name}
 "%SCRIPT_DIR%${BINARY_NAME}" %*
 EOF
 
         if mv -f "$bat_path" "$final_bat_path"; then
-            echo -e "${GREEN}✓ Created wrapper${NC} claude-notifications.bat → ${BINARY_NAME}"
+            echo -e "${GREEN}✓ Created wrapper${NC} ${launcher_name}.bat → ${BINARY_NAME}"
             return 0
         else
             echo -e "${YELLOW}⚠ Could not create .bat wrapper (hooks may not work)${NC}"
@@ -1262,7 +1269,7 @@ EOF
     fi
 
     # Unix: create symlink or copy
-    local final_symlink_path="${SCRIPT_DIR}/claude-notifications"
+    local final_symlink_path="${SCRIPT_DIR}/${launcher_name}"
     local symlink_path="${final_symlink_path}.tmp.$$"
     guard_install_paths "$final_symlink_path" "$symlink_path"
     # Remove old symlink if exists
@@ -1270,14 +1277,14 @@ EOF
 
     # Create symlink pointing to platform-specific binary
     if ln -s "$BINARY_NAME" "$symlink_path" 2>/dev/null && mv -f "$symlink_path" "$final_symlink_path"; then
-        echo -e "${GREEN}✓ Created symlink${NC} claude-notifications → ${BINARY_NAME}"
+        echo -e "${GREEN}✓ Created symlink${NC} ${launcher_name} → ${BINARY_NAME}"
         return 0
     else
         # Fallback: copy if symlink fails (some systems don't support symlinks)
         if cp "$BINARY_PATH" "$symlink_path" 2>/dev/null; then
             chmod +x "$symlink_path" 2>/dev/null || true
             mv -f "$symlink_path" "$final_symlink_path" || return 1
-            echo -e "${GREEN}✓ Created copy${NC} claude-notifications (symlink not supported)"
+            echo -e "${GREEN}✓ Created copy${NC} ${launcher_name} (symlink not supported)"
             return 0
         fi
 

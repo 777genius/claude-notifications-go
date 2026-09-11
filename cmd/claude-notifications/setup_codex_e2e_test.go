@@ -330,3 +330,46 @@ func TestSetupCodexE2EPartialInitializationExitStatus(t *testing.T) {
 		t.Fatal("retry changed registration")
 	}
 }
+
+func TestSetupCodexE2EInstalledLaunchersSurviveReplacement(t *testing.T) {
+	binary := buildCLIBinary(t)
+	f := newSetupE2E(t)
+	platformName := "claude-notifications-" + runtime.GOOS + "-" + runtime.GOARCH
+	extension := ""
+	if runtime.GOOS == "windows" {
+		platformName += ".exe"
+		extension = ".bat"
+	}
+	// Model an older source bundle with only a platform executable and no aliases.
+	e2eWrite(t, filepath.Join(f.bundle, "bin", platformName), e2eRead(t, binary))
+	installed := filepath.Join(f.home, ".codex", "claude-notifications-go", "bin")
+	for pass := 0; pass < 2; pass++ {
+		output, err := f.run(t, "", binary, "setup-codex", "--plugin-root", f.bundle)
+		if err != nil {
+			t.Fatalf("setup pass %d: %s %v", pass, output, err)
+		}
+		for _, name := range []string{"agent-notifications", "claude-notifications"} {
+			launcher := filepath.Join(installed, name+extension)
+			if runtime.GOOS == "windows" {
+				output, err = f.run(t, "", "cmd.exe", "/d", "/s", "/c", `"`+launcher+`" version`)
+			} else {
+				output, err = f.run(t, "", launcher, "version")
+			}
+			if err != nil || !strings.HasPrefix(output, name+" v") {
+				t.Fatalf("installed %s pass %d: %s %v", name, pass, output, err)
+			}
+			if runtime.GOOS != "windows" {
+				target, err := os.Readlink(launcher)
+				if err != nil || target != platformName {
+					t.Fatalf("different platform target: %s %v", target, err)
+				}
+			}
+		}
+		// Replacing bin during update must recreate a deleted primary launcher too.
+		if pass == 0 {
+			if err := os.Remove(filepath.Join(installed, "agent-notifications"+extension)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}

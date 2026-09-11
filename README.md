@@ -172,17 +172,18 @@ no `jq` and is not automatically added to your `PATH`.
 From the bundle directory:
 
 ```bash
-./bin/claude-notifications setup-codex --plugin-root .
+./bin/agent-notifications setup-codex --plugin-root .
 ```
 
-On Windows, run the downloaded `claude-notifications-windows-amd64.exe` in PowerShell:
+On Windows, run the installed primary launcher in PowerShell (the downloaded
+`claude-notifications-windows-amd64.exe` remains compatible):
 
 ```powershell
-.\bin\claude-notifications-windows-amd64.exe setup-codex --plugin-root .
+.\bin\agent-notifications.bat setup-codex --plugin-root .
 ```
 
 Run these commands in the bundle directory. If you have explicitly added the binary to
-`PATH`, `claude-notifications setup-codex --plugin-root <bundle-directory>` also works.
+`PATH`, `agent-notifications setup-codex --plugin-root <bundle-directory>` also works.
 
 It installs a self-contained copy of the plugin at `~/.codex/claude-notifications-go` and writes
 the hook entries into `~/.codex/hooks.json`. Existing foreign hook definitions and unknown fields are preserved,
@@ -351,7 +352,7 @@ The following JSON illustrates the schema. Do not replace your existing document
       "clickToFocus": true,
       "terminalBundleId": "",
       "showSessionLabel": true,
-      "appIcon": "${CLAUDE_PLUGIN_ROOT}/claude_icon.png"
+      "appIcon": "${AGENT_NOTIFICATIONS_ROOT}/claude_icon.png"
     },
     "webhook": {
       "enabled": false,
@@ -382,31 +383,31 @@ The following JSON illustrates the schema. Do not replace your existing document
   "statuses": {
     "task_complete": {
       "title": "✅ Completed",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/task-complete.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/task-complete.mp3"
     },
     "review_complete": {
       "title": "🔍 Review",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/review-complete.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/review-complete.mp3"
     },
     "question": {
       "title": "❓ Question",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3"
     },
     "plan_ready": {
       "title": "📋 Plan",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/plan-ready.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/plan-ready.mp3"
     },
     "session_limit_reached": {
       "title": "⏱️ Session Limit Reached",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/error.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/error.mp3"
     },
     "api_error": {
       "title": "🔴 API Error: 401",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/error.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/error.mp3"
     },
     "api_error_overloaded": {
       "title": "🔴 API Error",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/error.mp3"
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/error.mp3"
     }
   }
 }
@@ -434,7 +435,7 @@ You can also override individual channels per status:
   "statuses": {
     "question": {
       "title": "❓ Question",
-      "sound": "${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3",
+      "sound": "${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3",
       "desktop": { "enabled": true },
       "webhook": { "enabled": false }
     }
@@ -475,11 +476,11 @@ Unknown means "show the notification", not "suppress it".
 ### Sound Options
 
 **Built-in sounds** (included):
-- `${CLAUDE_PLUGIN_ROOT}/sounds/task-complete.mp3`
-- `${CLAUDE_PLUGIN_ROOT}/sounds/review-complete.mp3`
-- `${CLAUDE_PLUGIN_ROOT}/sounds/question.mp3`
-- `${CLAUDE_PLUGIN_ROOT}/sounds/plan-ready.mp3`
-- `${CLAUDE_PLUGIN_ROOT}/sounds/error.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/task-complete.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/review-complete.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/question.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/plan-ready.mp3`
+- `${AGENT_NOTIFICATIONS_ROOT}/sounds/error.mp3`
 
 **System sounds:**
 - macOS: `/System/Library/Sounds/Glass.aiff`, `/System/Library/Sounds/Hero.aiff`, etc.
@@ -567,11 +568,11 @@ The plugin is invoked automatically by Claude Code hooks. To test manually:
 ```bash
 # Test PreToolUse hook
 echo '{"session_id":"test","transcript_path":"/path/to/transcript.jsonl","tool_name":"ExitPlanMode"}' | \
-  claude-notifications handle-hook PreToolUse
+  agent-notifications handle-hook PreToolUse
 
 # Test Stop hook
 echo '{"session_id":"test","transcript_path":"/path/to/transcript.jsonl"}' | \
-  claude-notifications handle-hook Stop
+  agent-notifications handle-hook Stop
 ```
 
 ## Contributing
@@ -622,3 +623,6 @@ See **[Troubleshooting Guide](docs/troubleshooting.md)** for common issues:
 ## License
 
 GPL-3.0 - See [LICENSE](LICENSE) file for details.
+
+For per-agent sound and notification settings, see [shared configuration and schema 2 overrides](docs/AGENT_CONFIGURATION.md).
+The primary command is `agent-notifications`; `claude-notifications` remains a permanent compatibility alias.
