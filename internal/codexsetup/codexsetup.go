@@ -406,6 +406,10 @@ func Run(opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
+		files, err = appendBundleLauncherFiles(destination, files)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	if native != nil {
 		aliases, e := installruntime.NativeAlias(native, filepath.Join(destination, "bin"))
@@ -705,6 +709,49 @@ func stageRuntimeFiles(source, destination string) ([]installruntime.File, error
 		}
 		return parts[0] != ".claude-plugin" || len(parts) == 1 || parts[1] == "plugin.json"
 	})
+}
+
+func appendBundleLauncherFiles(destination string, files []installruntime.File) ([]installruntime.File, error) {
+	destination, err := canonicalPath(destination)
+	if err != nil {
+		return nil, err
+	}
+	bin := filepath.Join(destination, "bin")
+	binary := "claude-notifications-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	found := false
+	present := map[string]bool{}
+	for _, file := range files {
+		present[file.Path] = true
+		if filepath.Dir(file.Path) == bin && filepath.Base(file.Path) == binary && file.Link == "" && !file.Remove {
+			found = true
+		}
+	}
+	if !found {
+		return files, nil
+	}
+	for _, name := range []string{"claude-notifications", "agent-notifications"} {
+		path := filepath.Join(bin, name)
+		launcher := installruntime.File{Link: binary, Mode: 0755}
+		if runtime.GOOS == "windows" {
+			path += ".bat"
+			launcher.Link = ""
+			launcher.Data = installruntime.WindowsLauncherScript(name, binary)
+		}
+		if present[path] {
+			continue
+		}
+		before, err := installruntime.Fingerprint(path)
+		if err != nil {
+			return nil, err
+		}
+		launcher.Path = path
+		launcher.Before = before
+		files = append(files, launcher)
+	}
+	return files, nil
 }
 
 func dropStaleBinFiles(destination string, files []installruntime.File) error {
@@ -1027,8 +1074,7 @@ func installBundleLaunchers(bin, platform, arch string) error {
 			return err
 		}
 		if platform == "windows" {
-			content := "@echo off\r\nsetlocal\r\nset AGENT_NOTIFICATIONS_LAUNCHER=" + name + "\r\n\"%~dp0" + binary + "\" %*\r\n"
-			if err := os.WriteFile(target, []byte(content), 0755); err != nil {
+			if err := os.WriteFile(target, installruntime.WindowsLauncherScript(name, binary), 0755); err != nil {
 				return err
 			}
 		} else if err := os.Symlink(binary, target); err != nil {

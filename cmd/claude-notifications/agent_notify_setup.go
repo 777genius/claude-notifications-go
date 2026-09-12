@@ -47,8 +47,8 @@ Register/remove require:
 Enable optionally replaces the route using ALL FOUR explicit choices:
   --app /physical/path/Codex.app --team-id ABCDE12345
   --allow-unknown-caller true|false --allow-caller-asserted true|false
-  Or use --navigation none without --app/--team-id; optionally supply both consent flags.
-  This clears app identity; omitted consents default to false; no navigation target.
+  Or use --navigation none without --app/--team-id; both consent flags are required.
+  This clears app identity. The parser does not imply consent.
   Omit all route choices to preserve the selected route and consent. Rates are preserved.
   Unknown-caller consent extends the local route to indistinguishable callers.
   Caller-asserted consent permits local CLI context; it does not attest a chat.
@@ -75,6 +75,10 @@ type agentNotifySetupArgs struct {
 	generation uint64
 	json       bool
 	route      *notifysetup.Route
+}
+
+func agentNotifyDefaultNoneArgs() []string {
+	return []string{"--navigation", "none", "--allow-unknown-caller", "true", "--allow-caller-asserted", "false"}
 }
 
 func parseAgentNotifySetup(args []string) (a agentNotifySetupArgs, help bool, err error) {
@@ -202,11 +206,11 @@ func parseAgentNotifySetup(args []string) (a agentNotifySetupArgs, help bool, er
 		}
 	}
 	if navigation, present := a.values["navigation"]; present {
-		if navigation != "none" || a.values["app"] != "" || a.values["team-id"] != "" || (count != 0 && count != 2) {
+		if navigation != "none" || a.values["app"] != "" || a.values["team-id"] != "" || count != 2 {
 			return bad()
 		}
 		for _, k := range []string{"allow-unknown-caller", "allow-caller-asserted"} {
-			if count != 0 && a.values[k] != "true" && a.values[k] != "false" {
+			if a.values[k] != "true" && a.values[k] != "false" {
 				return bad()
 			}
 		}

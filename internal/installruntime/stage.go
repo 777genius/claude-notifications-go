@@ -63,6 +63,9 @@ func StageFiles(source, destination string, allow func(string) bool) ([]File, er
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("non-regular staged file: %s", path)
 		}
+		if info.Size() < 0 || info.Size() > maxManagedFile {
+			return fmt.Errorf("managed input exceeds size limit")
+		}
 		target := filepath.Join(destination, rel)
 		anchors, err := pathAnchors(target, false)
 		if err != nil {
@@ -81,13 +84,16 @@ func StageFiles(source, destination string, allow func(string) bool) ([]File, er
 			f.Close()
 			return fmt.Errorf("staged source identity changed: %s", path)
 		}
-		data, err := io.ReadAll(f)
+		data, err := io.ReadAll(io.LimitReader(f, int64(maxManagedFile)+1))
 		closeErr := f.Close()
 		if err != nil {
 			return err
 		}
 		if closeErr != nil {
 			return closeErr
+		}
+		if len(data) > maxManagedFile {
+			return fmt.Errorf("managed input exceeds size limit")
 		}
 		files = append(files, File{Parents: anchors, Path: target, Before: before, Data: data, Mode: uint32(info.Mode().Perm())})
 		return nil

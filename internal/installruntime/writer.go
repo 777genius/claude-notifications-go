@@ -63,3 +63,9 @@ func validateWriterFiles(files []File) error {
 // WriterCompatible is available to package adapters before any candidate exec.
 // Source authentication remains the adapter's prerequisite.
 func WriterCompatible(data []byte) bool { return strings.Contains(string(data), WriterProtocolMarker) }
+
+// WindowsLauncherScript is the transaction-owned BAT wrapper. The shell installer
+// must emit the same bytes and must not rewrite a committed launcher.
+func WindowsLauncherScript(launcher, entry string) []byte {
+	return []byte("@echo off\nREM " + launcher + " Windows wrapper\nREM Automatically runs the platform-specific binary\n\nsetlocal\nset SCRIPT_DIR=%~dp0\nset AGENT_NOTIFICATIONS_LAUNCHER=" + launcher + "\n\"%SCRIPT_DIR%" + entry + "\" %*\n")
+}

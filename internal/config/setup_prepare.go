@@ -121,6 +121,10 @@ func physicalParent(path string, create bool) (*os.Root, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path || filepath.Base(path) == string(filepath.Separator) {
 		return nil, fmt.Errorf("config path must be clean and absolute")
 	}
+	path, err := installruntime.PhysicalPath(path)
+	if err != nil {
+		return nil, err
+	}
 	root, err := os.OpenRoot(string(filepath.Separator))
 	if err != nil {
 		return nil, err

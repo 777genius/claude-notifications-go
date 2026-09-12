@@ -478,7 +478,7 @@ func DiscardNative(ctx context.Context, control string, change *NativeChange) er
 	}
 	data, err := readRegularFile(filepath.Join(control, "transaction.json"))
 	if err == nil {
-		tx, err := decodeTransaction(data)
+		tx, err := decodeTransactionBlobs(data, transactionBlobDir(filepath.Join(control, "transaction.json")))
 		if err != nil {
 			return err
 		}

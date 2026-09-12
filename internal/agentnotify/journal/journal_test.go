@@ -236,6 +236,23 @@ func TestRateWindowsReplayRestartReboot(t *testing.T) {
 	c.x.Seconds += 61
 	mustAdmit(t, s, admission("after-window"))
 }
+
+func TestRateLimitPersistsClockAcrossRebootWithoutCollect(t *testing.T) {
+	s, c := fixture(t, Limits{})
+	for i := 0; i < 3; i++ {
+		mustAdmit(t, s, admission("burst-"+strconv.Itoa(i)))
+	}
+	if _, e := s.Admit(testContext(t), admission("full")); !errors.Is(e, ErrRate) {
+		t.Fatal(e)
+	}
+	c.x = Sample{"boot-B", 9_000_000, true}
+	if _, e := s.Admit(testContext(t), admission("reboot")); !errors.Is(e, ErrRate) {
+		t.Fatal(e)
+	}
+	s = reopen(t, s, c)
+	c.x.Seconds += 61
+	mustAdmit(t, s, admission("recovered"))
+}
 func TestRuntimeRate(t *testing.T) {
 	s, c := fixture(t, Limits{})
 	for group := 0; group < 10; group++ {

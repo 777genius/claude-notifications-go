@@ -35,3 +35,7 @@ func readControlDocument(path string) ([]byte, error) {
 func regularObjectID(path string) (string, error) {
 	return "", fmt.Errorf("regular file identity unsupported on this platform")
 }
+
+func removePhysicalDirectory(path string) error {
+	return fmt.Errorf("confined directory cleanup unsupported on this platform: %s", path)
+}

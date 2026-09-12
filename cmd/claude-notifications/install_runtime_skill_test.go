@@ -77,12 +77,20 @@ func TestEmbeddedSkillLifecycleProjection(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if s.Ledger.Files[f.skill] != id || id.Mode != 0600 || id.Link != "" {
+	canonicalSkill, e := installruntime.CanonicalPath(f.skill)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if s.Ledger.Files[canonicalSkill] != id || id.Mode != 0600 || id.Link != "" {
 		t.Fatal("skill not owned at exact regular-file identity")
 	}
 	embeddedAbsent(t, filepath.Join(f.bin, "skills"))
+	runtimeRoot, e := installruntime.CanonicalPath(filepath.Dir(f.bin))
+	if e != nil {
+		t.Fatal(e)
+	}
 	// Model an older legitimately owned release through the existing transaction seam.
-	_, e = installruntime.Commit(ctx, installruntime.Request{ControlRoot: f.control, Owner: "existing-installer", RuntimeRoot: filepath.Dir(f.bin), ConsumerID: "claude-hooks", RefreshOnly: true, Files: []installruntime.File{{Path: f.skill, Before: id, Data: []byte("older owned release"), Mode: 0600}}})
+	_, e = installruntime.Commit(ctx, installruntime.Request{ControlRoot: f.control, Owner: "existing-installer", RuntimeRoot: runtimeRoot, ConsumerID: "claude-hooks", RefreshOnly: true, Files: []installruntime.File{{Path: canonicalSkill, Before: id, Data: []byte("older owned release"), Mode: 0600}}})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -92,12 +100,16 @@ func TestEmbeddedSkillLifecycleProjection(t *testing.T) {
 	if len(f.snapshot(t).Ledger.Consumers) != 1 {
 		t.Fatal("refresh added consumer")
 	}
+	canonicalBin, e := installruntime.CanonicalPath(f.bin)
+	if e != nil {
+		t.Fatal(e)
+	}
 	client := filepath.Join(filepath.Dir(f.control), "client")
 	projection := filepath.Join(client, "skills", "agent-notify", "SKILL.md")
 	if e := os.MkdirAll(filepath.Dir(projection), 0700); e != nil {
 		t.Fatal(e)
 	}
-	r := clientsetup.Request{ControlRoot: f.control, RuntimeRoot: filepath.Dir(f.bin), Command: filepath.Join(f.bin, f.entry), ConfigPath: filepath.Join(client, "config.toml"), Provider: registration.Codex, Mode: clientsetup.Managed, ExpectedGeneration: f.snapshot(t).Ledger.Generation, SkillProjection: &clientsetup.SkillProjection{SourcePath: f.skill, DestinationPath: projection}}
+	r := clientsetup.Request{ControlRoot: f.control, RuntimeRoot: runtimeRoot, Command: filepath.Join(canonicalBin, f.entry), ConfigPath: filepath.Join(client, "config.toml"), Provider: registration.Codex, Mode: clientsetup.Managed, ExpectedGeneration: f.snapshot(t).Ledger.Generation, SkillProjection: &clientsetup.SkillProjection{SourcePath: canonicalSkill, DestinationPath: projection}}
 	if _, e := clientsetup.Apply(ctx, r); e != nil {
 		t.Fatal(e)
 	}
@@ -120,7 +132,7 @@ func TestEmbeddedSkillLifecycleProjection(t *testing.T) {
 }
 
 func TestEmbeddedSkillRefusesForeignAndTampered(t *testing.T) {
-	for _, kind := range []string{"foreign-same", "foreign-different", "tampered", "symlink", "corrupt-ledger", "missing-ledger"} {
+	for _, kind := range []string{"foreign-different", "tampered", "symlink", "corrupt-ledger", "missing-ledger"} {
 		t.Run(kind, func(t *testing.T) {
 			f := embeddedQualified(t)
 			if kind == "tampered" || kind == "corrupt-ledger" || kind == "missing-ledger" {
@@ -129,8 +141,6 @@ func TestEmbeddedSkillRefusesForeignAndTampered(t *testing.T) {
 				}
 			}
 			switch kind {
-			case "foreign-same":
-				embeddedPut(t, f.skill, skills.AgentNotify(), 0600)
 			case "foreign-different", "tampered":
 				embeddedPut(t, f.skill, []byte("foreign"), 0600)
 			case "symlink":
@@ -159,6 +169,28 @@ func TestEmbeddedSkillRefusesForeignAndTampered(t *testing.T) {
 			}
 			embeddedAbsent(t, filepath.Join(f.control, "transaction.json"))
 		})
+	}
+}
+
+func TestEmbeddedSkillAdoptsMatchingUnmanagedSkill(t *testing.T) {
+	f := embeddedQualified(t)
+	embeddedPut(t, f.skill, skills.AgentNotify(), 0600)
+	if e := f.run("--entry", f.entry); e != nil {
+		t.Fatal(e)
+	}
+	if !bytes.Equal(embeddedRead(t, f.skill), skills.AgentNotify()) {
+		t.Fatal("canonical bytes differ")
+	}
+	id, e := installruntime.Fingerprint(f.skill)
+	if e != nil {
+		t.Fatal(e)
+	}
+	s := f.snapshot(t)
+	if s.Ledger.Files[f.skill] != id {
+		canonical, e := installruntime.CanonicalPath(f.skill)
+		if e != nil || s.Ledger.Files[canonical] != id {
+			t.Fatal("matching unmanaged skill was not adopted")
+		}
 	}
 }
 

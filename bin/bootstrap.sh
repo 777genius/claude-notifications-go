@@ -1030,8 +1030,19 @@ select_product() {
         echo "--agent-notify and --skip-agent-notify are mutually exclusive." >&2
         return 1
     fi
-    if [ "$CONFIGURE_NOTIFICATIONS" = true ] && [ "${#CONFIGURE_ARGS[@]}" -eq 0 ]; then
-        CONFIGURE_ARGS=(--navigation none)
+    if [ "$CONFIGURE_NOTIFICATIONS" = true ]; then
+        local has_route=false arg
+        if [ "${#CONFIGURE_ARGS[@]}" -gt 0 ]; then
+            for arg in "${CONFIGURE_ARGS[@]}"; do
+                case "$arg" in
+                    --navigation|--app|--team-id|--allow-unknown-caller|--allow-caller-asserted)
+                        has_route=true ;;
+                esac
+            done
+        fi
+        if [ "$has_route" != true ]; then
+            CONFIGURE_ARGS+=(--navigation none --allow-unknown-caller true --allow-caller-asserted false)
+        fi
     fi
     if [ "$CONFIGURE_NOTIFICATIONS" != true ] && [ "${#CONFIGURE_ARGS[@]}" -ne 0 ]; then
         echo "Route flags require --agent-notify." >&2
@@ -1344,7 +1355,11 @@ install_codex() {
     run_codex_setup --dry-run || return 1
     config_preflight || return 1
     run_codex_setup || return $?
-    CONFIGURE_BINARY="${CODEX_HOME:-$HOME/.codex}/claude-notifications-go/bin/claude-notifications"
+    if [ -n "$setup_codex_home" ]; then
+        CONFIGURE_BINARY="$setup_codex_home/claude-notifications-go/bin/claude-notifications"
+    else
+        CONFIGURE_BINARY="${CODEX_HOME:-$HOME/.codex}/claude-notifications-go/bin/claude-notifications"
+    fi
     if [ ! -x "$CONFIGURE_BINARY" ]; then
         echo "Committed Codex runtime binary missing after setup-codex." >&2
         return 1

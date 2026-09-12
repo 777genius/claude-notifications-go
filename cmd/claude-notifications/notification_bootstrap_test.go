@@ -38,6 +38,7 @@ func TestNotificationBootstrapOffline(t *testing.T) {
 	}{
 		{"ordinary", "--product both", false, true},
 		{"both", "--product both --agent-notify --navigation none", false, true},
+		{"codex_home", "", false, true},
 		{"skip", "--product both --skip-agent-notify", false, false},
 		{"configure_failed", "--product both", false, true},
 		{"last_failed", "--product both --agent-notify --navigation none", true, false},
@@ -78,7 +79,11 @@ install_codex() { echo codex >> "$HOME/installs"; CONFIGURE_BINARY="$HOME/fake-b
 			} else {
 				script += "0"
 			}
-			script += "; }\nmain " + test.args + "\n"
+			args := test.args
+			if test.name == "codex_home" {
+				args = "--product both --codex-home " + home
+			}
+			script += "; }\nmain " + args + "\n"
 			command := exec.Command("bash", "-c", script)
 			command.Dir = home
 			output, err := command.CombinedOutput()
@@ -87,8 +92,18 @@ install_codex() { echo codex >> "$HOME/installs"; CONFIGURE_BINARY="$HOME/fake-b
 			}
 			calls, _ := os.ReadFile(filepath.Join(home, "calls"))
 			if test.wantConfigure {
-				if strings.Count(string(calls), "setup-notifications configure --provider both --navigation none") != 1 {
-					t.Fatal(string(calls))
+				if test.name == "codex_home" {
+					if !strings.Contains(string(calls), "--codex-home "+home) || !strings.Contains(string(calls), "setup-notifications configure --provider both") || !strings.Contains(string(calls), "--navigation none --allow-unknown-caller true --allow-caller-asserted false") {
+						t.Fatal(string(calls))
+					}
+				} else {
+					want := "setup-notifications configure --provider both --navigation none --allow-unknown-caller true --allow-caller-asserted false"
+					if strings.Contains(args, "--navigation") {
+						want = "setup-notifications configure --provider both --navigation none"
+					}
+					if strings.Count(string(calls), want) != 1 {
+						t.Fatal(string(calls))
+					}
 				}
 			} else if len(calls) != 0 {
 				t.Fatal("unexpected configure", string(calls))
@@ -185,7 +200,14 @@ func TestNotificationInitOfflineBranch(t *testing.T) {
 				}
 				return
 			}
-			if strings.TrimSpace(string(calls)) != "setup-notifications configure --provider claude --navigation none" {
+			want := "setup-notifications configure --provider claude --navigation none --allow-unknown-caller true --allow-caller-asserted false"
+			for _, arg := range test.args {
+				if arg == "--navigation" {
+					want = "setup-notifications configure --provider claude --navigation none"
+					break
+				}
+			}
+			if strings.TrimSpace(string(calls)) != want {
 				t.Fatal(string(calls))
 			}
 			if test.failHelper && !strings.Contains(string(output), "agent-notify setup failed") {

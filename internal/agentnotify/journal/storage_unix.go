@@ -195,16 +195,15 @@ func (s *Store) transaction(ctx context.Context, fn func(*disk) (bool, error)) e
 		return e
 	}
 	changed, e := fn(d)
+	if changed {
+		if writeErr := s.write(ctx, dir, d); writeErr != nil {
+			return writeErr
+		}
+	}
 	if e != nil {
 		return e
 	}
-	if !changed {
-		return nil
-	}
-	if e = ctx.Err(); e != nil {
-		return e
-	}
-	return s.write(ctx, dir, d)
+	return nil
 }
 func (s *Store) fail(stage string) error {
 	if s.fault != nil {

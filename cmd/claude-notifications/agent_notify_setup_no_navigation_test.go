@@ -13,15 +13,19 @@ import (
 
 func TestSetupNoNavigationParser(t *testing.T) {
 	base := []string{"enable", "--expected-generation", "1"}
-	for _, suffix := range [][]string{{"--navigation", "none"}, {"--navigation=none"}} {
+	consent := []string{"--allow-unknown-caller", "true", "--allow-caller-asserted", "false"}
+	for _, suffix := range [][]string{append([]string{"--navigation", "none"}, consent...), append([]string{"--navigation=none"}, consent...)} {
 		a, help, e := parseAgentNotifySetup(append(append([]string{}, base...), suffix...))
-		if e != nil || help || a.route == nil || *a.route != (notifysetup.Route{}) {
+		if e != nil || help || a.route == nil || *a.route != (notifysetup.Route{AllowUnknownCaller: true}) {
 			t.Fatal(a, help, e)
 		}
 	}
 	a, _, e := parseAgentNotifySetup(base)
 	if e != nil || a.route != nil {
 		t.Fatal("default changed")
+	}
+	if _, _, e := parseAgentNotifySetup(append(append([]string{}, base...), "--navigation", "none")); e == nil {
+		t.Fatal("navigation none without consent")
 	}
 	invalid := [][]string{{"--navigation"}, {"--navigation="}, {"--navigation", "required"}, {"--navigation", "NONE"}, {"--navigation", "none", "--navigation=none"}}
 	for _, flag := range []string{"app", "team-id", "allow-unknown-caller", "allow-caller-asserted"} {
@@ -54,7 +58,7 @@ func TestSetupNoNavigationCommand(t *testing.T) {
 	if r.Reason != "route_required" || !reflect.DeepEqual(before, setupCommandTree(t, f.root)) {
 		t.Fatal(r)
 	}
-	args := f.args(t, "enable", "--global-config", f.global, "--navigation", "none")
+	args := f.args(t, "enable", "--global-config", f.global, "--navigation", "none", "--allow-unknown-caller", "true", "--allow-caller-asserted", "false")
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
 	setupCommandRun(t, canceled, args, f.composition, 1)
@@ -70,7 +74,7 @@ func TestSetupNoNavigationCommand(t *testing.T) {
 		t.Fatal(e)
 	}
 	var route notifysetup.Route
-	if e = json.Unmarshal(s.Fields["route"], &route); e != nil || route != (notifysetup.Route{}) {
+	if e = json.Unmarshal(s.Fields["route"], &route); e != nil || route != (notifysetup.Route{AllowUnknownCaller: true}) {
 		t.Fatal(route, e)
 	}
 	before = setupCommandTree(t, f.root)

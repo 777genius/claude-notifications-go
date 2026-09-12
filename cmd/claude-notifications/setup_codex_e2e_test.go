@@ -190,8 +190,12 @@ func TestSetupCodexE2ERegistrationAndDelivery(t *testing.T) {
 	// All hook invocations forward unchanged to the real built binary. This is
 	// registration/launcher proof, NOT proof that the shipped 1.41.0 passes 1.42.0.
 	shimSource := `package main
-import("os";"os/exec";"fmt")
-func main(){if len(os.Args)==2&&os.Args[1]=="version"{fmt.Println("claude-notifications v9.9.9");return}; c:=exec.Command(os.Getenv("E2E_REAL_BINARY"),os.Args[1:]...);c.Stdin=os.Stdin;c.Stdout=os.Stdout;c.Stderr=os.Stderr;c.Env=os.Environ();if c.Run()!=nil{os.Exit(1)}}`
+import("fmt";"os";"os/exec")
+func main(){
+if os.Getenv("AGENT_NOTIFICATIONS_WRITER_PROTOCOL_PROBE")=="1"{fmt.Print("agent-notifications-managed-writer-protocol-v1");return}
+if len(os.Args)==2&&os.Args[1]=="version"{fmt.Println("claude-notifications v9.9.9");return}
+c:=exec.Command(os.Getenv("E2E_REAL_BINARY"),os.Args[1:]...);c.Stdin=os.Stdin;c.Stdout=os.Stdout;c.Stderr=os.Stderr;c.Env=os.Environ();if c.Run()!=nil{os.Exit(1)}
+}`
 	src := filepath.Join(f.root, "version_fixture.go")
 	e2eWrite(t, src, []byte(shimSource))
 	name := "claude-notifications"
@@ -391,7 +395,7 @@ func TestSetupCodexE2EConfigureNotifications(t *testing.T) {
 		installerNativeFixture(t, filepath.Join(f.bundle, "bin"))
 	}
 	source := f.bundle
-	out, err := f.run(t, "", bin, "setup-codex", "--plugin-root", source, "--agent-notify", "--navigation", "none")
+	out, err := f.run(t, "", bin, "setup-codex", "--plugin-root", source, "--agent-notify", "--navigation", "none", "--allow-unknown-caller", "true", "--allow-caller-asserted", "false")
 	installDir := filepath.Join(f.home, ".codex", "claude-notifications-go")
 	command := filepath.Join(installDir, "bin", "claude-notifications")
 	if runtime.GOOS != "darwin" {

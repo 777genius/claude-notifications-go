@@ -136,7 +136,7 @@ func TestWindowsManagedHooksPreserveForeignOnRemove(t *testing.T) {
 	if len(commands) != 1 || commands[0].(map[string]any)["command"] != "foreign" {
 		t.Fatalf("wrong remaining handlers: %s", data)
 	}
-	for _, name := range []string{name, "claude-notifications.bat"} {
+	for _, name := range []string{name, "claude-notifications.bat", "agent-notifications.bat"} {
 		if _, err := os.Stat(filepath.Join(bin, name)); !os.IsNotExist(err) {
 			t.Fatal("owned Windows launcher survived final removal")
 		}
@@ -181,8 +181,10 @@ func TestManagedAliasAndMalformedConfigBoundaries(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if link, err := os.Readlink(filepath.Join(bin, "claude-notifications")); err != nil || link != name {
-				t.Fatalf("stable alias: %q %v", link, err)
+			for _, launcher := range []string{"claude-notifications", "agent-notifications"} {
+				if link, err := os.Readlink(filepath.Join(bin, launcher)); err != nil || link != name {
+					t.Fatalf("stable alias %s: %q %v", launcher, link, err)
+				}
 			}
 			if err := installRuntime([]string{"--remove", "--target", bin, "--control-root", control}, io.Discard); err != nil {
 				t.Fatal(err)

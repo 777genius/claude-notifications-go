@@ -93,9 +93,15 @@ func runSetupCodex(args []string) {
 	}
 	fmt.Println()
 	if opts.configure {
-		code := executeNotificationConfigure(context.Background(), append([]string{"--provider", "codex"}, opts.configureArgs...), os.Stdout, result.InstallDir)
+		configure := append([]string{"--provider", "codex"}, opts.configureArgs...)
+		retryArgs := opts.configureArgs
+		if home := filepath.Clean(result.CodexHome); home != "" && filepath.IsAbs(home) {
+			configure = append([]string{"--provider", "codex", "--codex-home", home}, opts.configureArgs...)
+			retryArgs = append([]string{"--codex-home", home}, opts.configureArgs...)
+		}
+		code := executeNotificationConfigure(context.Background(), configure, os.Stdout, result.InstallDir)
 		if code != 0 {
-			reportAgentNotifySetupFailure(os.Stderr, "codex", opts.configureArgs)
+			reportAgentNotifySetupFailure(os.Stderr, "codex", retryArgs)
 		}
 	}
 	fmt.Println("Next step: start Codex, run /hooks, review the entries and trust them.")
@@ -156,7 +162,7 @@ func parseSetupCodexOptions(args []string) (setupCodexOptions, error) {
 	}
 	if opts.configure {
 		if len(rest) == 0 {
-			rest = []string{"--navigation", "none"}
+			rest = agentNotifyDefaultNoneArgs()
 		}
 		opts.configureArgs = rest
 		_, _, err := parseNotificationConfigure(append([]string{"--provider", "codex"}, rest...))

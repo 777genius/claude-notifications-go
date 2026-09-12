@@ -18,14 +18,127 @@ type transactionEnvelope struct {
 }
 
 func writeTransaction(path string, tx transaction) error {
+	files := make([]File, len(tx.Files))
+	copy(files, tx.Files)
+	tx.Files = files
+	blobDir := transactionBlobDir(path)
+	for i, file := range tx.Files {
+		data, ref, err := persistTransactionBytes(blobDir, file.Data)
+		if err != nil {
+			return err
+		}
+		tx.Files[i].Data = data
+		tx.Files[i].DataSHA256 = ref
+		before, beforeRef, err := persistTransactionBytes(blobDir, file.BeforeData)
+		if err != nil {
+			return err
+		}
+		tx.Files[i].BeforeData = before
+		tx.Files[i].BeforeDataSHA256 = beforeRef
+	}
 	data, err := json.Marshal(tx)
 	if err != nil {
 		return err
 	}
+	if len(data) > maxManagedFile {
+		return fmt.Errorf("transaction journal exceeds size limit")
+	}
 	digest := sha256.Sum256(data)
-	return writeJSON(path, transactionEnvelope{hex.EncodeToString(digest[:]), data})
+	envelope, err := json.MarshalIndent(transactionEnvelope{hex.EncodeToString(digest[:]), data}, "", "  ")
+	if err != nil {
+		return err
+	}
+	envelope = append(envelope, '\n')
+	if len(envelope) > maxManagedFile {
+		return fmt.Errorf("transaction journal exceeds size limit")
+	}
+	return durable(path, envelope, 0600)
 }
+
+const maxInlineTransactionBytes = 1 << 20
+
+func transactionBlobDir(marker string) string {
+	return filepath.Join(filepath.Dir(marker), "transaction.blobs")
+}
+
+func persistTransactionBytes(dir string, data []byte) ([]byte, string, error) {
+	if len(data) == 0 {
+		return nil, "", nil
+	}
+	if len(data) > maxManagedFile {
+		return nil, "", fmt.Errorf("managed input exceeds size limit")
+	}
+	if len(data) <= maxInlineTransactionBytes {
+		return data, "", nil
+	}
+	sum := sha256.Sum256(data)
+	name := hex.EncodeToString(sum[:])
+	if err := durable(filepath.Join(dir, name), data, 0600); err != nil {
+		return nil, "", err
+	}
+	return nil, name, nil
+}
+
+func attachTransactionBlobs(tx *transaction, dir string) error {
+	for i, file := range tx.Files {
+		data, err := readTransactionBlob(dir, file.DataSHA256)
+		if err != nil {
+			return err
+		}
+		if data != nil {
+			tx.Files[i].Data = data
+		}
+		before, err := readTransactionBlob(dir, file.BeforeDataSHA256)
+		if err != nil {
+			return err
+		}
+		if before != nil {
+			tx.Files[i].BeforeData = before
+		}
+	}
+	return nil
+}
+
+func readTransactionBlob(dir, name string) ([]byte, error) {
+	if name == "" {
+		return nil, nil
+	}
+	if len(name) != 64 {
+		return nil, fmt.Errorf("invalid transaction blob name")
+	}
+	for _, c := range name {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return nil, fmt.Errorf("invalid transaction blob name")
+		}
+	}
+	data, err := readRegularFile(filepath.Join(dir, name))
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != name {
+		return nil, fmt.Errorf("transaction blob checksum mismatch")
+	}
+	return data, nil
+}
+
+func discardTransactionBlobs(marker string) error {
+	return removePhysicalDirectory(transactionBlobDir(marker))
+}
+
+func readTransactionFile(path string) (transaction, error) {
+	data, err := readRegularFile(path)
+	if err != nil {
+		return transaction{}, err
+	}
+	return decodeTransactionBlobs(data, transactionBlobDir(path))
+}
+
 func decodeTransaction(data []byte) (transaction, error) {
+	return decodeTransactionBlobs(data, "")
+}
+
+func decodeTransactionBlobs(data []byte, blobDir string) (transaction, error) {
 	var tx transaction
 	var envelope transactionEnvelope
 	if err := json.Unmarshal(data, &envelope); err != nil {
@@ -42,6 +155,17 @@ func decodeTransaction(data []byte) (transaction, error) {
 	}
 	if err := json.Unmarshal(envelope.Transaction, &tx); err != nil {
 		return tx, err
+	}
+	if blobDir != "" {
+		if err := attachTransactionBlobs(&tx, blobDir); err != nil {
+			return tx, err
+		}
+	} else {
+		for _, f := range tx.Files {
+			if f.DataSHA256 != "" || f.BeforeDataSHA256 != "" {
+				return tx, fmt.Errorf("transaction payload stored out of band")
+			}
+		}
 	}
 	if (tx.Schema != transactionSchemaV1 && tx.Schema != transactionSchemaV2) || tx.After.Generation <= tx.Before.Generation || tx.After.PolicyGeneration <= tx.Before.PolicyGeneration || tx.After.ID == "" || tx.After.Consumers == nil || tx.After.Files == nil || tx.Before.Consumers == nil || tx.Before.Files == nil {
 		return tx, fmt.Errorf("invalid transaction schema")
@@ -104,11 +228,22 @@ func reverseTransaction(current Ledger, tx transaction) (transaction, error) {
 		if err != nil {
 			return transaction{}, err
 		}
-		if digest == tx.Native.After.SHA256 && !tx.Native.Purge {
+		if digest == tx.Native.After.SHA256 && tx.Native.After.SHA256 != "" && !tx.Native.Purge {
 			after.Native = tx.After.Native
 			after.DecoderFloor = tx.After.DecoderFloor
-		} else if digest != tx.Native.Before.SHA256 {
+		} else if digest != "" {
 			return transaction{}, fmt.Errorf("cannot rollback an ambiguous or purged native callback")
+		} else {
+			beforeDigest := ""
+			if tx.Native.Before.Path != "" {
+				beforeDigest, err = treeFingerprint(tx.Native.Before.Path)
+				if err != nil {
+					return transaction{}, err
+				}
+			}
+			if beforeDigest != tx.Native.Before.SHA256 {
+				return transaction{}, fmt.Errorf("cannot rollback an ambiguous or purged native callback")
+			}
 		}
 	}
 	reverse := transaction{Schema: transactionSchemaV2, Before: current, After: after, ConfigPaths: tx.ConfigPaths}

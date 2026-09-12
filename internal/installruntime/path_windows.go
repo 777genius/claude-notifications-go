@@ -54,7 +54,7 @@ func windowsParents(path string, create bool) ([]windows.Handle, []PathAnchor, e
 			if e != nil {
 				return handles, anchors, e
 			}
-			h, err = windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+			h, err = windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 		} else {
 			disposition := uint32(windows.FILE_OPEN)
 			if create {
@@ -346,4 +346,50 @@ func regularObjectID(path string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%d:%d:%d", info.VolumeSerialNumber, info.FileIndexHigh, info.FileIndexLow), nil
+}
+
+func removePhysicalDirectory(path string) error {
+	handles, _, err := windowsParents(path, false)
+	defer closeWindowsParents(handles)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	child, err := windowsOpenAt(handles[len(handles)-1], filepath.Base(path), windows.FILE_LIST_DIRECTORY|windows.FILE_READ_ATTRIBUTES|windows.DELETE, windows.FILE_OPEN, windows.FILE_DIRECTORY_FILE)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("transaction blob directory is not a physical directory: %w", err)
+	}
+	f := os.NewFile(uintptr(child), path)
+	defer f.Close()
+	var info windows.ByHandleFileInformation
+	if err = windows.GetFileInformationByHandle(windows.Handle(f.Fd()), &info); err != nil {
+		return err
+	}
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 || info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 {
+		return fmt.Errorf("transaction blob directory is not a physical directory")
+	}
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		h, err := windowsOpenAt(windows.Handle(f.Fd()), name, windows.DELETE, windows.FILE_OPEN, windows.FILE_NON_DIRECTORY_FILE)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		delErr := windowsDeleteHandle(h)
+		_ = windows.CloseHandle(h)
+		if delErr != nil {
+			return delErr
+		}
+	}
+	return windowsDeleteHandle(windows.Handle(f.Fd()))
 }

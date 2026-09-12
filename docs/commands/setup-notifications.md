@@ -56,13 +56,13 @@ the real offline `verifyAgentNotifyApplication` verifier (Codex bundle identity 
 operator-selected signing team). It neither launches the selected app nor requests
 notification permission. To replace a route, supply the app, team and both consent
 choices together. Omitting all four preserves the previous route and consent.
-Alternatively, explicitly choose `enable --navigation none --expected-generation N`
+Alternatively, explicitly choose `enable --navigation none --allow-unknown-caller true --allow-caller-asserted false --expected-generation N`
 for informational notifications without navigation, including standalone Claude use
 without a Codex app. Only `none` is supported. `--navigation` is enable-only and
-incompatible with `--app` and `--team-id`. Optionally supply both
-`--allow-unknown-caller true|false` and `--allow-caller-asserted true|false`;
-partial pairs are invalid, and omitting both selects false/false. This writes an
-explicit route with empty app fields and localRouting false,
+incompatible with `--app` and `--team-id`. Both
+`--allow-unknown-caller true|false` and `--allow-caller-asserted true|false`
+are required with `--navigation none`; the parser does not imply them.
+This writes an explicit route with empty app fields and localRouting false,
 clearing any previous app route. It skips app verification, while managed native,
 global configuration, journal and eligibility checks still apply. Omitting all
 route choices preserves the previous selection, including none; a fresh enable
@@ -185,13 +185,13 @@ the disabled observation retained. Inspection is read-only and permission remain
 ### Unified explicit configure
 
 After installing, run `claude-notifications setup-notifications configure
---provider codex|claude|both` with an explicit fresh route (`--navigation none`,
-or the complete app/team/consent tuple). Route omission preserves existing shared
+--provider codex|claude|both` with an explicit fresh route (`--navigation none`
+and both consent flags, or the complete app/team/consent tuple). Route omission preserves existing shared
 policy; adding Claude does not clear a Codex route. Claude informational calls use
 request-level `navigation: "none"` and an explicit request ID.
 
 Bootstrap, Claude init, and `setup-codex` enable agent-notify by default
-(`--agent-notify`, with `--navigation none` when no route is supplied).
+(`--agent-notify`, with `--navigation none --allow-unknown-caller true --allow-caller-asserted false` when no route is supplied).
 Pass `--skip-agent-notify` to keep hooks-only setup. If agent-notify
 configure fails after a successful install, the installer reports the
 error and leaves hooks/plugin in place; retry

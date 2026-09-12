@@ -23,8 +23,17 @@ func windowsOpenAt(parent windows.Handle, name string, access, disposition, opti
 	attrs.Length = uint32(unsafe.Sizeof(attrs))
 	var handle windows.Handle
 	var status windows.IO_STATUS_BLOCK
-	err = windows.NtCreateFile(&handle, access|windows.SYNCHRONIZE, &attrs, &status, nil, windows.FILE_ATTRIBUTE_NORMAL, windows.FILE_SHARE_READ, disposition, options|windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
+	err = windows.NtCreateFile(&handle, access|windows.SYNCHRONIZE, &attrs, &status, nil, windows.FILE_ATTRIBUTE_NORMAL, windowsShare(options), disposition, options|windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
 	return handle, windowsStatusError(err)
+}
+
+// Directories must remain shareable for create/rename of children. Leaf CAS
+// files keep exclusive write/delete so a held inode cannot be replaced.
+func windowsShare(options uint32) uint32 {
+	if options&windows.FILE_DIRECTORY_FILE != 0 {
+		return windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE | windows.FILE_SHARE_DELETE
+	}
+	return windows.FILE_SHARE_READ
 }
 func windowsStatusError(err error) error {
 	if status, ok := err.(windows.NTStatus); ok {

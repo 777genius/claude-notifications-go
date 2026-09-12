@@ -18,6 +18,10 @@ import (
 // its public Fingerprint API does not expose bounded document bytes.
 func read(path string, limit int) ([]byte, installruntime.Identity, error) {
 	var zero installruntime.Identity
+	path, e := installruntime.PhysicalPath(path)
+	if e != nil {
+		return nil, zero, e
+	}
 	fd, e := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if e != nil {
 		return nil, zero, e
@@ -76,6 +80,10 @@ func read(path string, limit int) ([]byte, installruntime.Identity, error) {
 func requireDirectory(path string) error {
 	if !clean(path) {
 		return ErrConflict
+	}
+	path, e := installruntime.PhysicalPath(path)
+	if e != nil {
+		return e
 	}
 	fd, e := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if e != nil {

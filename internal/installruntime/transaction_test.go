@@ -344,3 +344,73 @@ func TestRuntimeRefreshPreservesConsumerIdentity(t *testing.T) {
 		t.Fatal("unregistered refresh invented ownership")
 	}
 }
+
+func TestCommitRefusesForeignEditOnReplacingPath(t *testing.T) {
+	ctx, r := request(t)
+	target := filepath.Join(r.RuntimeRoot, "asset")
+	r.Files = []File{{Path: target, Data: []byte("original"), Mode: 0600}}
+	if _, err := Commit(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("foreign"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := Fingerprint(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Files = []File{{Path: target, Before: before, Data: []byte("upgrade"), Mode: 0600}}
+	if _, err := Commit(ctx, r); err == nil {
+		t.Fatal("foreign edit overwritten")
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "foreign" {
+		t.Fatalf("preserved: %s %v", data, err)
+	}
+}
+
+func TestMissingTransactionBlobIsCorruptMarker(t *testing.T) {
+	ctx, r := request(t)
+	target := filepath.Join(r.RuntimeRoot, "asset")
+	payload := make([]byte, 2<<20)
+	for i := range payload {
+		payload[i] = 'x'
+	}
+	r.Files = []File{{Path: target, Data: payload, Mode: 0600}}
+	r.Fault = func(phase string) error {
+		if phase == "promotion" || phase == "promotion:"+target {
+			return fmt.Errorf("crash")
+		}
+		return nil
+	}
+	if _, err := Commit(ctx, r); err == nil {
+		t.Fatal("fault not reached")
+	}
+	marker := filepath.Join(r.ControlRoot, "transaction.json")
+	tx, err := readTransactionFile(marker)
+	if err != nil || len(tx.Files) != 1 || tx.Files[0].DataSHA256 == "" {
+		t.Fatalf("pending blob missing: %v", err)
+	}
+	blob := filepath.Join(transactionBlobDir(marker), tx.Files[0].DataSHA256)
+	if err := os.Remove(blob); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation := tx.After.Generation
+	r.Fault = nil
+	r.Files = nil
+	if _, err := Commit(ctx, r); err == nil {
+		t.Fatal("missing blob treated as missing marker")
+	}
+	after, err := os.ReadFile(marker)
+	if err != nil || string(after) != string(before) {
+		t.Fatal("marker dropped")
+	}
+	ledger, err := readLedger(r.ControlRoot)
+	if err != nil || ledger.Generation == generation {
+		t.Fatalf("generation: %+v %v", ledger, err)
+	}
+}

@@ -263,6 +263,14 @@ func (s *Store) advance(d *disk) (bool, error) {
 	d.Clock.Seconds = x.Seconds
 	return true, nil
 }
+
+func persistClockOnRefusal(d *disk, before elapsed, err error) (bool, error) {
+	if d.Clock.Boot == "" || d.Clock.Boot == before.Boot {
+		d.Clock = before
+		return false, err
+	}
+	return true, err
+}
 func (s *Store) Namespace() string { return s.namespace }
 func newStore(o Options) (*Store, error) {
 	l, e := o.Limits.normalize()
@@ -330,6 +338,7 @@ func (s *Store) Admit(ctx context.Context, a Admission) (out Result, err error) 
 		if e != nil || !validText(a.TrackingID, 256, true) || !validSnapshot(a.Decision) {
 			return false, ErrInvalid
 		}
+		clock := d.Clock
 		proven, e := s.advance(d)
 		if e != nil {
 			return false, e
@@ -344,7 +353,7 @@ func (s *Store) Admit(ctx context.Context, a Admission) (out Result, err error) 
 		}
 		// Existing keys replay until another admission/Collect commits their removal.
 		if len(d.Records) >= d.Limits.Records {
-			return false, ErrFull
+			return persistClockOnRefusal(d, clock, ErrFull)
 		}
 		events := d.Events[:0]
 		session := a.Key.session(d.Namespace)
@@ -361,7 +370,7 @@ func (s *Store) Admit(ctx context.Context, a Admission) (out Result, err error) 
 			}
 		}
 		if len(events) >= rates.RuntimePerMinute || perSession >= rates.SessionPerMinute || burst >= rates.Burst {
-			return false, ErrRate
+			return persistClockOnRefusal(d, clock, ErrRate)
 		}
 		d.Events = append(events, event{now, session})
 		attempt, e := token()

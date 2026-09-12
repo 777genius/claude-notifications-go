@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -146,22 +147,24 @@ func installRuntime(args []string, output io.Writer) error {
 			if !staged {
 				return fmt.Errorf("entry binary missing from stage")
 			}
-			name := "claude-notifications"
-			if strings.HasSuffix(*entry, ".exe") {
-				name += ".bat"
+			for _, launcher := range []string{"claude-notifications", "agent-notifications"} {
+				name := launcher
+				if strings.HasSuffix(*entry, ".exe") {
+					name += ".bat"
+				}
+				path := filepath.Join(destination, name)
+				before, err := installruntime.Fingerprint(path)
+				if err != nil {
+					return err
+				}
+				alias := installruntime.File{Path: path, Before: before, Link: *entry}
+				if strings.HasSuffix(*entry, ".exe") {
+					alias.Link = ""
+					alias.Mode = 0755
+					alias.Data = installruntime.WindowsLauncherScript(launcher, *entry)
+				}
+				files = append(files, alias)
 			}
-			path := filepath.Join(destination, name)
-			before, err := installruntime.Fingerprint(path)
-			if err != nil {
-				return err
-			}
-			alias := installruntime.File{Path: path, Before: before, Link: *entry}
-			if strings.HasSuffix(*entry, ".exe") {
-				alias.Link = ""
-				alias.Mode = 0755
-				alias.Data = []byte("@echo off\nREM claude-notifications Windows wrapper\nREM Automatically runs the platform-specific binary\n\nsetlocal\nset SCRIPT_DIR=%~dp0\n\"%SCRIPT_DIR%" + *entry + "\" %*\n")
-			}
-			files = append(files, alias)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -180,12 +183,17 @@ func installRuntime(args []string, output io.Writer) error {
 	}
 	var native *installruntime.NativeChange
 	hasSender := false
+	darwinSender := false
 	for _, file := range files {
-		if strings.HasPrefix(filepath.Base(file.Path), "claude-notifications-") {
+		base := filepath.Base(file.Path)
+		if strings.HasPrefix(base, "claude-notifications-darwin-") {
+			darwinSender = true
+			hasSender = true
+		} else if strings.HasPrefix(base, "claude-notifications-") {
 			hasSender = true
 		}
 	}
-	if runtime.GOOS == "darwin" && hasSender && !*remove {
+	if (darwinSender || strings.HasPrefix(*entry, "claude-notifications-darwin-")) && !*remove {
 		*requireNative = true
 	}
 	if !*remove && hasSender {
@@ -250,13 +258,29 @@ func installRuntime(args []string, output io.Writer) error {
 				return nil, err
 			}
 			if before.Exists {
+				if before.Link != "" {
+					return nil, fmt.Errorf("canonical skill is not an unchanged owned regular file: %s", path)
+				}
 				snapshot, err := installruntime.ReadInstalledSnapshot(req.ControlRoot)
 				if err != nil {
 					return nil, err
 				}
-				owned, ok := snapshot.Ledger.Files[path]
-				if snapshot.Recovery || !ok || before.Link != "" || owned != before {
+				if snapshot.Recovery {
 					return nil, fmt.Errorf("canonical skill is not an unchanged owned regular file: %s", path)
+				}
+				owned, ok := snapshot.Ledger.Files[path]
+				if ok {
+					if owned != before {
+						return nil, fmt.Errorf("canonical skill is not an unchanged owned regular file: %s", path)
+					}
+				} else {
+					current, err := os.ReadFile(path)
+					if err != nil {
+						return nil, err
+					}
+					if !bytes.Equal(current, skills.AgentNotify()) {
+						return nil, fmt.Errorf("canonical skill is not an unchanged owned regular file: %s", path)
+					}
 				}
 			}
 			var extra []installruntime.File

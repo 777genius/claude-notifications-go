@@ -281,3 +281,39 @@ func regularObjectID(path string) (string, error) {
 	}
 	return fmt.Sprintf("%d:%d", st.Dev, st.Ino), nil
 }
+
+func removePhysicalDirectory(path string) error {
+	parent, _, err := anchoredParent(path, false)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	fd, err := unix.Openat(int(parent.Fd()), filepath.Base(path), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err == unix.ENOENT {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("transaction blob directory is not a physical directory: %w", err)
+	}
+	f := os.NewFile(uintptr(fd), path)
+	defer f.Close()
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if name == "." || name == ".." {
+			continue
+		}
+		if err := unix.Unlinkat(int(f.Fd()), name, 0); err != nil && err != unix.ENOENT {
+			return err
+		}
+	}
+	if err := unix.Unlinkat(int(parent.Fd()), filepath.Base(path), unix.AT_REMOVEDIR); err != nil && err != unix.ENOENT {
+		return err
+	}
+	return nil
+}

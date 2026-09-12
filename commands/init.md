@@ -35,7 +35,8 @@ If assets/registration succeeded but init failed, report partial success and the
 Then run `/claude-notifications-go:settings` for [private revision-checked edits](settings.md). Save diagnostics privately; never print raw configuration or expanded secrets.
 
 After a successful plugin install, agent-notify configure runs by default
-(`--navigation none` unless a route is supplied). Pass `--skip-agent-notify` to
+(`--navigation none --allow-unknown-caller true --allow-caller-asserted false`
+unless a route is supplied). Pass `--skip-agent-notify` to
 keep hooks-only setup. If agent-notify setup fails, the plugin install still
 counts as success; retry `setup-notifications configure` after fixing the cause.
 
@@ -68,8 +69,19 @@ if [ "$SKIP_AGENT_NOTIFY" = true ] && [ "${#CONFIGURE_ARGS[@]}" -ne 0 ]; then
   echo "Route flags require --agent-notify." >&2
   exit 1
 fi
-if [ "$SKIP_AGENT_NOTIFY" != true ] && [ "${#CONFIGURE_ARGS[@]}" -eq 0 ]; then
-  CONFIGURE_ARGS=(--navigation none)
+if [ "$SKIP_AGENT_NOTIFY" != true ]; then
+  has_route=false
+  if [ "${#CONFIGURE_ARGS[@]}" -gt 0 ]; then
+    for arg in "${CONFIGURE_ARGS[@]}"; do
+      case "$arg" in
+        --navigation|--app|--team-id|--allow-unknown-caller|--allow-caller-asserted)
+          has_route=true ;;
+      esac
+    done
+  fi
+  if [ "$has_route" != true ]; then
+    CONFIGURE_ARGS+=(--navigation none --allow-unknown-caller true --allow-caller-asserted false)
+  fi
 fi
 INSTALLER="${CLAUDE_PLUGIN_ROOT}/bin/install.sh"
 curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/install.sh -o "$INSTALLER"

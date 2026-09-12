@@ -207,7 +207,7 @@ Run these commands in the bundle directory. If you have explicitly added the bin
 
 It installs a self-contained copy of the plugin at `~/.codex/claude-notifications-go` and writes
 the hook entries into `~/.codex/hooks.json`. Agent-initiated notify (MCP) is enabled by default
-with `--navigation none`. Pass `--skip-agent-notify` for hooks only. Existing foreign hook
+with `--navigation none --allow-unknown-caller true --allow-caller-asserted false`. Pass `--skip-agent-notify` for hooks only. Existing foreign hook
 definitions and unknown fields are preserved, and every run saves a uniquely named backup of
 the previous file next to it.
 

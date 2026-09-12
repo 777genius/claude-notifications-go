@@ -523,7 +523,7 @@ func writeWindowsLazyUpdateStamp(stampPath, stampKey string) error {
 
 func scheduleWindowsLazyUpdateImpl(pluginRoot string) error {
 	installScript := filepath.Join(pluginRoot, "bin", "install.sh")
-	if _, err := os.Stat(installScript); err != nil {
+	if err := requireCompatibleUpdateScript(installScript); err != nil {
 		return err
 	}
 
@@ -800,6 +800,7 @@ func printUsage() {
 	fmt.Println("  setup-codex             Register Codex CLI hooks (macOS, Linux, Windows)")
 	fmt.Println("                          [--print] [--dry-run] [--codex-home <dir>] [--plugin-root <dir>]")
 	fmt.Println("                          [--agent-notify|--skip-agent-notify] [--navigation none]")
+	fmt.Println("                          [--allow-unknown-caller true|false --allow-caller-asserted true|false]")
 	fmt.Println("  config                  Shared configuration path/inspect/init/edit/preflight-update")
 	fmt.Println("  version                 Show version information")
 	fmt.Println("  help                    Show this help message")

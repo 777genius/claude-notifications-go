@@ -78,6 +78,7 @@ PAYLOAD
  download_terminal_notifier_modern() {
   mkdir -p "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS"
   printf supplied-new-native > "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern"
+  chmod +x "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS/terminal-notifier-modern"
   printf supplied-external-attestation > "$SCRIPT_DIR/ClaudeNotifier.app.managed-runtime.json"
  }
  download_terminal_notifier() { echo 'legacy fallback must not run' >&2; exit 9; }

@@ -38,13 +38,24 @@ func TestWindowsPinnedParentCannotMove(t *testing.T) {
 	if err := os.Mkdir(parent, 0700); err != nil {
 		t.Fatal(err)
 	}
-	h, _, err := windowsParents(filepath.Join(parent, "asset"), false)
+	h, anchors, err := windowsParents(filepath.Join(parent, "asset"), false)
 	defer closeWindowsParents(h)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.Rename(parent, parent+"-moved"); err == nil {
-		t.Fatal("held directory renamed")
+	moved := parent + "-moved"
+	if err = os.Rename(parent, moved); err != nil {
+		return
+	}
+	if err = os.Mkdir(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	got, err := pathAnchors(filepath.Join(parent, "asset"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkAnchors(anchors, got) == nil {
+		t.Fatal("replacement reused pinned parent identity")
 	}
 }
 func TestWindowsParentIdentitySubstitution(t *testing.T) {

@@ -36,6 +36,8 @@ type File struct {
 	Data                 []byte
 	Mode                 uint32
 	Remove               bool
+	DataSHA256           string `json:",omitempty"`
+	BeforeDataSHA256     string `json:",omitempty"`
 }
 type Consumer struct {
 	RuntimeRoot  string
@@ -191,18 +193,22 @@ func Commit(ctx context.Context, r Request) (Ledger, error) {
 	// Recovery may include configuration from a different adapter invocation.
 	var pending transaction
 	marker := filepath.Join(root, "transaction.json")
-	data, readErr := readRegularFile(marker)
+	var readErr error
+	if _, err := os.Lstat(marker); os.IsNotExist(err) {
+		readErr = err
+	} else if err != nil {
+		return Ledger{}, fmt.Errorf("corrupt installation transaction: %w", err)
+	} else {
+		pending, readErr = readTransactionFile(marker)
+		if readErr != nil {
+			return Ledger{}, fmt.Errorf("corrupt installation transaction: %w", readErr)
+		}
+	}
 	if readErr == nil {
 		if r.PolicyOnly {
 			return Ledger{}, ErrPolicyRecovery
 		}
-		pending, err = decodeTransaction(data)
-		if err != nil {
-			return Ledger{}, fmt.Errorf("corrupt installation transaction: %w", err)
-		}
 		paths = append(paths, pending.ConfigPaths...)
-	} else if !os.IsNotExist(readErr) {
-		return Ledger{}, readErr
 	}
 
 	for i, p := range paths {
@@ -318,14 +324,27 @@ func Commit(ctx context.Context, r Request) (Ledger, error) {
 		return l, fmt.Errorf("stale installation generation")
 	}
 	// Existing managed identities must match, even when no transaction remains.
+	// A deleted launcher/asset in this request may be republished; an existing
+	// file whose fingerprint changed is a foreign edit and must refuse.
+	replacing := map[string]bool{}
+	for _, file := range r.Files {
+		replacing[file.Path] = true
+		if canonical, e := CanonicalPath(file.Path); e == nil {
+			replacing[canonical] = true
+		}
+	}
 	for path, want := range l.Files {
 		got, e := Fingerprint(path)
 		if e != nil {
 			return l, e
 		}
-		if got != want {
-			return l, fmt.Errorf("managed fingerprint changed without transaction: %s", path)
+		if got == want {
+			continue
 		}
+		if replacing[path] && !got.Exists && want.Exists {
+			continue
+		}
+		return l, fmt.Errorf("managed fingerprint changed without transaction: %s", path)
 	}
 	nextData, _ := json.Marshal(l)
 	var next Ledger
@@ -638,6 +657,9 @@ func recoverTransaction(ctx context.Context, root string, current Ledger, tx tra
 		return err
 	}
 	if err := os.Remove(filepath.Join(root, "transaction.json")); err != nil {
+		return err
+	}
+	if err := discardTransactionBlobs(filepath.Join(root, "transaction.json")); err != nil {
 		return err
 	}
 	return syncDir(root)
