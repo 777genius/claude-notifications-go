@@ -1,12 +1,12 @@
 name: ReviewRouter Codex OAuth [namespace=sns_1a8a22d99fc6e2d7f7f6ec8714dab387;epoch=1;secret=REVIEWROUTER_CODEX_AUTH_JSON_R1079317825_Pc512c3cd331771e1_E1_1a8a22d99fc6e2d7f7f6ec8714dab387]
 
+# Temporarily disabled: ReviewRouter OIDC returns 403 action_repository_mismatch
+# after the GitHub rename to 777genius/agent-notifications. Re-enable after
+# re-running ReviewRouter Codex setup against the current repository identity.
 run-name: ${{ format('ReviewRouter review PR {0} at {1}', github.event.pull_request.number, github.event.pull_request.head.sha) }}
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-  schedule:
-    - cron: "17 */6 * * *"
+  workflow_dispatch:
 
 permissions: {}
 
