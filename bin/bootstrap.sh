@@ -1326,9 +1326,24 @@ install_codex() {
     [ "$actual" = "claude-notifications v$version" ] || {
         echo "Binary must match $tag and support setup-codex." >&2; return 1;
     }
-    CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" --dry-run </dev/null || return 1
+    local setup_codex_home="" i=0
+    while [ "$i" -lt "${#CONFIGURE_ARGS[@]}" ]; do
+        if [ "${CONFIGURE_ARGS[$i]}" = "--codex-home" ]; then
+            i=$((i + 1))
+            setup_codex_home="${CONFIGURE_ARGS[$i]}"
+        fi
+        i=$((i + 1))
+    done
+    run_codex_setup() {
+        if [ -n "$setup_codex_home" ]; then
+            CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" --skip-agent-notify --codex-home "$setup_codex_home" "$@" </dev/null
+        else
+            CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" --skip-agent-notify "$@" </dev/null
+        fi
+    }
+    run_codex_setup --dry-run || return 1
     config_preflight || return 1
-    CN_PRODUCT=codex "$binary" setup-codex --plugin-root "$bundle" </dev/null || return $?
+    run_codex_setup || return $?
     CONFIGURE_BINARY="${CODEX_HOME:-$HOME/.codex}/claude-notifications-go/bin/claude-notifications"
     if [ ! -x "$CONFIGURE_BINARY" ]; then
         echo "Committed Codex runtime binary missing after setup-codex." >&2

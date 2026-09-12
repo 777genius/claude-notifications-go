@@ -27,6 +27,9 @@ func TestNotificationBootstrapOffline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(string(source), `setup-codex --plugin-root "$bundle" --skip-agent-notify`) {
+		t.Fatal("install_codex must keep setup-codex hooks-only so bootstrap configures once")
+	}
 	prefix := strings.TrimSuffix(strings.TrimSpace(string(source)), `main "$@"`)
 	for _, test := range []struct {
 		name, args    string
