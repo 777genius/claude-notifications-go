@@ -292,6 +292,14 @@ func openedDirectoryIdentity(f *os.File) (string, error) {
 }
 
 func readRegularFile(path string) ([]byte, error) {
+	return readRegularFileLimit(path, maxManagedFile)
+}
+
+func readControlDocument(path string) ([]byte, error) {
+	return readRegularFileLimit(path, maxControlDocument)
+}
+
+func readRegularFileLimit(path string, limit int64) ([]byte, error) {
 	handles, _, err := windowsParents(path, false)
 	defer closeWindowsParents(handles)
 	if err != nil {
@@ -302,7 +310,24 @@ func readRegularFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return io.ReadAll(f)
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("managed input must be a regular non-link file")
+	}
+	if info.Size() < 0 || info.Size() > limit {
+		return nil, fmt.Errorf("managed input exceeds size limit")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("managed input exceeds size limit")
+	}
+	return data, nil
 }
 
 func regularObjectID(path string) (string, error) {

@@ -102,7 +102,7 @@ func TestSetupCodexE2EDocumentedRelativeBundle(t *testing.T) {
 		t.Fatal("dry run changed sandbox")
 	}
 	for i := 0; i < 2; i++ {
-		out, err = f.runAt(t, f.bundle, "", bin, "setup-codex", "--plugin-root", ".")
+		out, err = f.runAt(t, f.bundle, "", bin, "setup-codex", "--plugin-root", ".", "--skip-agent-notify")
 		if err != nil || !strings.Contains(out, "Codex notifications registered") {
 			t.Fatalf("documented setup run %d: %v %s", i, err, out)
 		}
@@ -207,7 +207,7 @@ func main(){if len(os.Args)==2&&os.Args[1]=="version"{fmt.Println("claude-notifi
 	}
 	f.env = append(f.env, "E2E_REAL_BINARY="+bin)
 	for i := 0; i < 2; i++ {
-		if out, err := f.run(t, "", bin, "setup-codex", "--plugin-root", f.bundle); err != nil {
+		if out, err := f.run(t, "", bin, "setup-codex", "--plugin-root", f.bundle, "--skip-agent-notify"); err != nil {
 			t.Fatalf("setup: %v %s", err, out)
 		}
 		if i == 0 {
@@ -310,7 +310,7 @@ func TestSetupCodexE2EPartialInitializationExitStatus(t *testing.T) {
 	}
 	canonical := filepath.Join(parent, "config.json")
 	f.env = append(f.env, "AGENT_NOTIFICATIONS_CONFIG="+canonical)
-	out, err := f.run(t, "", binary, "setup-codex", "--plugin-root", f.bundle)
+	out, err := f.run(t, "", binary, "setup-codex", "--plugin-root", f.bundle, "--skip-agent-notify")
 	exit, ok := err.(*exec.ExitError)
 	if !ok || exit.ExitCode() != 3 || !strings.Contains(out, "config init") {
 		t.Fatalf("partial setup status: %v %s", err, out)
@@ -344,7 +344,7 @@ func TestSetupCodexE2EInstalledLaunchersSurviveReplacement(t *testing.T) {
 	e2eWrite(t, filepath.Join(f.bundle, "bin", platformName), e2eRead(t, binary))
 	installed := filepath.Join(f.home, ".codex", "claude-notifications-go", "bin")
 	for pass := 0; pass < 2; pass++ {
-		output, err := f.run(t, "", binary, "setup-codex", "--plugin-root", f.bundle)
+		output, err := f.run(t, "", binary, "setup-codex", "--plugin-root", f.bundle, "--skip-agent-notify")
 		if err != nil {
 			t.Fatalf("setup pass %d: %s %v", pass, output, err)
 		}
@@ -391,12 +391,22 @@ func TestSetupCodexE2EConfigureNotifications(t *testing.T) {
 		installerNativeFixture(t, filepath.Join(f.bundle, "bin"))
 	}
 	source := f.bundle
-	out, err := f.run(t, "", bin, "setup-codex", "--plugin-root", source, "--configure-notifications", "--navigation", "none")
+	out, err := f.run(t, "", bin, "setup-codex", "--plugin-root", source, "--agent-notify", "--navigation", "none")
 	installDir := filepath.Join(f.home, ".codex", "claude-notifications-go")
 	command := filepath.Join(installDir, "bin", "claude-notifications")
 	if runtime.GOOS != "darwin" {
-		if err == nil {
-			t.Fatal("configure succeeded without qualified native")
+		if err != nil {
+			t.Fatalf("hooks install should survive agent-notify failure: %v %s", err, out)
+		}
+		if !strings.Contains(out, "Codex notifications registered") {
+			t.Fatal("hooks not registered", out)
+		}
+		if !strings.Contains(out, "agent-notify setup failed") {
+			t.Fatal("missing agent-notify warning", out)
+		}
+		hooks := e2eRead(t, filepath.Join(f.home, ".codex", "hooks.json"))
+		if !strings.Contains(string(hooks), "codex-hook-wrapper") {
+			t.Fatal("hooks missing after agent-notify failure")
 		}
 		if strings.Contains(out, "installed_bundle_required") {
 			t.Fatal("configure used the source plugin root", out)

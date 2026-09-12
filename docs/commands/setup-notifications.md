@@ -190,9 +190,14 @@ or the complete app/team/consent tuple). Route omission preserves existing share
 policy; adding Claude does not clear a Codex route. Claude informational calls use
 request-level `navigation: "none"` and an explicit request ID.
 
-Bootstrap, Claude init, and `setup-codex` accept `--configure-notifications`; bootstrap configures
-once after all selected installs succeed. Ordinary install/update leaves intent
-unchanged. `--request-permission` is optional and explicit; when requested, only an allowed
+Bootstrap, Claude init, and `setup-codex` enable agent-notify by default
+(`--agent-notify`, with `--navigation none` when no route is supplied).
+Pass `--skip-agent-notify` to keep hooks-only setup. If agent-notify
+configure fails after a successful install, the installer reports the
+error and leaves hooks/plugin in place; retry
+`setup-notifications configure` after resolving the cause. Bootstrap
+configures once after all selected installs succeed. Ordinary update still
+preserves intent after the MCP entry exists. `--request-permission` is optional and explicit; when requested, only an allowed
 result continues to enable. Otherwise setup reads permission status without prompting
 and reports it separately from saved intent. No notification is sent. Registration preserves client disable
 and tool restrictions and still requires client activation.

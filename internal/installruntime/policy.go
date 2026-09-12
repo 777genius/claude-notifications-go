@@ -78,7 +78,7 @@ func ReadUserPolicy(root string) (UserPolicy, error) {
 }
 func readUserPolicy(root string) (UserPolicy, map[string]json.RawMessage, error) {
 	p := UserPolicy{SchemaVersion: 1}
-	data, err := readRegularFile(filepath.Join(root, "agent-notifications.json"))
+	data, err := readControlDocument(filepath.Join(root, "agent-notifications.json"))
 	if os.IsNotExist(err) {
 		return p, map[string]json.RawMessage{}, nil
 	}
@@ -122,7 +122,7 @@ func readPolicyForUpdate(root string) (UserPolicy, map[string]json.RawMessage, I
 	if err != nil {
 		return UserPolicy{}, nil, before, err
 	}
-	data, err := readRegularFile(path)
+	data, err := readControlDocument(path)
 	if os.IsNotExist(err) && !before.Exists {
 		return UserPolicy{SchemaVersion: 1}, map[string]json.RawMessage{}, before, nil
 	}

@@ -441,9 +441,6 @@ func NativeAlias(change *NativeChange, bin string) ([]File, error) {
 	}
 	return []File{{Path: path, Before: before, Link: change.After.Path}}, nil
 }
-func durableLink(path, target string) error {
-	return safePublish(File{Path: path, Link: target}, false)
-}
 
 // DiscardNative removes only this invocation's unused, unchanged candidate.
 // The component lock and recovery references prevent deleting either an

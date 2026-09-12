@@ -118,7 +118,7 @@ func TestSkillLifecycle(t *testing.T) {
 	}
 }
 func TestSkillConflicts(t *testing.T) {
-	for _, name := range []string{"foreign-same", "foreign-different", "tampered-source", "untracked-source", "oversized-source", "source-link", "source-parent-link", "destination-link", "destination-parent-link", "missing-parent", "runtime-destination", "control-destination", "config-destination", "relative", "unclean", "wrong-name", "claude", "source-cache"} {
+	for _, name := range []string{"foreign-same", "foreign-different", "tampered-source", "untracked-source", "oversized-source", "source-link", "source-parent-link", "destination-link", "destination-parent-link", "runtime-destination", "control-destination", "config-destination", "relative", "unclean", "wrong-name", "claude", "source-cache"} {
 		t.Run(name, func(t *testing.T) {
 			f := skillFixture(t)
 			s := f.r.SkillProjection
@@ -156,8 +156,6 @@ func TestSkillConflicts(t *testing.T) {
 				if e := os.Symlink(s.SourcePath, s.DestinationPath); e != nil {
 					t.Fatal(e)
 				}
-			case "missing-parent":
-				s.DestinationPath = filepath.Join(filepath.Dir(f.r.ConfigPath), "absent", "agent-notify", "SKILL.md")
 			case "runtime-destination":
 				s.DestinationPath = s.SourcePath
 			case "control-destination":
@@ -180,6 +178,17 @@ func TestSkillConflicts(t *testing.T) {
 		})
 	}
 }
+
+func TestSkillCreatesMissingParents(t *testing.T) {
+	f := skillFixture(t)
+	destination := filepath.Join(filepath.Dir(f.r.ConfigPath), "absent", "agent-notify", "SKILL.md")
+	f.r.SkillProjection.DestinationPath = destination
+	x := f.apply(t)
+	if !x.Changed || !bytes.Equal(get(t, f.r.SkillProjection.SourcePath), get(t, destination)) {
+		t.Fatal("missing parents were not created")
+	}
+}
+
 func TestSkillForeignReplacement(t *testing.T) {
 	for _, action := range []string{"refresh", "remove", "omitted", "relocate"} {
 		for _, change := range []string{"bytes", "missing", "mode", "symlink"} {

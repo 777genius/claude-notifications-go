@@ -1,6 +1,7 @@
 package installruntime
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -134,5 +135,19 @@ func TestPolicySnapshotDoesNotFollowPolicyLink(t *testing.T) {
 	}
 	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatal("policy link replaced", err)
+	}
+}
+
+func TestReadPolicySnapshotRejectsOversizedDocument(t *testing.T) {
+	ctx, r := request(t)
+	if _, err := Commit(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(r.ControlRoot, "agent-notifications.json")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), maxControlDocument+1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadPolicySnapshot(ctx, r.ControlRoot); err == nil {
+		t.Fatal("oversized policy accepted")
 	}
 }

@@ -33,11 +33,14 @@ func TestNotificationBootstrapOffline(t *testing.T) {
 		fail          bool
 		wantConfigure bool
 	}{
-		{"ordinary", "--product both", false, false},
-		{"both", "--product both --configure-notifications --navigation none", false, true},
-		{"last_failed", "--product both --configure-notifications --navigation none", true, false},
-		{"bad_app", "--product both --configure-notifications --app /Applications/../Codex.app --team-id TEAM123456 --allow-unknown-caller true --allow-caller-asserted false", false, false},
-		{"bad_route", "--product both --configure-notifications --navigation invalid", false, false},
+		{"ordinary", "--product both", false, true},
+		{"both", "--product both --agent-notify --navigation none", false, true},
+		{"skip", "--product both --skip-agent-notify", false, false},
+		{"configure_failed", "--product both", false, true},
+		{"last_failed", "--product both --agent-notify --navigation none", true, false},
+		{"bad_app", "--product both --agent-notify --app /Applications/../Codex.app --team-id TEAM123456 --allow-unknown-caller true --allow-caller-asserted false", false, false},
+		{"bad_route", "--product both --agent-notify --navigation invalid", false, false},
+		{"bad_alias", "--product both --configure-notifications", false, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -46,7 +49,11 @@ func TestNotificationBootstrapOffline(t *testing.T) {
 			t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
 			t.Setenv("CLAUDE_CONFIG_DIR", "")
 			binary := filepath.Join(home, "fake-binary")
-			if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/calls\"\n"), 0700); err != nil {
+			helper := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/calls\"\n"
+			if test.name == "configure_failed" {
+				helper += "exit 1\n"
+			}
+			if err := os.WriteFile(binary, []byte(helper), 0700); err != nil {
 				t.Fatal(err)
 			}
 			script := prefix + `
@@ -82,6 +89,15 @@ install_codex() { echo codex >> "$HOME/installs"; CONFIGURE_BINARY="$HOME/fake-b
 			} else if len(calls) != 0 {
 				t.Fatal("unexpected configure", string(calls))
 			}
+			if test.name == "configure_failed" {
+				if !strings.Contains(string(output), "Agent-notify setup failed") {
+					t.Fatal("missing configure warning", string(output))
+				}
+				installs, err := os.ReadFile(filepath.Join(home, "installs"))
+				if err != nil || !strings.Contains(string(installs), "claude") || !strings.Contains(string(installs), "codex") {
+					t.Fatal("configure failure rolled back install", err, string(installs))
+				}
+			}
 			if strings.HasPrefix(test.name, "bad_") {
 				if _, err := os.Stat(filepath.Join(home, "installs")); !os.IsNotExist(err) {
 					t.Fatal("bad input installed")
@@ -108,8 +124,8 @@ func TestNotificationInitOfflineBranch(t *testing.T) {
 	if body == "" {
 		t.Fatal("missing init configure script")
 	}
-	for _, optIn := range []bool{false, true} {
-		t.Run(map[bool]string{false: "ordinary", true: "configure"}[optIn], func(t *testing.T) {
+	for _, kind := range []string{"default", "skip", "configure", "failed"} {
+		t.Run(kind, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
 			t.Setenv("TMPDIR", home)
@@ -120,18 +136,26 @@ func TestNotificationInitOfflineBranch(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(bundle, "bin"), 0700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(bundle, "bin", "claude-notifications"), []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/calls\"\n"), 0700); err != nil {
+			helper := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/calls\"\n"
+			if kind == "failed" {
+				helper += "exit 1\n"
+			}
+			if err := os.WriteFile(filepath.Join(bundle, "bin", "claude-notifications"), []byte(helper), 0700); err != nil {
 				t.Fatal(err)
 			}
 			script := `curl() { printf '#!/bin/sh\necho installed >> "$HOME/installs"\n' > "$4"; }
 ` + body
 			args := []string{"-c", script, "init"}
-			if optIn {
-				args = append(args, "--configure-notifications", "--navigation", "none")
+			switch kind {
+			case "skip":
+				args = append(args, "--skip-agent-notify")
+			case "configure":
+				args = append(args, "--agent-notify", "--navigation", "none")
 			}
 			command := exec.Command("bash", args...)
 			command.Dir = home
-			if output, err := command.CombinedOutput(); err != nil {
+			output, err := command.CombinedOutput()
+			if err != nil {
 				t.Fatalf("%v: %s", err, output)
 			}
 			installs, err := os.ReadFile(filepath.Join(home, "installs"))
@@ -139,12 +163,17 @@ func TestNotificationInitOfflineBranch(t *testing.T) {
 				t.Fatal("installer not exercised", err)
 			}
 			calls, _ := os.ReadFile(filepath.Join(home, "calls"))
-			if optIn {
-				if strings.TrimSpace(string(calls)) != "setup-notifications configure --provider claude --navigation none" {
-					t.Fatal(string(calls))
+			if kind == "skip" {
+				if len(calls) != 0 {
+					t.Fatal("skip configured", string(calls))
 				}
-			} else if len(calls) != 0 {
-				t.Fatal("ordinary init configured")
+				return
+			}
+			if strings.TrimSpace(string(calls)) != "setup-notifications configure --provider claude --navigation none" {
+				t.Fatal(string(calls))
+			}
+			if kind == "failed" && !strings.Contains(string(output), "agent-notify setup failed") {
+				t.Fatal("missing configure warning", string(output))
 			}
 		})
 	}

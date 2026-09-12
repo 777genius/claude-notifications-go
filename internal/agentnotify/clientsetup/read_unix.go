@@ -88,6 +88,9 @@ func requireDirectory(path string) error {
 			continue
 		}
 		n, e := unix.Openat(int(parent.Fd()), part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if e == unix.ENOENT {
+			return errDirectoryAbsent
+		}
 		if e != nil {
 			return ErrConflict
 		}

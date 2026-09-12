@@ -34,15 +34,37 @@ If assets/registration succeeded but init failed, report partial success and the
 
 Then run `/claude-notifications-go:settings` for [private revision-checked edits](settings.md). Save diagnostics privately; never print raw configuration or expanded secrets.
 
-After a successful plugin install, explicit `--configure-notifications` runs the same `setup-notifications configure` use case as bootstrap/`setup-codex`. Ordinary init does not enable the feature.
+After a successful plugin install, agent-notify configure runs by default
+(`--navigation none` unless a route is supplied). Pass `--skip-agent-notify` to
+keep hooks-only setup. If agent-notify setup fails, the plugin install still
+counts as success; retry `setup-notifications configure` after fixing the cause.
 
 ```bash
 INSTALLER="${CLAUDE_PLUGIN_ROOT}/bin/install.sh"
 curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/install.sh -o "$INSTALLER"
 chmod +x "$INSTALLER"
 "$INSTALLER"
-if [ "${1:-}" = "--configure-notifications" ]; then
-  shift
-  "${CLAUDE_PLUGIN_ROOT}/bin/claude-notifications" setup-notifications configure --provider claude "$@"
+SKIP_AGENT_NOTIFY=false
+CONFIGURE_ARGS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --skip-agent-notify) SKIP_AGENT_NOTIFY=true; shift ;;
+    --agent-notify) shift ;;
+    --navigation|--app|--team-id|--allow-unknown-caller|--allow-caller-asserted)
+      CONFIGURE_ARGS+=("$1" "$2"); shift 2 ;;
+    --request-permission|--json) CONFIGURE_ARGS+=("$1"); shift ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+if [ "$SKIP_AGENT_NOTIFY" != true ]; then
+  if [ "${#CONFIGURE_ARGS[@]}" -eq 0 ]; then
+    CONFIGURE_ARGS=(--navigation none)
+  fi
+  NOTIFY_BIN="${CLAUDE_PLUGIN_ROOT}/bin/claude-notifications"
+  if [ ! -x "$NOTIFY_BIN" ]; then
+    echo "agent-notify setup skipped; installer binary not found. Plugin install succeeded." >&2
+  elif ! "$NOTIFY_BIN" setup-notifications configure --provider claude "${CONFIGURE_ARGS[@]}"; then
+    echo "agent-notify setup failed; plugin install succeeded. Retry: \"$NOTIFY_BIN\" setup-notifications configure --provider claude ${CONFIGURE_ARGS[*]}" >&2
+  fi
 fi
 ```

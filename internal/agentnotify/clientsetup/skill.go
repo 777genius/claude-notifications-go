@@ -10,8 +10,9 @@ import (
 )
 
 // SkillProjection selects a canonical managed source and an explicit user skill
-// destination. The physical destination parent must already exist. Nil preserves
-// an existing projection; Remove removes it using its recorded identity.
+// destination. Existing parents must be physical directories; missing parents
+// are created under the commit lock. Nil preserves an existing projection;
+// Remove removes it using its recorded identity.
 type SkillProjection struct {
 	SourcePath, DestinationPath string
 }
@@ -22,6 +23,13 @@ type skillOwnership struct {
 }
 
 const maxSkill = 64 * 1024
+
+// Missing destination parents are created by the kernel under commit.
+var errDirectoryAbsent = error(directoryAbsentError{})
+
+type directoryAbsentError struct{}
+
+func (directoryAbsentError) Error() string { return "projection parent absent" }
 
 func skillPathsValid(r Request, source, destination string) bool {
 	return r.Provider == registration.Codex &&
@@ -100,9 +108,12 @@ func projectSkill(r Request, l installruntime.Ledger, old *skillOwnership, inspe
 		if before.Exists {
 			return nil, nil, nil, ErrConflict
 		}
-		// Inspect runs before configure creates the destination parent. Apply still requires it.
-		if !inspect && requireDirectory(filepath.Dir(selected.DestinationPath)) != nil {
-			return nil, nil, nil, ErrConflict
+		// Existing parents must be physical directories. Missing parents are
+		// created by the kernel under the commit lock via pathAnchors.
+		if !inspect {
+			if e := requireDirectory(filepath.Dir(selected.DestinationPath)); e != nil && e != errDirectoryAbsent {
+				return nil, nil, nil, ErrConflict
+			}
 		}
 		paths = append(paths, selected.DestinationPath)
 		if old != nil {

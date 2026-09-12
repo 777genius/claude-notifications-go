@@ -47,7 +47,7 @@ _KEEP_CONFIG_STAGE=false
 PRODUCT=""
 BOOTSTRAP_TAG=""
 _BOOTSTRAP_TMP=""  # temp file path for trap (set -u safe)
-CONFIGURE_NOTIFICATIONS=false
+CONFIGURE_NOTIFICATIONS=true
 CONFIGURE_BINARY=""
 CONFIGURE_ARGS=()
 
@@ -987,8 +987,11 @@ select_product() {
             --product)
                 [ "$#" -ge 2 ] && [ -z "$PRODUCT" ] || { echo "Use --product claude|codex|both once." >&2; return 1; }
                 PRODUCT="$2"; shift 2 ;;
-            --configure-notifications)
+            --agent-notify)
                 CONFIGURE_NOTIFICATIONS=true
+                shift ;;
+            --skip-agent-notify)
+                CONFIGURE_NOTIFICATIONS=false
                 shift ;;
             --navigation|--app|--team-id|--allow-unknown-caller|--allow-caller-asserted|--codex-home)
                 [ "$#" -ge 2 ] || { echo "Missing value for $1" >&2; return 1; }
@@ -1015,17 +1018,16 @@ select_product() {
                 CONFIGURE_ARGS+=("$1")
                 shift ;;
             --help|-h)
-                echo "Usage: bash bootstrap.sh [--product claude|codex|both] [--configure-notifications --navigation none]"
+                echo "Usage: bash bootstrap.sh [--product claude|codex|both] [--agent-notify|--skip-agent-notify] [--navigation none]"
                 exit 0 ;;
             *) echo "Unknown option: $1" >&2; return 1 ;;
         esac
     done
     if [ "$CONFIGURE_NOTIFICATIONS" = true ] && [ "${#CONFIGURE_ARGS[@]}" -eq 0 ]; then
-        echo "Configure requires an explicit route such as --navigation none." >&2
-        return 1
+        CONFIGURE_ARGS=(--navigation none)
     fi
     if [ "$CONFIGURE_NOTIFICATIONS" != true ] && [ "${#CONFIGURE_ARGS[@]}" -ne 0 ]; then
-        echo "Route flags require --configure-notifications." >&2
+        echo "Route flags require --agent-notify." >&2
         return 1
     fi
     if [ -z "$PRODUCT" ]; then
@@ -1372,13 +1374,27 @@ main() {
         fi
     fi
     initialize_config || return 1
-    if [ "$CONFIGURE_NOTIFICATIONS" = true ]; then
-        if [ -z "$CONFIGURE_BINARY" ]; then
-            CONFIGURE_BINARY="${PLUGIN_ROOT}/bin/claude-notifications"
-        fi
-        "$CONFIGURE_BINARY" setup-notifications configure --provider "$PRODUCT" "${CONFIGURE_ARGS[@]}" || return 1
-    fi
+    configure_agent_notify
     [ "$PRODUCT" != claude ] || print_success
+}
+
+# Agent-notify is default-on, but a failed configure must not undo hooks/plugin install.
+configure_agent_notify() {
+    [ "$CONFIGURE_NOTIFICATIONS" = true ] || return 0
+    if [ -z "$CONFIGURE_BINARY" ]; then
+        CONFIGURE_BINARY="${PLUGIN_ROOT}/bin/claude-notifications"
+    fi
+    if [ ! -x "$CONFIGURE_BINARY" ]; then
+        echo -e "${YELLOW}⚠ Agent-notify setup skipped; installer binary not found.${NC}" >&2
+        echo -e "${YELLOW}  Plugin/hooks install succeeded. Retry after the binary is available.${NC}" >&2
+        return 0
+    fi
+    if ! "$CONFIGURE_BINARY" setup-notifications configure --provider "$PRODUCT" "${CONFIGURE_ARGS[@]}"; then
+        echo -e "${YELLOW}⚠ Agent-notify setup failed; plugin/hooks install succeeded.${NC}" >&2
+        echo -e "${YELLOW}  Desktop/hook notifications still work. Retry:${NC}" >&2
+        echo -e "${YELLOW}  \"$CONFIGURE_BINARY\" setup-notifications configure --provider ${PRODUCT} ${CONFIGURE_ARGS[*]}${NC}" >&2
+    fi
+    return 0
 }
 
 main "$@"

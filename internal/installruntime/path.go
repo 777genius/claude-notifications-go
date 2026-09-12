@@ -2,6 +2,16 @@ package installruntime
 
 import "fmt"
 
+const (
+	// Operator-editable control JSON shares the 64 KiB budget used by
+	// decodeUserPolicy. ReadPolicySnapshot must reject oversized documents
+	// before allocating the file.
+	maxControlDocument = 64 * 1024
+	// Native helper hashing and recovery copies of managed files. This is a
+	// hard cap against unbounded ReadAll, not the JSON document budget.
+	maxManagedFile = 32 << 20
+)
+
 // PathAnchor binds a staged destination's existing parents to their opened
 // filesystem identities. Recovery must not reinterpret a substituted directory.
 type PathAnchor struct{ Path, Identity string }

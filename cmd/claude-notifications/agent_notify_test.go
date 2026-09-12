@@ -94,6 +94,14 @@ func agentNotifyTestEnv(t *testing.T) []string {
 		}
 		env = append(env, key+"="+p)
 	}
+	// Isolated child env drops the parent coverage directory. Without this,
+	// a coverage-instrumented helper writes a GOCOVERDIR warning to stderr and
+	// can block forever when stderr is a filled backpressure pipe.
+	cover := filepath.Join(root, "GOCOVERDIR")
+	if err := os.Mkdir(cover, 0700); err != nil {
+		t.Fatal(err)
+	}
+	env = append(env, "GOCOVERDIR="+cover)
 	return env
 }
 func agentNotifyTestCommand(t *testing.T, args ...string) *exec.Cmd {

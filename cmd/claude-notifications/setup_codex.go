@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/777genius/agent-notifications/internal/codexsetup"
@@ -55,10 +55,9 @@ func runSetupCodex(args []string) {
 	}
 
 	result, err := codexsetup.Run(codexsetup.Options{
-		CodexHome:     opts.codexHome,
-		PluginRoot:    pluginRoot,
-		DryRun:        opts.dryRun,
-		RequireNative: opts.configure && runtime.GOOS == "darwin",
+		CodexHome:  opts.codexHome,
+		PluginRoot: pluginRoot,
+		DryRun:     opts.dryRun,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "setup-codex: %v\n", err)
@@ -95,10 +94,10 @@ func runSetupCodex(args []string) {
 	fmt.Println()
 	if opts.configure {
 		code := executeNotificationConfigure(context.Background(), append([]string{"--provider", "codex"}, opts.configureArgs...), os.Stdout, result.InstallDir)
-		if code != 0 {
-			os.Exit(code)
+		if code == 0 {
+			return
 		}
-		return
+		reportAgentNotifySetupFailure(os.Stderr, "codex", opts.configureArgs)
 	}
 	fmt.Println("Next step: start Codex, run /hooks, review the entries and trust them.")
 	fmt.Println("Codex asks for this once; the registration keeps working across plugin updates.")
@@ -111,6 +110,8 @@ func runSetupCodex(args []string) {
 
 func parseSetupCodexOptions(args []string) (setupCodexOptions, error) {
 	var opts setupCodexOptions
+	opts.configure = true
+	explicit, skip := false, false
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -120,8 +121,12 @@ func parseSetupCodexOptions(args []string) (setupCodexOptions, error) {
 			opts.dryRun = true
 		case "--remove":
 			return opts, fmt.Errorf("unknown option: --remove")
-		case "--configure-notifications":
+		case "--agent-notify":
+			explicit = true
 			opts.configure = true
+		case "--skip-agent-notify":
+			skip = true
+			opts.configure = false
 		case "--codex-home":
 			if i+1 >= len(args) {
 				return opts, fmt.Errorf("--codex-home requires a path")
@@ -138,13 +143,22 @@ func parseSetupCodexOptions(args []string) (setupCodexOptions, error) {
 			rest = append(rest, args[i])
 		}
 	}
+	if explicit && skip {
+		return opts, fmt.Errorf("--agent-notify and --skip-agent-notify are mutually exclusive")
+	}
 	if opts.print && opts.dryRun {
 		return opts, fmt.Errorf("--print and --dry-run are mutually exclusive")
 	}
 	if opts.configure && (opts.print || opts.dryRun) {
-		return opts, fmt.Errorf("incompatible flags")
+		if explicit {
+			return opts, fmt.Errorf("incompatible flags")
+		}
+		opts.configure = false
 	}
 	if opts.configure {
+		if len(rest) == 0 {
+			rest = []string{"--navigation", "none"}
+		}
 		opts.configureArgs = rest
 		_, _, err := parseNotificationConfigure(append([]string{"--provider", "codex"}, rest...))
 		return opts, err
@@ -153,4 +167,13 @@ func parseSetupCodexOptions(args []string) (setupCodexOptions, error) {
 		return opts, fmt.Errorf("unknown option: %s", rest[0])
 	}
 	return opts, nil
+}
+
+func reportAgentNotifySetupFailure(w io.Writer, provider string, args []string) {
+	retry := "claude-notifications"
+	if executable, err := os.Executable(); err == nil {
+		retry = executable
+	}
+	fmt.Fprintf(w, "setup-codex: agent-notify setup failed; Codex hooks remain registered.\n")
+	fmt.Fprintf(w, "Retry: %s setup-notifications configure --provider %s %s\n", retry, provider, strings.Join(args, " "))
 }
