@@ -1,4 +1,4 @@
-name: ReviewRouter Interaction
+name: Disabled ReviewRouter Interaction
 
 # Temporarily disabled with the Codex OAuth workflow: ReviewRouter OIDC returns
 # 403 action_repository_mismatch for 777genius/agent-notifications.
