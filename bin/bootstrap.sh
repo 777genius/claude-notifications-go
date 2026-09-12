@@ -982,15 +982,18 @@ print_success() {
 
 # Product selection must precede any filesystem or host CLI mutation.
 select_product() {
+    local seen_agent_notify=false seen_skip_agent_notify=false
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --product)
                 [ "$#" -ge 2 ] && [ -z "$PRODUCT" ] || { echo "Use --product claude|codex|both once." >&2; return 1; }
                 PRODUCT="$2"; shift 2 ;;
             --agent-notify)
+                seen_agent_notify=true
                 CONFIGURE_NOTIFICATIONS=true
                 shift ;;
             --skip-agent-notify)
+                seen_skip_agent_notify=true
                 CONFIGURE_NOTIFICATIONS=false
                 shift ;;
             --navigation|--app|--team-id|--allow-unknown-caller|--allow-caller-asserted|--codex-home)
@@ -1023,6 +1026,10 @@ select_product() {
             *) echo "Unknown option: $1" >&2; return 1 ;;
         esac
     done
+    if [ "$seen_agent_notify" = true ] && [ "$seen_skip_agent_notify" = true ]; then
+        echo "--agent-notify and --skip-agent-notify are mutually exclusive." >&2
+        return 1
+    fi
     if [ "$CONFIGURE_NOTIFICATIONS" = true ] && [ "${#CONFIGURE_ARGS[@]}" -eq 0 ]; then
         CONFIGURE_ARGS=(--navigation none)
     fi

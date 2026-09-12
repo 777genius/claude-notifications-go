@@ -799,6 +799,7 @@ func printUsage() {
 	fmt.Println("                          Does not modify ~/.claude/settings.json")
 	fmt.Println("  setup-codex             Register Codex CLI hooks (macOS, Linux, Windows)")
 	fmt.Println("                          [--print] [--dry-run] [--codex-home <dir>] [--plugin-root <dir>]")
+	fmt.Println("                          [--agent-notify|--skip-agent-notify] [--navigation none]")
 	fmt.Println("  config                  Shared configuration path/inspect/init/edit/preflight-update")
 	fmt.Println("  version                 Show version information")
 	fmt.Println("  help                    Show this help message")

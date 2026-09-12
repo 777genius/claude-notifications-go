@@ -40,26 +40,42 @@ keep hooks-only setup. If agent-notify setup fails, the plugin install still
 counts as success; retry `setup-notifications configure` after fixing the cause.
 
 ```bash
-INSTALLER="${CLAUDE_PLUGIN_ROOT}/bin/install.sh"
-curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/install.sh -o "$INSTALLER"
-chmod +x "$INSTALLER"
-"$INSTALLER"
 SKIP_AGENT_NOTIFY=false
+SEEN_AGENT_NOTIFY=false
 CONFIGURE_ARGS=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --skip-agent-notify) SKIP_AGENT_NOTIFY=true; shift ;;
-    --agent-notify) shift ;;
+    --agent-notify) SEEN_AGENT_NOTIFY=true; shift ;;
     --navigation|--app|--team-id|--allow-unknown-caller|--allow-caller-asserted)
+      [ "$#" -ge 2 ] || { echo "Missing value for $1" >&2; exit 1; }
+      case "$1" in
+        --navigation) [ "$2" = none ] || { echo "Invalid navigation: $2" >&2; exit 1; } ;;
+        --app)
+          case "$2" in /*) ;; *) echo "App path must be absolute." >&2; exit 1 ;; esac
+          case "$2" in *..*) echo "App path must be a physical path." >&2; exit 1 ;; esac ;;
+      esac
       CONFIGURE_ARGS+=("$1" "$2"); shift 2 ;;
     --request-permission|--json) CONFIGURE_ARGS+=("$1"); shift ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
+if [ "$SEEN_AGENT_NOTIFY" = true ] && [ "$SKIP_AGENT_NOTIFY" = true ]; then
+  echo "--agent-notify and --skip-agent-notify are mutually exclusive." >&2
+  exit 1
+fi
+if [ "$SKIP_AGENT_NOTIFY" = true ] && [ "${#CONFIGURE_ARGS[@]}" -ne 0 ]; then
+  echo "Route flags require --agent-notify." >&2
+  exit 1
+fi
+if [ "$SKIP_AGENT_NOTIFY" != true ] && [ "${#CONFIGURE_ARGS[@]}" -eq 0 ]; then
+  CONFIGURE_ARGS=(--navigation none)
+fi
+INSTALLER="${CLAUDE_PLUGIN_ROOT}/bin/install.sh"
+curl -fsSL https://raw.githubusercontent.com/777genius/agent-notifications/main/bin/install.sh -o "$INSTALLER"
+chmod +x "$INSTALLER"
+"$INSTALLER"
 if [ "$SKIP_AGENT_NOTIFY" != true ]; then
-  if [ "${#CONFIGURE_ARGS[@]}" -eq 0 ]; then
-    CONFIGURE_ARGS=(--navigation none)
-  fi
   NOTIFY_BIN="${CLAUDE_PLUGIN_ROOT}/bin/claude-notifications"
   if [ ! -x "$NOTIFY_BIN" ]; then
     echo "agent-notify setup skipped; installer binary not found. Plugin install succeeded." >&2

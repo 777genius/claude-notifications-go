@@ -94,10 +94,9 @@ func runSetupCodex(args []string) {
 	fmt.Println()
 	if opts.configure {
 		code := executeNotificationConfigure(context.Background(), append([]string{"--provider", "codex"}, opts.configureArgs...), os.Stdout, result.InstallDir)
-		if code == 0 {
-			return
+		if code != 0 {
+			reportAgentNotifySetupFailure(os.Stderr, "codex", opts.configureArgs)
 		}
-		reportAgentNotifySetupFailure(os.Stderr, "codex", opts.configureArgs)
 	}
 	fmt.Println("Next step: start Codex, run /hooks, review the entries and trust them.")
 	fmt.Println("Codex asks for this once; the registration keeps working across plugin updates.")
