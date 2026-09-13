@@ -128,6 +128,48 @@ func TestReverseUnpublishedNativeKeepsPredecessor(t *testing.T) {
 	if reverse.After.Native == nil || reverse.After.Native.Path != before || reverse.After.Native.SHA256 != hashA {
 		t.Fatalf("predecessor lost: %+v", reverse.After.Native)
 	}
+	if reverse.Native == nil || reverse.Native.After.Path != before || reverse.Native.After.SHA256 != hashA {
+		t.Fatalf("predecessor NativeChange not persisted: %+v", reverse.Native)
+	}
+}
+
+func TestReversePublishedNativePersistsChange(t *testing.T) {
+	skipUnsupportedNative(t)
+	before := nativeBundle(t)
+	hashA, err := treeFingerprint(before)
+	if err != nil || hashA == "" {
+		t.Fatal(err)
+	}
+	idA, err := nativeDirectoryID(before)
+	if err != nil || idA == "" {
+		t.Fatal(err)
+	}
+	after := nativeBundle(t)
+	hashB, err := treeFingerprint(after)
+	if err != nil || hashB == "" {
+		t.Fatal(err)
+	}
+	idB, err := nativeDirectoryID(after)
+	if err != nil || idB == "" {
+		t.Fatal(err)
+	}
+	tx := recoveryTransaction()
+	tx.Native = &NativeChange{
+		Before: NativeRecord{Path: before, SHA256: hashA, DirectoryID: idA},
+		After:  NativeRecord{Path: after, SHA256: hashB, DirectoryID: idB},
+	}
+	tx.Before.Native = &NativeRecord{Path: before, SHA256: hashA, DirectoryID: idA}
+	tx.After.Native = &NativeRecord{Path: after, SHA256: hashB, DirectoryID: idB}
+	reverse, err := reverseTransaction(tx.After, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reverse.After.Native == nil || reverse.After.Native.Path != after || reverse.After.Native.SHA256 != hashB {
+		t.Fatalf("published native lost: %+v", reverse.After.Native)
+	}
+	if reverse.Native == nil || reverse.Native.After.Path != after || reverse.Native.After.DirectoryID != idB || reverse.Native.Staged != after {
+		t.Fatalf("published NativeChange not persisted: %+v", reverse.Native)
+	}
 }
 
 func TestDiscardTransactionBlobsPreservesUnrecognizedFiles(t *testing.T) {

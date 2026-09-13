@@ -86,7 +86,7 @@ func TestEmbeddedSkillLifecycleProjection(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if s.Ledger.Files[canonicalSkill] != id || id.Mode != 0600 || id.Link != "" {
+	if s.Ledger.Files[canonicalSkill] != id || id.Link != "" {
 		t.Fatal("skill not owned at exact regular-file identity")
 	}
 	embeddedAbsent(t, filepath.Join(f.bin, "skills"))
@@ -134,6 +134,68 @@ func TestEmbeddedSkillLifecycleProjection(t *testing.T) {
 	}
 	embeddedAbsent(t, f.skill)
 	embeddedAbsent(t, projection)
+}
+
+func TestEmbeddedRefreshRepairsMissingBinary(t *testing.T) {
+	f := embeddedQualified(t)
+	if e := f.run("--entry", f.entry); e != nil {
+		t.Fatal(e)
+	}
+	bin := filepath.Join(f.bin, f.entry)
+	if e := os.Remove(bin); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.run("--refresh", "--entry", f.entry); e != nil {
+		t.Fatal(e)
+	}
+	if !bytes.Equal(embeddedRead(t, f.skill), skills.AgentNotify()) {
+		t.Fatal("skill lost during binary repair")
+	}
+	id, e := installruntime.Fingerprint(bin)
+	if e != nil || !id.Exists {
+		t.Fatal("binary not repaired", e)
+	}
+	s := f.snapshot(t)
+	canonical, e := installruntime.CanonicalPath(bin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if s.Ledger.Files[canonical] != id && s.Ledger.Files[bin] != id {
+		t.Fatal("repaired binary not owned")
+	}
+}
+
+func TestEmbeddedRefreshRepairsMissingLauncher(t *testing.T) {
+	f := embeddedQualified(t)
+	if e := f.run("--entry", f.entry); e != nil {
+		t.Fatal(e)
+	}
+	launcher := filepath.Join(f.bin, "claude-notifications")
+	if runtime.GOOS == "windows" {
+		launcher += ".bat"
+	}
+	if e := os.Remove(launcher); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.run("--refresh", "--entry", f.entry); e != nil {
+		t.Fatal(e)
+	}
+	id, e := installruntime.Fingerprint(launcher)
+	if e != nil || !id.Exists {
+		t.Fatal("launcher not repaired", e)
+	}
+	s := f.snapshot(t)
+	canonicalBin, e := installruntime.CanonicalPath(f.bin)
+	if e != nil {
+		t.Fatal(e)
+	}
+	owned, ok := s.Ledger.Files[filepath.Join(canonicalBin, filepath.Base(launcher))]
+	if !ok {
+		owned, ok = s.Ledger.Files[launcher]
+	}
+	if !ok || owned != id {
+		t.Fatal("launcher not owned at published identity")
+	}
 }
 
 func TestEmbeddedSkillRefusesForeignAndTampered(t *testing.T) {

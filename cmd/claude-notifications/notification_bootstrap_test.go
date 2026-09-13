@@ -239,7 +239,11 @@ func TestNotificationBootstrapRealInstaller(t *testing.T) {
 		}
 	}
 	write(filepath.Join(bundle, ".claude-plugin", "plugin.json"), `{"name":"claude-notifications-go","version":"1.42.0"}`)
-	write(filepath.Join(bundle, "config", "config.json"), `{}`)
+	packagedConfig, err := os.ReadFile(filepath.Join(notificationRepoRoot(t), "config", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join(bundle, "config", "config.json"), string(packagedConfig))
 	for _, name := range []string{"codex-hook-wrapper.sh", "codex-hook-wrapper.cmd"} {
 		write(filepath.Join(bundle, "bin", name), "inert hook")
 	}
@@ -294,11 +298,12 @@ main "$@"
 	prefix := strings.TrimSuffix(strings.TrimSpace(string(bootstrap)), `main "$@"`)
 	cmd = exec.Command("bash", "-c", prefix+`
 _CONFIG_STAGE="$NOTIFICATION_TEST_CONFIG_STAGE"
+_CONFIG_HELPER="$NOTIFICATION_TEST_ASSET"
+chmod +x "$_CONFIG_HELPER"
 BOOTSTRAP_TAG=v1.42.0
 PRODUCT=codex
 CONFIGURE_NOTIFICATIONS=true
 fetch_bootstrap_file() { cp "$NOTIFICATION_TEST_SOURCE_TAR" "$2"; }
-config_preflight() { :; }
 install_cleanup_traps
 install_codex || exit 1
 case "$CONFIGURE_BINARY" in "$CODEX_HOME/claude-notifications-go/bin/claude-notifications") ;; *) exit 2 ;; esac
@@ -345,6 +350,8 @@ func TestNotificationShellHelper(t *testing.T) {
 		fmt.Println("claude-notifications v1.42.0")
 	case "setup-codex":
 		runSetupCodex(args[1:])
+	case "config":
+		os.Exit(configCommand(args[1:], os.Stdin, os.Stdout, os.Stderr))
 	case "internal-install-runtime":
 		if err := installRuntime(args[1:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)

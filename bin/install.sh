@@ -1293,6 +1293,9 @@ create_named_launcher() {
         if [ -e "$final_bat_path" ]; then
             return 0
         fi
+        if restore_named_launcher "$final_bat_path"; then
+            return 0
+        fi
         # Remove old .bat file if exists
         rm -f "$bat_path" 2>/dev/null || true
 
@@ -1324,6 +1327,9 @@ EOF
     if [ -e "$final_symlink_path" ]; then
         return 0
     fi
+    if restore_named_launcher "$final_symlink_path"; then
+        return 0
+    fi
     # Remove old symlink if exists
     rm -f "$symlink_path" 2>/dev/null || true
 
@@ -1343,6 +1349,15 @@ EOF
         echo -e "${YELLOW}⚠ Could not create symlink/copy (hooks may not work)${NC}"
         return 1
     fi
+}
+
+# Republish a missing owned launcher through the kernel. Disposable first
+# copies have no consumer yet, so refresh fails and the caller falls through
+# to a local symlink/copy/BAT.
+restore_named_launcher() {
+    local dest="$1"
+    refresh_existing_runtime >/dev/null 2>&1 || return 1
+    [ -e "$dest" ]
 }
 
 configure_windows_native_hooks() {

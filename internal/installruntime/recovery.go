@@ -262,6 +262,21 @@ func reverseTransaction(current Ledger, tx transaction) (transaction, error) {
 		}
 	}
 	reverse := transaction{Schema: transactionSchemaV2, Before: current, After: after, ConfigPaths: tx.ConfigPaths}
+	if tx.Native != nil && after.Native != nil {
+		parents, err := pathAnchors(after.Native.Path, false)
+		if err != nil {
+			return transaction{}, err
+		}
+		// Persist the selected callback identity so retry validates DirectoryID
+		// and cannot reverse a reverse into the unpublished predecessor.
+		reverse.Native = &NativeChange{
+			Parents:  parents,
+			Staged:   after.Native.Path,
+			StagedID: after.Native.DirectoryID,
+			Before:   *after.Native,
+			After:    *after.Native,
+		}
+	}
 	for _, f := range tx.Files {
 		if err := checkReplacementRollback(f); err != nil {
 			return transaction{}, err

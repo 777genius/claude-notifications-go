@@ -157,3 +157,58 @@ echo 'PASS: Codex live update refreshes through the kernel'
  grep -q acquired "$BINARY_PATH"
 )
 echo 'PASS: disposable Codex acquisition copies without a live ledger commit'
+(
+ export INSTALL_TARGET_DIR="$sandbox/restore-launcher"
+ mkdir -p "$INSTALL_TARGET_DIR"
+ source "$sandbox/functions.sh"
+ detect_platform() {
+  PLATFORM=linux ARCH=amd64 BINARY_NAME=claude-notifications-linux-amd64
+  BINARY_PATH="$SCRIPT_DIR/$BINARY_NAME"
+ }
+ detect_platform
+ guard_install_paths() { :; }
+ spy="$sandbox/restore-spy"
+ export RESTORE_SPY="$spy"
+ cat > "$BINARY_PATH" <<'PAYLOAD'
+#!/bin/sh
+# agent-notifications-managed-writer-protocol-v1
+[ "$1" = internal-install-runtime ] || exit 2
+printf refresh >> "$RESTORE_SPY"
+target=
+shift
+while [ "$#" -gt 0 ]; do
+ case "$1" in
+  --target) target=$2; shift 2 ;;
+  *) shift ;;
+ esac
+done
+ln -sf claude-notifications-linux-amd64 "$target/claude-notifications"
+ln -sf claude-notifications-linux-amd64 "$target/agent-notifications"
+echo 'managed-runtime committed generation=2'
+PAYLOAD
+ chmod +x "$BINARY_PATH"
+ create_named_launcher claude-notifications
+ grep -qx refresh "$spy"
+ [ -L "$SCRIPT_DIR/claude-notifications" ]
+ [ -L "$SCRIPT_DIR/agent-notifications" ]
+ create_named_launcher agent-notifications
+ [ "$(wc -c < "$spy" | tr -d ' ')" = 7 ]
+)
+echo 'PASS: missing launcher is restored through kernel refresh'
+(
+ export INSTALL_TARGET_DIR="$sandbox/local-launcher"
+ mkdir -p "$INSTALL_TARGET_DIR"
+ source "$sandbox/functions.sh"
+ detect_platform() {
+  PLATFORM=linux ARCH=amd64 BINARY_NAME=claude-notifications-linux-amd64
+  BINARY_PATH="$SCRIPT_DIR/$BINARY_NAME"
+ }
+ detect_platform
+ guard_install_paths() { :; }
+ printf '#!/bin/sh\necho unmanaged\n' > "$BINARY_PATH"
+ chmod +x "$BINARY_PATH"
+ create_named_launcher claude-notifications
+ [ -L "$SCRIPT_DIR/claude-notifications" ]
+ [ "$(readlink "$SCRIPT_DIR/claude-notifications")" = "$BINARY_NAME" ]
+)
+echo 'PASS: disposable missing launcher still falls back to a local symlink'

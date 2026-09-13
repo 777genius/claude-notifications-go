@@ -361,13 +361,7 @@ func PrepareGlobalConfig(ctx context.Context, canonicalPath, legacyPath, default
 			}
 			result.Changed = true
 		}
-		dir, e := root.Open(".")
-		if e != nil {
-			return result, e
-		}
-		e = dir.Sync()
-		dir.Close()
-		if e != nil {
+		if e = syncPreparedPublication(root, name); e != nil {
 			return result, e
 		}
 		persisted, _, e := readPrepared(root, name)

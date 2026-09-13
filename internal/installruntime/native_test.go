@@ -799,3 +799,81 @@ func TestNativeExactHeadGenerationsPreserveCallbackIdentity(t *testing.T) {
 		t.Fatalf("rollback mutated published inventory %d", len(ledger.Native.Published))
 	}
 }
+
+func TestInterruptedRollbackRetainsPublishedNative(t *testing.T) {
+	for _, retryRollback := range []bool{true, false} {
+		t.Run(fmt.Sprintf("retryRollback=%t", retryRollback), func(t *testing.T) {
+			ctx, r := request(t)
+			first, err := StageNative(ctx, r.ControlRoot, nativeFixture(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.Native = first
+			if _, err := Commit(ctx, r); err != nil {
+				t.Fatal(err)
+			}
+			pathA := first.After.Path
+			second, err := StageNative(ctx, r.ControlRoot, nativeFixture(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			pathB := second.After.Path
+			idB := second.After.DirectoryID
+			if idB == "" {
+				t.Fatal("staged generation missing directory id")
+			}
+			r.Native = second
+			r.Fault = func(phase string) error {
+				if phase == "native" {
+					return fmt.Errorf("crash")
+				}
+				return nil
+			}
+			if _, err := Commit(ctx, r); err == nil {
+				t.Fatal("missing native crash")
+			}
+			if _, err := os.Stat(pathB); err != nil {
+				t.Fatal("generation B missing after native interrupt")
+			}
+			idPublished, err := nativeDirectoryID(pathB)
+			if err != nil || idPublished != idB {
+				t.Fatalf("published directory id: %s %s %v", idPublished, idB, err)
+			}
+			r.Fault = func(phase string) error {
+				if phase == "ledger" {
+					return fmt.Errorf("crash")
+				}
+				return nil
+			}
+			r.Files = nil
+			r.Native = nil
+			r.RollbackPending = true
+			if _, err := Commit(ctx, r); err == nil {
+				t.Fatal("missing rollback crash")
+			}
+			pending, err := decodeTransaction(mustRead(t, filepath.Join(r.ControlRoot, "transaction.json")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pending.Native == nil || pending.Native.After.Path != pathB || pending.Native.After.DirectoryID != idPublished {
+				t.Fatalf("NativeChange not persisted: %+v", pending.Native)
+			}
+			r.Fault = nil
+			r.RollbackPending = retryRollback
+			ledger, err := Commit(ctx, r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ledger.Native == nil || ledger.Native.Path != pathB {
+				t.Fatalf("published native dropped: %+v", ledger.Native)
+			}
+			id, err := nativeDirectoryID(pathB)
+			if err != nil || id != idPublished {
+				t.Fatalf("directory id changed: %s %s %v", id, idPublished, err)
+			}
+			if _, err := os.Stat(pathA); err != nil {
+				t.Fatal("generation A lost")
+			}
+		})
+	}
+}

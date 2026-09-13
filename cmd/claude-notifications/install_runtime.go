@@ -261,14 +261,14 @@ func installRuntime(args []string, output io.Writer) error {
 				if before.Link != "" {
 					return nil, fmt.Errorf("canonical skill is not an unchanged owned regular file: %s", path)
 				}
-				snapshot, err := installruntime.ReadInstalledSnapshot(req.ControlRoot)
+				ledger, recovery, err := installruntime.ReadOwnership(req.ControlRoot)
 				if err != nil {
 					return nil, err
 				}
-				if snapshot.Recovery {
+				if recovery {
 					return nil, fmt.Errorf("canonical skill is not an unchanged owned regular file: %s", path)
 				}
-				owned, ok := snapshot.Ledger.Files[path]
+				owned, ok := installruntime.OwnedFile(ledger, path)
 				if ok {
 					if owned != before {
 						return nil, fmt.Errorf("canonical skill is not an unchanged owned regular file: %s", path)

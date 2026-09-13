@@ -22,6 +22,49 @@ func ReadInstalledSnapshot(root string) (InstalledSnapshot, error) {
 	return readInstalledSnapshot(root, nil)
 }
 
+// ReadOwnership returns the durable ledger and whether a recovery marker is
+// present. Unlike ReadInstalledSnapshot it does not fingerprint unrelated
+// published files, so a single-path Prepare callback can still repair a
+// missing sibling under the component lock.
+func ReadOwnership(root string) (Ledger, bool, error) {
+	var l Ledger
+	if root == "" {
+		var err error
+		root, err = ControlRoot()
+		if err != nil {
+			return l, false, err
+		}
+	}
+	if err := privateDirectory(root); err != nil && !os.IsNotExist(err) {
+		return l, false, err
+	}
+	l, err := readLedger(root)
+	if err != nil {
+		return l, false, err
+	}
+	_, err = os.Lstat(filepath.Join(root, "transaction.json"))
+	if err == nil {
+		return l, true, nil
+	}
+	if !os.IsNotExist(err) {
+		return l, false, err
+	}
+	return l, false, nil
+}
+
+// OwnedFile looks up a ledger identity by the published path or its canonical form.
+func OwnedFile(l Ledger, path string) (Identity, bool) {
+	if owned, ok := l.Files[path]; ok {
+		return owned, true
+	}
+	canonical, err := CanonicalPath(path)
+	if err != nil || canonical == path {
+		return Identity{}, false
+	}
+	owned, ok := l.Files[canonical]
+	return owned, ok
+}
+
 func readInstalledSnapshot(root string, requestPolicy *UserPolicy) (InstalledSnapshot, error) {
 	var s InstalledSnapshot
 	if root == "" {
