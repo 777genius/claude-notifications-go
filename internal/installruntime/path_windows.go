@@ -378,6 +378,12 @@ func removePhysicalDirectory(path string) error {
 		return err
 	}
 	for _, name := range names {
+		if !ownedTransactionBlobName(name) {
+			continue
+		}
+		if _, err := readTransactionBlob(path, name); err != nil {
+			return err
+		}
 		h, err := windowsOpenAt(windows.Handle(f.Fd()), name, windows.DELETE, windows.FILE_OPEN, windows.FILE_NON_DIRECTORY_FILE)
 		if os.IsNotExist(err) {
 			continue
@@ -391,5 +397,9 @@ func removePhysicalDirectory(path string) error {
 			return delErr
 		}
 	}
-	return windowsDeleteHandle(windows.Handle(f.Fd()))
+	err = windowsDeleteHandle(windows.Handle(f.Fd()))
+	if err == nil || os.IsNotExist(err) || err == windows.ERROR_DIR_NOT_EMPTY {
+		return nil
+	}
+	return err
 }

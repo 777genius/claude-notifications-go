@@ -369,16 +369,31 @@ func configurePhysical(path string) bool {
 
 // Retain a descriptor for each physical ancestor while creating the next parent.
 func configureParents(ctx context.Context, path string) error {
-	root, e := os.OpenRoot(string(filepath.Separator))
+	vol := filepath.VolumeName(path)
+	rootPath := string(filepath.Separator)
+	if vol != "" {
+		rootPath = vol
+		if !strings.HasSuffix(rootPath, string(filepath.Separator)) {
+			rootPath += string(filepath.Separator)
+		}
+	}
+	root, e := os.OpenRoot(rootPath)
 	if e != nil {
 		return e
 	}
 	defer func() { root.Close() }()
-	for _, part := range strings.Split(strings.TrimPrefix(filepath.Dir(path), string(filepath.Separator)), string(filepath.Separator)) {
+	rel := ""
+	if filepath.Clean(filepath.Dir(path)) != filepath.Clean(rootPath) {
+		rel, e = filepath.Rel(rootPath, filepath.Dir(path))
+		if e != nil || !filepath.IsLocal(rel) {
+			return errors.New("physical_path_required")
+		}
+	}
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
 		if e := ctx.Err(); e != nil {
 			return e
 		}
-		if part == "" {
+		if part == "" || part == "." {
 			continue
 		}
 		info, e := root.Lstat(part)

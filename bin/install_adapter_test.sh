@@ -93,3 +93,67 @@ PAYLOAD
  grep -q old-native "$old"
 )
 echo 'PASS: old executable does not suppress newer staged release; unavailable promotion fails closed'
+# Codex product identity is not a disposable destination: an existing published
+# binary must refresh through the kernel so fingerprints stay in the ledger.
+(
+ export INSTALL_TARGET_DIR="$sandbox/codex-live"
+ mkdir -p "$INSTALL_TARGET_DIR"
+ source "$sandbox/functions.sh"
+ detect_platform() {
+  PLATFORM=linux ARCH=amd64 BINARY_NAME=claude-notifications-linux-amd64
+  BINARY_PATH="$SCRIPT_DIR/$BINARY_NAME"
+ }
+ detect_platform
+ cat > "$BINARY_PATH" <<'PAYLOAD'
+#!/bin/sh
+# agent-notifications-managed-writer-protocol-v1
+[ "$1" != --version ] || { echo claude-notifications-1.0.0; exit 0; }
+[ "$1" = internal-install-runtime ] || exit 2
+printf '%s\n' "$*" > "$ADAPTER_SPY"
+echo 'managed-runtime committed generation=2'
+PAYLOAD
+ chmod +x "$BINARY_PATH"
+ verify_executable() { LC_ALL=C grep -aqF agent-notifications-managed-writer-protocol-v1 "$BINARY_PATH"; }
+ download_and_verify_binary() {
+  cat > "$BINARY_PATH" <<'PAYLOAD'
+#!/bin/sh
+# agent-notifications-managed-writer-protocol-v1
+[ "$1" != --version ] || { echo claude-notifications-1.1.0; exit 0; }
+[ "$1" = internal-install-runtime ] || exit 2
+printf '%s\n' "$*" > "$ADAPTER_SPY"
+echo 'managed-runtime committed generation=2'
+PAYLOAD
+  chmod +x "$BINARY_PATH"
+ }
+ download_terminal_notifier_modern() { :; }
+ CN_PRODUCT=codex
+ rm -f "$ADAPTER_SPY"
+ stage_and_promote_runtime
+ grep -q -- '--refresh' "$ADAPTER_SPY"
+)
+echo 'PASS: Codex live update refreshes through the kernel'
+(
+ export INSTALL_TARGET_DIR="$sandbox/codex-acquire"
+ mkdir -p "$INSTALL_TARGET_DIR"
+ source "$sandbox/functions.sh"
+ detect_platform() {
+  PLATFORM=linux ARCH=amd64 BINARY_NAME=claude-notifications-linux-amd64
+  BINARY_PATH="$SCRIPT_DIR/$BINARY_NAME"
+ }
+ detect_platform
+ rm -f "$BINARY_PATH"
+ verify_executable() { LC_ALL=C grep -aqF agent-notifications-managed-writer-protocol-v1 "$BINARY_PATH"; }
+ download_and_verify_binary() {
+  printf '#!/bin/sh\n# agent-notifications-managed-writer-protocol-v1\necho acquired\n' > "$BINARY_PATH"
+  chmod +x "$BINARY_PATH"
+ }
+ download_terminal_notifier_modern() { :; }
+ CN_PRODUCT=codex
+ INSTALL_DISPOSABLE_ACQUISITION=true
+ INSTALL_STAGED_ASSETS="$sandbox"
+ rm -f "$ADAPTER_SPY"
+ stage_and_promote_runtime
+ [ ! -e "$ADAPTER_SPY" ]
+ grep -q acquired "$BINARY_PATH"
+)
+echo 'PASS: disposable Codex acquisition copies without a live ledger commit'

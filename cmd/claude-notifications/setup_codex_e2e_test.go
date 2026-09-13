@@ -337,6 +337,11 @@ func TestSetupCodexE2EPartialInitializationExitStatus(t *testing.T) {
 
 func TestSetupCodexE2EInstalledLaunchersSurviveReplacement(t *testing.T) {
 	binary := buildCLIBinary(t)
+	if info, err := os.Stat(binary); err != nil {
+		t.Fatal(err)
+	} else if info.Size() > 32<<20 {
+		t.Skip("coverage-instrumented test executable exceeds the 32 MiB managed staging cap")
+	}
 	f := newSetupE2E(t)
 	platformName := "claude-notifications-" + runtime.GOOS + "-" + runtime.GOARCH
 	extension := ""
@@ -380,6 +385,11 @@ func TestSetupCodexE2EInstalledLaunchersSurviveReplacement(t *testing.T) {
 
 func TestSetupCodexE2EConfigureNotifications(t *testing.T) {
 	bin := buildCLIBinary(t)
+	if info, err := os.Stat(bin); err != nil {
+		t.Fatal(err)
+	} else if info.Size() > 32<<20 {
+		t.Skip("coverage-instrumented test executable exceeds the 32 MiB managed staging cap")
+	}
 	f := newSetupE2E(t)
 	body, err := os.ReadFile(bin)
 	if err != nil {

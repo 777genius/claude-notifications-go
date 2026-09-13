@@ -161,8 +161,8 @@ func parseSetupCodexOptions(args []string) (setupCodexOptions, error) {
 		opts.configure = false
 	}
 	if opts.configure {
-		if len(rest) == 0 {
-			rest = agentNotifyDefaultNoneArgs()
+		if !agentNotifyArgsHaveRoute(rest) {
+			rest = append(agentNotifyDefaultNoneArgs(), rest...)
 		}
 		opts.configureArgs = rest
 		_, _, err := parseNotificationConfigure(append([]string{"--provider", "codex"}, rest...))

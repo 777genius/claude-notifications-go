@@ -103,13 +103,8 @@ func readTransactionBlob(dir, name string) ([]byte, error) {
 	if name == "" {
 		return nil, nil
 	}
-	if len(name) != 64 {
+	if !ownedTransactionBlobName(name) {
 		return nil, fmt.Errorf("invalid transaction blob name")
-	}
-	for _, c := range name {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return nil, fmt.Errorf("invalid transaction blob name")
-		}
 	}
 	data, err := readRegularFile(filepath.Join(dir, name))
 	if err != nil {
@@ -120,6 +115,18 @@ func readTransactionBlob(dir, name string) ([]byte, error) {
 		return nil, fmt.Errorf("transaction blob checksum mismatch")
 	}
 	return data, nil
+}
+
+func ownedTransactionBlobName(name string) bool {
+	if len(name) != 64 {
+		return false
+	}
+	for _, c := range name {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func discardTransactionBlobs(marker string) error {
@@ -229,6 +236,9 @@ func reverseTransaction(current Ledger, tx transaction) (transaction, error) {
 			return transaction{}, err
 		}
 		if digest == tx.Native.After.SHA256 && tx.Native.After.SHA256 != "" && !tx.Native.Purge {
+			if err := checkNativeDirectoryID(tx.Native.After.Path, tx.Native.After.DirectoryID); err != nil {
+				return transaction{}, err
+			}
 			after.Native = tx.After.Native
 			after.DecoderFloor = tx.After.DecoderFloor
 		} else if digest != "" {
@@ -243,6 +253,11 @@ func reverseTransaction(current Ledger, tx transaction) (transaction, error) {
 			}
 			if beforeDigest != tx.Native.Before.SHA256 {
 				return transaction{}, fmt.Errorf("cannot rollback an ambiguous or purged native callback")
+			}
+			if tx.Native.Before.Path != "" {
+				if err := checkNativeDirectoryID(tx.Native.Before.Path, tx.Native.Before.DirectoryID); err != nil {
+					return transaction{}, err
+				}
 			}
 		}
 	}

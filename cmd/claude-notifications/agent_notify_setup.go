@@ -81,6 +81,17 @@ func agentNotifyDefaultNoneArgs() []string {
 	return []string{"--navigation", "none", "--allow-unknown-caller", "true", "--allow-caller-asserted", "false"}
 }
 
+func agentNotifyArgsHaveRoute(args []string) bool {
+	for _, arg := range args {
+		key, _, _ := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		switch key {
+		case "navigation", "app", "team-id", "allow-unknown-caller", "allow-caller-asserted":
+			return true
+		}
+	}
+	return false
+}
+
 func parseAgentNotifySetup(args []string) (a agentNotifySetupArgs, help bool, err error) {
 	bad := func() (agentNotifySetupArgs, bool, error) { return a, false, errors.New("invalid_arguments") }
 	if len(args) > 32 {

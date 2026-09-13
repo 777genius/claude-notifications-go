@@ -1999,6 +1999,19 @@ copy_verified_stage() {
     done
 }
 
+# Product identity is not a disposable destination. Only bootstrap's explicit
+# acquisition into an empty published slot may copy without a ledger commit.
+disposable_acquisition() {
+    local dest="$1" published="$2"
+    [ "${INSTALL_DISPOSABLE_ACQUISITION:-}" = true ] || return 1
+    [ -n "${INSTALL_STAGED_ASSETS:-}" ] && [ -d "$INSTALL_STAGED_ASSETS" ] && [ ! -L "$INSTALL_STAGED_ASSETS" ] || return 1
+    [ -d "$dest" ] && [ ! -L "$dest" ] || return 1
+    if [ -e "$published" ] || [ -L "$published" ]; then
+        return 1
+    fi
+    return 0
+}
+
 stage_and_promote_runtime() (
     local live_dir="$SCRIPT_DIR"
     local live_binary="$BINARY_PATH"
@@ -2043,10 +2056,14 @@ stage_and_promote_runtime() (
     live_published="$live_dir/$BINARY_NAME"
     guard_install_paths "$live_dir" "$live_published" || exit 1
 
-    if [ "${CN_PRODUCT:-claude}" = "codex" ]; then
+    if disposable_acquisition "$live_dir" "$live_published"; then
         # Acquisition into a disposable Codex bundle must not Commit a live
         # consumer. setup-codex registers the durable runtime afterwards.
         copy_verified_stage "$stage" "$live_dir" || exit 1
+    elif [ "${CN_PRODUCT:-claude}" = "codex" ] && [ "$PLATFORM" = "darwin" ]; then
+        "$BINARY_PATH" internal-install-runtime --refresh --stage "$stage" --target "$live_dir" --entry "$BINARY_NAME" --require-native || exit 1
+    elif [ "${CN_PRODUCT:-claude}" = "codex" ]; then
+        "$BINARY_PATH" internal-install-runtime --refresh --stage "$stage" --target "$live_dir" --entry "$BINARY_NAME" || exit 1
     elif [ "$PLATFORM" = "darwin" ]; then
         "$BINARY_PATH" internal-install-runtime --stage "$stage" --target "$live_dir" --entry "$BINARY_NAME" --require-native || exit 1
     else

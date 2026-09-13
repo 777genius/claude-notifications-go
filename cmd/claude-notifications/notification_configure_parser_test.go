@@ -22,6 +22,12 @@ func TestNotificationConfigureParserAndSetupOptIn(t *testing.T) {
 	if opts, err := parseSetupCodexOptions(nil); err != nil || !opts.configure || len(opts.configureArgs) != 6 {
 		t.Fatal("default agent-notify", opts, err)
 	}
+	if opts, err := parseSetupCodexOptions([]string{"--json"}); err != nil || !opts.configure || len(opts.configureArgs) != 7 || opts.configureArgs[6] != "--json" {
+		t.Fatal("json must keep default none consent", opts, err)
+	}
+	if opts, err := parseSetupCodexOptions([]string{"--request-permission"}); err != nil || !opts.configure || len(opts.configureArgs) != 7 || opts.configureArgs[6] != "--request-permission" {
+		t.Fatal("request-permission must keep default none consent", opts, err)
+	}
 	if _, err := parseSetupCodexOptions([]string{"--agent-notify", "--navigation", "none"}); err == nil {
 		t.Fatal("navigation none without consent")
 	}

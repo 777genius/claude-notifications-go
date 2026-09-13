@@ -125,14 +125,15 @@ func physicalParent(path string, create bool) (*os.Root, error) {
 	if err != nil {
 		return nil, err
 	}
-	root, err := os.OpenRoot(string(filepath.Separator))
+	rootPath, parts, err := physicalWalk(path)
 	if err != nil {
 		return nil, err
 	}
-	for _, part := range strings.Split(strings.TrimPrefix(filepath.Dir(path), string(filepath.Separator)), string(filepath.Separator)) {
-		if part == "" {
-			continue
-		}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return nil, err
+	}
+	for _, part := range parts {
 		info, e := root.Lstat(part)
 		if os.IsNotExist(e) && create {
 			e = root.Mkdir(part, 0700)
@@ -163,6 +164,38 @@ func physicalParent(path string, create bool) (*os.Root, error) {
 		root = next
 	}
 	return root, nil
+}
+
+func physicalWalk(path string) (string, []string, error) {
+	vol := filepath.VolumeName(path)
+	root := string(filepath.Separator)
+	if vol != "" {
+		root = vol
+		if !strings.HasSuffix(root, string(filepath.Separator)) {
+			root += string(filepath.Separator)
+		}
+	}
+	dir := filepath.Dir(path)
+	if filepath.Clean(dir) == filepath.Clean(root) {
+		return root, nil, nil
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return "", nil, err
+	}
+	if rel == "." {
+		return root, nil, nil
+	}
+	if !filepath.IsLocal(rel) {
+		return "", nil, fmt.Errorf("config path must be clean and absolute")
+	}
+	var parts []string
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return root, parts, nil
 }
 
 func readPrepared(root *os.Root, name string) ([]byte, os.FileInfo, error) {

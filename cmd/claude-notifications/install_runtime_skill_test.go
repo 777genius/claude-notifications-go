@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -20,7 +21,11 @@ type embeddedFixture struct{ stage, bin, control, skill, entry string }
 func embeddedFresh(t *testing.T) embeddedFixture {
 	t.Helper()
 	root := t.TempDir()
-	f := embeddedFixture{stage: filepath.Join(root, "stage"), bin: filepath.Join(root, "runtime", "bin"), control: filepath.Join(root, "control"), entry: "claude-notifications-linux-amd64"}
+	entry := "claude-notifications-linux-amd64"
+	if runtime.GOOS == "windows" {
+		entry = "claude-notifications-windows-" + runtime.GOARCH + ".exe"
+	}
+	f := embeddedFixture{stage: filepath.Join(root, "stage"), bin: filepath.Join(root, "runtime", "bin"), control: filepath.Join(root, "control"), entry: entry}
 	f.skill = filepath.Join(filepath.Dir(f.bin), "skills", "agent-notify", "SKILL.md")
 	embeddedPut(t, filepath.Join(f.stage, f.entry), []byte("inert "+installruntime.WriterProtocolMarker), 0755)
 	return f
@@ -224,7 +229,7 @@ func TestEmbeddedSkillNoEntryAndStageAllowlist(t *testing.T) {
 }
 
 func TestEmbeddedSkillAdmissionBoundaries(t *testing.T) {
-	for _, args := range [][]string{{"--entry", "invalid"}, {"--entry", "claude-notifications-windows-amd64.exe"}, {"--entry", "claude-notifications-linux-amd64", "--require-native"}, {"--entry", "claude-notifications-linux-amd64", "--refresh"}} {
+	for _, args := range [][]string{{"--entry", "invalid"}, {"--entry", "claude-notifications-darwin-arm64"}, {"--entry", "claude-notifications-linux-amd64", "--require-native"}, {"--entry", "claude-notifications-linux-amd64", "--refresh"}} {
 		t.Run(args[len(args)-1], func(t *testing.T) {
 			f := embeddedFresh(t)
 			if e := f.run(args...); e == nil {

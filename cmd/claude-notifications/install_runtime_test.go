@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/777genius/agent-notifications/internal/codexsetup"
@@ -17,12 +18,16 @@ func TestShellAndSetupShareOwnership(t *testing.T) {
 	control := filepath.Join(root, "control")
 	bundle := filepath.Join(root, "bundle")
 	stage := filepath.Join(root, "stage")
+	entry := "claude-notifications-linux-amd64"
+	if runtime.GOOS == "windows" {
+		entry = "claude-notifications-windows-" + runtime.GOARCH + ".exe"
+	}
 	for _, path := range []string{stage, filepath.Join(bundle, "bin")} {
 		if err := os.MkdirAll(path, 0755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(stage, "claude-notifications-linux-amd64"), []byte("inert sender "+installruntime.WriterProtocolMarker), 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(stage, entry), []byte("inert sender "+installruntime.WriterProtocolMarker), 0755); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"codex-hook-wrapper.sh", "codex-hook-wrapper.cmd"} {
@@ -40,7 +45,7 @@ func TestShellAndSetupShareOwnership(t *testing.T) {
 	// A Codex lazy update refreshes the same registration; it must not invent
 	// a standalone Claude consumer for the copied runtime.
 	installedBin := filepath.Join(opts.CodexHome, codexsetup.InstallDirName, "bin")
-	if err := installRuntime([]string{"--refresh", "--stage", installedBin, "--target", installedBin, "--entry", "claude-notifications-linux-amd64", "--control-root", control}, io.Discard); err != nil {
+	if err := installRuntime([]string{"--refresh", "--stage", installedBin, "--target", installedBin, "--entry", entry, "--control-root", control}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(control, "ownership.json"))
@@ -62,13 +67,13 @@ func TestShellAndSetupShareOwnership(t *testing.T) {
 	if _, err := codexsetup.Run(opts); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(bundle, "bin", "claude-notifications-linux-amd64")); err != nil {
+	if _, err := os.Stat(filepath.Join(bundle, "bin", entry)); err != nil {
 		t.Fatal("consumer removal deleted shared runtime")
 	}
 	if err := installRuntime([]string{"--remove", "--target", filepath.Join(bundle, "bin"), "--control-root", control}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(bundle, "bin", "claude-notifications-linux-amd64")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(bundle, "bin", entry)); !os.IsNotExist(err) {
 		t.Fatal("final consumer retained owned binary")
 	}
 }
@@ -146,6 +151,9 @@ func TestWindowsManagedHooksPreserveForeignOnRemove(t *testing.T) {
 func TestManagedAliasAndMalformedConfigBoundaries(t *testing.T) {
 	for _, windows := range []bool{false, true} {
 		t.Run(fmt.Sprint(windows), func(t *testing.T) {
+			if !windows && runtime.GOOS == "windows" {
+				t.Skip("unix symlink aliases")
+			}
 			root := t.TempDir()
 			stage, bin := filepath.Join(root, "stage"), filepath.Join(root, "plugin", "bin")
 			if err := os.MkdirAll(stage, 0700); err != nil {

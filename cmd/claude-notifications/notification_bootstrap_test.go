@@ -37,11 +37,12 @@ func TestNotificationBootstrapOffline(t *testing.T) {
 		wantConfigure bool
 	}{
 		{"ordinary", "--product both", false, true},
-		{"both", "--product both --agent-notify --navigation none", false, true},
+		{"both", "--product both --agent-notify --navigation none --allow-unknown-caller true --allow-caller-asserted false", false, true},
 		{"codex_home", "", false, true},
 		{"skip", "--product both --skip-agent-notify", false, false},
 		{"configure_failed", "--product both", false, true},
-		{"last_failed", "--product both --agent-notify --navigation none", true, false},
+		{"last_failed", "--product both --agent-notify --navigation none --allow-unknown-caller true --allow-caller-asserted false", true, false},
+		{"bad_none", "--product both --agent-notify --navigation none", false, false},
 		{"bad_app", "--product both --agent-notify --app /Applications/../Codex.app --team-id TEAM123456 --allow-unknown-caller true --allow-caller-asserted false", false, false},
 		{"bad_route", "--product both --agent-notify --navigation invalid", false, false},
 		{"bad_alias", "--product both --configure-notifications", false, false},
@@ -98,9 +99,6 @@ install_codex() { echo codex >> "$HOME/installs"; CONFIGURE_BINARY="$HOME/fake-b
 					}
 				} else {
 					want := "setup-notifications configure --provider both --navigation none --allow-unknown-caller true --allow-caller-asserted false"
-					if strings.Contains(args, "--navigation") {
-						want = "setup-notifications configure --provider both --navigation none"
-					}
 					if strings.Count(string(calls), want) != 1 {
 						t.Fatal(string(calls))
 					}
@@ -150,8 +148,9 @@ func TestNotificationInitOfflineBranch(t *testing.T) {
 	}{
 		{name: "default", install: true},
 		{name: "skip", args: []string{"--skip-agent-notify"}, install: true},
-		{name: "configure", args: []string{"--agent-notify", "--navigation", "none"}, install: true},
+		{name: "configure", args: []string{"--agent-notify", "--navigation", "none", "--allow-unknown-caller", "true", "--allow-caller-asserted", "false"}, install: true},
 		{name: "failed", failHelper: true, install: true},
+		{name: "incomplete_none", args: []string{"--agent-notify", "--navigation", "none"}, fail: true},
 		{name: "bad_alias", args: []string{"--configure-notifications"}, fail: true},
 		{name: "bad_route", args: []string{"--navigation", "invalid"}, fail: true},
 		{name: "bad_conflict", args: []string{"--agent-notify", "--skip-agent-notify"}, fail: true},
@@ -201,12 +200,6 @@ func TestNotificationInitOfflineBranch(t *testing.T) {
 				return
 			}
 			want := "setup-notifications configure --provider claude --navigation none --allow-unknown-caller true --allow-caller-asserted false"
-			for _, arg := range test.args {
-				if arg == "--navigation" {
-					want = "setup-notifications configure --provider claude --navigation none"
-					break
-				}
-			}
 			if strings.TrimSpace(string(calls)) != want {
 				t.Fatal(string(calls))
 			}
@@ -258,29 +251,58 @@ func TestNotificationBootstrapRealInstaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	installerPrefix := strings.TrimSuffix(strings.TrimSpace(string(installer)), `main "$@"`)
-	write(filepath.Join(bundle, "bin", "install.sh"), installerPrefix+`
+	stagedInstaller := installerPrefix + `
 abort_if_wsl_environment() { :; }
 check_required_tools() { :; }
 check_write_permissions() { :; }
 acquire_lock() { :; }
 pin_release_urls() { :; }
-download_and_verify_binary() { cp "$NOTIFICATION_TEST_ASSET" "$BINARY_PATH"; }
+download_and_verify_binary() { cp "$NOTIFICATION_TEST_ASSET" "$BINARY_PATH"; chmod +x "$BINARY_PATH"; }
+download_utilities() { :; }
+configure_windows_native_hooks() { :; }
+create_claude_notifications_app() { :; }
+setup_iterm2_venv() { :; }
+install_linux_notification_desktop_entry() { :; }
+install_gnome_activate_window_extension() { :; }
 main "$@"
-`)
+`
+	write(filepath.Join(bundle, "bin", "install.sh"), stagedInstaller)
+	configStage := filepath.Join(home, "config-stage")
+	if err := os.Mkdir(configStage, 0700); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join(configStage, "install.sh"), stagedInstaller)
+	archiveRoot := filepath.Join(home, "archive", "agent-notifications-1.42.0")
+	if err := os.MkdirAll(archiveRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("cp", "-R", bundle+"/.", archiveRoot)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("copy archive: %v: %s", err, output)
+	}
+	tarball := filepath.Join(home, "source.tar.gz")
+	cmd = exec.Command("tar", "-czf", tarball, "-C", filepath.Join(home, "archive"), "agent-notifications-1.42.0")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("tar: %v: %s", err, output)
+	}
+	t.Setenv("NOTIFICATION_TEST_SOURCE_TAR", tarball)
+	t.Setenv("NOTIFICATION_TEST_CONFIG_STAGE", configStage)
 	bootstrap, err := os.ReadFile(filepath.Join(notificationRepoRoot(t), "bin", "bootstrap.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	prefix := strings.TrimSuffix(strings.TrimSpace(string(bootstrap)), `main "$@"`)
-	t.Setenv("NOTIFICATION_TEST_BUNDLE", bundle)
-	cmd := exec.Command("bash", "-c", prefix+`
-PLUGIN_ROOT="$NOTIFICATION_TEST_BUNDLE"
+	cmd = exec.Command("bash", "-c", prefix+`
+_CONFIG_STAGE="$NOTIFICATION_TEST_CONFIG_STAGE"
 BOOTSTRAP_TAG=v1.42.0
 PRODUCT=codex
 CONFIGURE_NOTIFICATIONS=true
+fetch_bootstrap_file() { cp "$NOTIFICATION_TEST_SOURCE_TAR" "$2"; }
+config_preflight() { :; }
+install_cleanup_traps
 install_codex || exit 1
 case "$CONFIGURE_BINARY" in "$CODEX_HOME/claude-notifications-go/bin/claude-notifications") ;; *) exit 2 ;; esac
-rm -rf "$_BOOTSTRAP_STAGE"
+[ -z "$_BOOTSTRAP_STAGE" ] || exit 3
 "$CONFIGURE_BINARY" --version
 `)
 	cmd.Dir = home

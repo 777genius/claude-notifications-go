@@ -308,11 +308,17 @@ func removePhysicalDirectory(path string) error {
 		if name == "." || name == ".." {
 			continue
 		}
+		if !ownedTransactionBlobName(name) {
+			continue
+		}
+		if _, err := readTransactionBlob(path, name); err != nil {
+			return err
+		}
 		if err := unix.Unlinkat(int(f.Fd()), name, 0); err != nil && err != unix.ENOENT {
 			return err
 		}
 	}
-	if err := unix.Unlinkat(int(parent.Fd()), filepath.Base(path), unix.AT_REMOVEDIR); err != nil && err != unix.ENOENT {
+	if err := unix.Unlinkat(int(parent.Fd()), filepath.Base(path), unix.AT_REMOVEDIR); err != nil && err != unix.ENOENT && err != unix.ENOTEMPTY {
 		return err
 	}
 	return nil

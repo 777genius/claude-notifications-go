@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,9 @@ import (
 
 func TestAgentNotifyApplicationVerifierBoundary(t *testing.T) {
 	app := notifysetup.Application{Path: "/test path/Codex.app", TeamID: "0123456789"}
+	if runtime.GOOS == "windows" {
+		app.Path = `C:\test path\Codex.app`
+	}
 	calls := 0
 	run := func(ctx context.Context, args []string) error {
 		calls++

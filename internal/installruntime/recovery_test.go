@@ -2,6 +2,9 @@ package installruntime
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,4 +128,164 @@ func TestReverseUnpublishedNativeKeepsPredecessor(t *testing.T) {
 	if reverse.After.Native == nil || reverse.After.Native.Path != before || reverse.After.Native.SHA256 != hashA {
 		t.Fatalf("predecessor lost: %+v", reverse.After.Native)
 	}
+}
+
+func TestDiscardTransactionBlobsPreservesUnrecognizedFiles(t *testing.T) {
+	control := t.TempDir()
+	marker := filepath.Join(control, "transaction.json")
+	dir := transactionBlobDir(marker)
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	notes := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(notes, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	payload := bytes.Repeat([]byte("a"), maxInlineTransactionBytes+1)
+	sum := sha256.Sum256(payload)
+	name := hex.EncodeToString(sum[:])
+	if err := os.WriteFile(filepath.Join(dir, name), payload, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := discardTransactionBlobs(marker); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(notes); err != nil || string(data) != "keep" {
+		t.Fatalf("deleted unowned notes: %s %v", data, err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+		t.Fatal("owned blob retained")
+	}
+}
+
+func TestDiscardTransactionBlobsRefusesChangedBlob(t *testing.T) {
+	control := t.TempDir()
+	marker := filepath.Join(control, "transaction.json")
+	dir := transactionBlobDir(marker)
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	name := strings.Repeat("a", 64)
+	changed := filepath.Join(dir, name)
+	if err := os.WriteFile(changed, []byte("not-the-digest"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := discardTransactionBlobs(marker); err == nil {
+		t.Fatal("changed blob deleted")
+	}
+	if data, err := os.ReadFile(changed); err != nil || string(data) != "not-the-digest" {
+		t.Fatalf("changed blob mutated: %s %v", data, err)
+	}
+}
+
+func TestReversePublishedReplacedNativeIdentityRefused(t *testing.T) {
+	skipUnsupportedNative(t)
+	before := nativeBundle(t)
+	hashA, err := treeFingerprint(before)
+	if err != nil || hashA == "" {
+		t.Fatal(err)
+	}
+	idA, err := nativeDirectoryID(before)
+	if err != nil || idA == "" {
+		t.Fatal(err)
+	}
+	after := nativeBundle(t)
+	hashB, err := treeFingerprint(after)
+	if err != nil || hashB == "" {
+		t.Fatal(err)
+	}
+	idB, err := nativeDirectoryID(after)
+	if err != nil || idB == "" {
+		t.Fatal(err)
+	}
+	replaceNativeTree(t, after)
+	tx := recoveryTransaction()
+	tx.Native = &NativeChange{
+		Before: NativeRecord{Path: before, SHA256: hashA, DirectoryID: idA},
+		After:  NativeRecord{Path: after, SHA256: hashB, DirectoryID: idB},
+	}
+	tx.Before.Native = &NativeRecord{Path: before, SHA256: hashA, DirectoryID: idA}
+	tx.After.Native = &NativeRecord{Path: after, SHA256: hashB, DirectoryID: idB}
+	if _, err := reverseTransaction(tx.After, tx); err == nil {
+		t.Fatal("replaced published native identity rolled back")
+	}
+}
+
+func TestReverseUnpublishedReplacedPredecessorRefused(t *testing.T) {
+	skipUnsupportedNative(t)
+	before := nativeBundle(t)
+	hashA, err := treeFingerprint(before)
+	if err != nil || hashA == "" {
+		t.Fatal(err)
+	}
+	idA, err := nativeDirectoryID(before)
+	if err != nil || idA == "" {
+		t.Fatal(err)
+	}
+	replaceNativeTree(t, before)
+	afterPath := filepath.Join(t.TempDir(), "ClaudeNotifier.app")
+	tx := recoveryTransaction()
+	tx.Native = &NativeChange{
+		Before: NativeRecord{Path: before, SHA256: hashA, DirectoryID: idA},
+		After:  NativeRecord{Path: afterPath, SHA256: strings.Repeat("a", 64)},
+	}
+	tx.Before.Native = &NativeRecord{Path: before, SHA256: hashA, DirectoryID: idA}
+	tx.After.Native = &NativeRecord{Path: afterPath, SHA256: strings.Repeat("a", 64)}
+	if _, err := reverseTransaction(tx.After, tx); err == nil {
+		t.Fatal("replaced predecessor identity rolled back")
+	}
+}
+
+func replaceNativeTree(t *testing.T, path string) {
+	t.Helper()
+	replica := filepath.Join(t.TempDir(), filepath.Base(path))
+	if err := copyTree(path, replica); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replica, path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		in, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0755)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(out, in)
+		closeErr := out.Close()
+		if err != nil {
+			return err
+		}
+		return closeErr
+	})
 }

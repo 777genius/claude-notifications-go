@@ -70,17 +70,40 @@ if [ "$SKIP_AGENT_NOTIFY" = true ] && [ "${#CONFIGURE_ARGS[@]}" -ne 0 ]; then
   exit 1
 fi
 if [ "$SKIP_AGENT_NOTIFY" != true ]; then
-  has_route=false
-  if [ "${#CONFIGURE_ARGS[@]}" -gt 0 ]; then
-    for arg in "${CONFIGURE_ARGS[@]}"; do
-      case "$arg" in
-        --navigation|--app|--team-id|--allow-unknown-caller|--allow-caller-asserted)
-          has_route=true ;;
-      esac
-    done
-  fi
-  if [ "$has_route" != true ]; then
+  nav="" app="" team="" unknown="" asserted=""
+  i=0
+  while [ "$i" -lt "${#CONFIGURE_ARGS[@]}" ]; do
+    case "${CONFIGURE_ARGS[$i]}" in
+      --navigation|--app|--team-id|--allow-unknown-caller|--allow-caller-asserted)
+        i=$((i + 1))
+        [ "$i" -lt "${#CONFIGURE_ARGS[@]}" ] || { echo "Missing value for ${CONFIGURE_ARGS[$((i - 1))]}" >&2; exit 1; }
+        case "${CONFIGURE_ARGS[$((i - 1))]}" in
+          --navigation) nav="${CONFIGURE_ARGS[$i]}" ;;
+          --app) app="${CONFIGURE_ARGS[$i]}" ;;
+          --team-id) team="${CONFIGURE_ARGS[$i]}" ;;
+          --allow-unknown-caller) unknown="${CONFIGURE_ARGS[$i]}" ;;
+          --allow-caller-asserted) asserted="${CONFIGURE_ARGS[$i]}" ;;
+        esac ;;
+      --json|--request-permission) ;;
+      *) echo "unknown option: ${CONFIGURE_ARGS[$i]}" >&2; exit 1 ;;
+    esac
+    i=$((i + 1))
+  done
+  if [ -z "$nav" ] && [ -z "$app" ] && [ -z "$team" ] && [ -z "$unknown" ] && [ -z "$asserted" ]; then
     CONFIGURE_ARGS+=(--navigation none --allow-unknown-caller true --allow-caller-asserted false)
+  elif [ "$nav" = none ]; then
+    if [ -n "$app" ] || [ -n "$team" ]; then
+      echo "navigation none cannot combine with --app/--team-id." >&2; exit 1
+    fi
+    case "$unknown" in true|false) ;; *) echo "navigation none requires --allow-unknown-caller and --allow-caller-asserted." >&2; exit 1 ;; esac
+    case "$asserted" in true|false) ;; *) echo "navigation none requires --allow-unknown-caller and --allow-caller-asserted." >&2; exit 1 ;; esac
+  elif [ -n "$nav" ]; then
+    echo "Invalid navigation: $nav" >&2; exit 1
+  elif [ -z "$app" ] || [ -z "$team" ] || [ -z "$unknown" ] || [ -z "$asserted" ]; then
+    echo "Incomplete route; supply --app, --team-id, and both consent flags." >&2; exit 1
+  else
+    case "$unknown" in true|false) ;; *) echo "Invalid allow-unknown-caller: $unknown" >&2; exit 1 ;; esac
+    case "$asserted" in true|false) ;; *) echo "Invalid allow-caller-asserted: $asserted" >&2; exit 1 ;; esac
   fi
 fi
 INSTALLER="${CLAUDE_PLUGIN_ROOT}/bin/install.sh"
