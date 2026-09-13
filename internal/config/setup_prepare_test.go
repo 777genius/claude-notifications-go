@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,24 @@ func putPrep(t *testing.T, p, s string) {
 	}
 	if e := os.WriteFile(p, []byte(s), 0640); e != nil {
 		t.Fatal(e)
+	}
+}
+
+// Windows Go reports writable regular files as 0666 (installruntime identityMode).
+func assertPreparedPerm(t *testing.T, info os.FileInfo, want os.FileMode) {
+	t.Helper()
+	if info == nil || !info.Mode().IsRegular() {
+		t.Fatal(info)
+	}
+	got := info.Mode().Perm()
+	if runtime.GOOS == "windows" {
+		if got != 0666 {
+			t.Fatal(info.Mode())
+		}
+		return
+	}
+	if got != want {
+		t.Fatal(info.Mode())
 	}
 }
 func TestPreparePrecedence(t *testing.T) {
@@ -56,9 +75,7 @@ func TestPreparePrecedence(t *testing.T) {
 			}
 			if source != "canonical" {
 				i, _ := os.Stat(c)
-				if i.Mode().Perm() != 0600 {
-					t.Fatal(i.Mode())
-				}
+				assertPreparedPerm(t, i, 0600)
 			}
 		})
 	}
@@ -76,9 +93,7 @@ func TestPreparePartial(t *testing.T) {
 		t.Fatal(string(b), e)
 	}
 	i, _ := os.Stat(c)
-	if i.Mode().Perm() != 0640 {
-		t.Fatal(i.Mode())
-	}
+	assertPreparedPerm(t, i, 0640)
 }
 func TestPrepareInvalidUnchanged(t *testing.T) {
 	for _, bad := range []string{`broken`, `null`, `{"notifications":null}`, `{"notifications":{"desktop":null}}`, `{"notifications":{"desktop":{"sound":null}}}`, `{"a":1,"a":2}`, `{"notifications":{"desktop":{"enabled":1}}}`, `{"x":"` + strings.Repeat("x", 65536) + `"}`, `{"x":` + strings.Repeat("[", 17) + `0` + strings.Repeat("]", 17) + `}`, `{"x":[` + strings.Repeat("0,", 1024) + `0]}`} {

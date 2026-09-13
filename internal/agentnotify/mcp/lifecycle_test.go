@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/777genius/agent-notifications/internal/agentnotify"
@@ -145,34 +146,39 @@ func TestSDKSaturationCancellationFloodAndDrain(t *testing.T) {
 	}
 }
 func TestSDKOriginalDeadlineExpiredBeforeHandler(t *testing.T) {
-	var now atomic.Int64
-	now.Store(100)
-	var calls atomic.Int32
-	// Frame capture obtains 100, then injected continuous clock advances before
-	// middleware starts. A handler-created fresh budget would wrongly call backend.
-	clock := agentnotify.ClockFunc(func() notification.Deadline {
-		return notification.Deadline{BootID: "test", NotAfter: float64(now.Swap(200))}
+	synctest.Test(t, func(t *testing.T) {
+		var now atomic.Int64
+		now.Store(100)
+		var calls atomic.Int32
+		// Frame capture obtains 100, then injected continuous clock advances before
+		// middleware starts. A handler-created fresh budget would wrongly call backend.
+		clock := agentnotify.ClockFunc(func() notification.Deadline {
+			return notification.Deadline{BootID: "test", NotAfter: float64(now.Swap(200))}
+		})
+		f := rawFixture(t, backendFunc(func(context.Context, agentnotify.Payload, origin.Context, notification.Deadline) agentnotify.Receipt {
+			calls.Add(1)
+			return agentnotify.Receipt{Status: "submitted"}
+		}), clock, nil)
+		// Wait until initialize/initialized (and the deadline watcher) are blocked
+		// so this reset is sampled by tools/call, not by the handshake frame.
+		synctest.Wait()
+		now.Store(100)
+		f.send(t, callFrame(1))
+		r := f.receive(t)
+		var result struct {
+			IsError bool `json:"isError"`
+		}
+		json.Unmarshal(r["result"], &result)
+		if !result.IsError || calls.Load() != 0 {
+			t.Fatal("original deadline was reset")
+		}
+		f.cancel()
+		select {
+		case <-f.done:
+		case <-time.After(3 * time.Second):
+			t.Fatal("shutdown failed")
+		}
 	})
-	f := rawFixture(t, backendFunc(func(context.Context, agentnotify.Payload, origin.Context, notification.Deadline) agentnotify.Receipt {
-		calls.Add(1)
-		return agentnotify.Receipt{Status: "submitted"}
-	}), clock, nil)
-	now.Store(100)
-	f.send(t, callFrame(1))
-	r := f.receive(t)
-	var result struct {
-		IsError bool `json:"isError"`
-	}
-	json.Unmarshal(r["result"], &result)
-	if !result.IsError || calls.Load() != 0 {
-		t.Fatal("original deadline was reset")
-	}
-	f.cancel()
-	select {
-	case <-f.done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("shutdown failed")
-	}
 }
 func TestSDKIdlePartialAndOutputClose(t *testing.T) {
 	for _, mode := range []string{"idle", "partial", "write"} {

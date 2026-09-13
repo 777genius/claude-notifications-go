@@ -2,10 +2,14 @@ package installruntime
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestSetupPolicyAtomicFields(t *testing.T) {
@@ -177,11 +181,18 @@ func TestSetupSnapshotPreimageIsBoundToParsedBytes(t *testing.T) {
 				value = versions[`"b"`]
 			}
 			temp := path + ".manual"
-			if err := os.WriteFile(temp, []byte(value), 0600); err != nil {
-				done <- err
-				return
+			var err error
+			for attempt := 0; attempt < 25; attempt++ {
+				err = os.WriteFile(temp, []byte(value), 0600)
+				if err == nil {
+					err = os.Rename(temp, path)
+				}
+				if err == nil || !windowsSharingRefusal(err) {
+					break
+				}
+				time.Sleep(2 * time.Millisecond)
 			}
-			if err := os.Rename(temp, path); err != nil {
+			if err != nil {
 				done <- err
 				return
 			}
@@ -211,4 +222,16 @@ func TestSetupSnapshotPreimageIsBoundToParsedBytes(t *testing.T) {
 	if s.Preimage != identity([]byte(versions[string(s.Fields["foreign"])]), 0600) {
 		t.Fatal("final preimage mismatch")
 	}
+}
+
+func windowsSharingRefusal(err error) bool {
+	if err == nil || runtime.GOOS != "windows" {
+		return false
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) && (errno == 32 || errno == 5) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Access is denied") || strings.Contains(msg, "used by another process")
 }

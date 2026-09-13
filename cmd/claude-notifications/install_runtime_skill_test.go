@@ -109,8 +109,11 @@ func TestEmbeddedSkillLifecycleProjection(t *testing.T) {
 		if e := f.run("--remove"); e != nil {
 			t.Fatal(e)
 		}
-		if !bytes.Equal(embeddedRead(t, f.skill), skills.AgentNotify()) {
-			t.Fatal("independent removal deleted shared skill")
+		// This branch runs before clientsetup adds a second consumer, so
+		// removing the only consumer must delete the owned canonical skill.
+		embeddedAbsent(t, f.skill)
+		if len(f.snapshot(t).Ledger.Consumers) != 0 {
+			t.Fatal("last consumer not released")
 		}
 		return
 	}

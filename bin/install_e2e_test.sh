@@ -994,6 +994,40 @@ if [ "$1" = "windows-hooks" ]; then
     printf '{\n  "hooks": {\n    "Stop": [\n      {\n        "hooks": [\n          {\n            "type": "command",\n            "command": "%s",\n            "args": ["handle-hook", "Stop"],\n            "timeout": 30\n          }\n        ]\n      }\n    ]\n  }\n}\n' "$exe"
     exit 0
 fi
+if [ "$1" = "internal-install-runtime" ]; then
+    shift
+    target=""
+    entry=""
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "--stage" ]; then
+            shift
+        elif [ "$1" = "--target" ]; then
+            shift
+            target="$1"
+        elif [ "$1" = "--entry" ]; then
+            shift
+            entry="$1"
+        fi
+        shift
+    done
+    if [ -z "$target" ] || [ -z "$entry" ]; then
+        exit 1
+    fi
+    for launcher in claude-notifications agent-notifications; do
+        cat > "$target/${launcher}.bat" <<EOF
+@echo off
+REM ${launcher} Windows wrapper
+REM Automatically runs the platform-specific binary
+
+setlocal
+set SCRIPT_DIR=%~dp0
+set AGENT_NOTIFICATIONS_LAUNCHER=${launcher}
+"%SCRIPT_DIR%${entry}" %*
+EOF
+        [ -f "$target/${launcher}.bat" ] || exit 1
+    done
+    exit 0
+fi
 exit 0
 FAKE_EXE_EOF
     chmod +x "$bin_dir/claude-notifications-windows-amd64.exe"
