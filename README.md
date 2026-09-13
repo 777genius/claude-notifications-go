@@ -3,8 +3,8 @@
 [![Ubuntu CI](https://github.com/777genius/agent-notifications/workflows/Ubuntu%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
 [![macOS CI](https://github.com/777genius/agent-notifications/workflows/macOS%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
 [![Windows CI](https://github.com/777genius/agent-notifications/workflows/Windows%20CI/badge.svg)](https://github.com/777genius/agent-notifications/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/777genius/agent-notifications)](https://goreportcard.com/report/github.com/777genius/agent-notifications)
-[![codecov](https://codecov.io/gh/777genius/agent-notifications/branch/main/graph/badge.svg)](https://codecov.io/gh/777genius/agent-notifications)
+[![Go Reference](https://pkg.go.dev/badge/github.com/777genius/agent-notifications.svg)](https://pkg.go.dev/github.com/777genius/agent-notifications)
+[![codecov](https://codecov.io/gh/777genius/agent-notifications/graph/badge.svg?branch=main)](https://codecov.io/gh/777genius/agent-notifications)
 
 <div>
 <table>
