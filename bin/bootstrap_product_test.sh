@@ -19,6 +19,14 @@ done
 for args in '--product invalid' '--product' '--unknown' '--product claude --product codex'; do
     if ( PRODUCT=""; select_product $args ); then echo "accepted $args"; exit 1; fi
 done
+if ( PRODUCT=""; CONFIGURE_ARGS=(); select_product --product codex --navigation none ); then echo "accepted incomplete none"; exit 1; fi
+if ( PRODUCT=""; CONFIGURE_ARGS=(); select_product --product codex --allow-unknown-caller true ); then echo "accepted partial consent"; exit 1; fi
+PRODUCT=""; CONFIGURE_ARGS=(); CONFIGURE_NOTIFICATIONS=true
+select_product --product codex --navigation none --allow-unknown-caller true --allow-caller-asserted false
+[ "${#CONFIGURE_ARGS[@]}" -eq 6 ]
+PRODUCT=""; CONFIGURE_ARGS=(); CONFIGURE_NOTIFICATIONS=true
+select_product --product claude
+[ "${CONFIGURE_ARGS[*]}" = "--navigation none --allow-unknown-caller true --allow-caller-asserted false" ]
 for tag in v1.42.0 v1.43.2 v2.0.0; do
     BOOTSTRAP_RELEASE_TAG="$tag" resolve_bootstrap_release
     [ "$BOOTSTRAP_TAG" = "$tag" ]
@@ -137,9 +145,19 @@ if args==['--version']:
 if args[0]=='setup-codex':
     if os.environ.get('FAIL_REGISTER')=='1': sys.exit(1)
     if '--dry-run' not in args:
-        p=pathlib.Path(os.environ['CODEX_HOME']); p.mkdir(exist_ok=True)
+        p=pathlib.Path(os.environ['CODEX_HOME'])
+        if '--codex-home' in args:
+            p=pathlib.Path(args[args.index('--codex-home')+1])
+        p.mkdir(parents=True, exist_ok=True)
         (p/'fixture-registration').write_text('registered')
+        dest=p/'claude-notifications-go'/'bin'
+        dest.mkdir(parents=True, exist_ok=True)
+        target=dest/'claude-notifications'
+        target.write_bytes(pathlib.Path(sys.argv[0]).read_bytes())
+        target.chmod(0o755)
         if os.environ.get('FAIL_SETUP_INIT')=='1': sys.exit(3)
+    sys.exit()
+if args[0]=='setup-notifications':
     sys.exit()
 assert args[0]=='config'
 legacy=pathlib.Path(os.environ['HOME'])/'.claude/claude-notifications-go/config.json'
