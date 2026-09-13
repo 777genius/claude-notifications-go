@@ -1279,7 +1279,7 @@ windows_native_hooks_update_required() {
 # Create symlink for hooks
 create_symlink() {
     create_named_launcher claude-notifications || return 1
-    create_named_launcher agent-notifications
+    create_named_launcher agent-notifications || return 1
 }
 
 create_named_launcher() {
@@ -1293,9 +1293,10 @@ create_named_launcher() {
         if [ -e "$final_bat_path" ]; then
             return 0
         fi
-        if restore_named_launcher "$final_bat_path"; then
-            return 0
-        fi
+        local repair_status=0
+        repair_named_launcher "$final_bat_path" || repair_status=$?
+        [ "$repair_status" -eq 0 ] && return 0
+        [ "$repair_status" -eq 1 ] && return 1
         # Remove old .bat file if exists
         rm -f "$bat_path" 2>/dev/null || true
 
@@ -1327,9 +1328,10 @@ EOF
     if [ -e "$final_symlink_path" ]; then
         return 0
     fi
-    if restore_named_launcher "$final_symlink_path"; then
-        return 0
-    fi
+    local repair_status=0
+    repair_named_launcher "$final_symlink_path" || repair_status=$?
+    [ "$repair_status" -eq 0 ] && return 0
+    [ "$repair_status" -eq 1 ] && return 1
     # Remove old symlink if exists
     rm -f "$symlink_path" 2>/dev/null || true
 
@@ -1351,13 +1353,21 @@ EOF
     fi
 }
 
-# Republish a missing owned launcher through the kernel. Disposable first
-# copies have no consumer yet, so refresh fails and the caller falls through
-# to a local symlink/copy/BAT.
-restore_named_launcher() {
+# Republish a missing owned launcher through the kernel. Local symlink/copy/BAT
+# is allowed only for an explicit disposable acquisition; a managed refusal
+# must not create an untracked launcher beside the ledger.
+repair_named_launcher() {
     local dest="$1"
-    refresh_existing_runtime >/dev/null 2>&1 || return 1
-    [ -e "$dest" ]
+    [ -f "$BINARY_PATH" ] || return 2
+    LC_ALL=C grep -aqF 'agent-notifications-managed-writer-protocol-v1' "$BINARY_PATH" || return 2
+    if refresh_existing_runtime && [ -e "$dest" ]; then
+        return 0
+    fi
+    if [ "${INSTALL_DISPOSABLE_ACQUISITION:-}" = true ]; then
+        return 2
+    fi
+    echo -e "${RED}✗ Managed runtime refused launcher repair; existing ledger preserved${NC}" >&2
+    return 1
 }
 
 configure_windows_native_hooks() {
@@ -2142,7 +2152,7 @@ main() {
     # Check if already installed
     if check_existing; then
         # Even if binary exists, ensure symlink is created
-        create_symlink
+        create_symlink || return 1
         configure_windows_native_hooks
 
         # Download utility binaries (sound-preview, list-devices)
@@ -2195,7 +2205,7 @@ main() {
         fi
 
         # Ensure symlink exists
-        create_symlink
+        create_symlink || return 1
         configure_windows_native_hooks
 
         echo ""
@@ -2218,7 +2228,7 @@ main() {
         exit 1
     fi
 
-    create_symlink
+    create_symlink || return 1
     configure_windows_native_hooks
     download_utilities
 

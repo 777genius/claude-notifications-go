@@ -105,6 +105,15 @@ func TestEmbeddedSkillLifecycleProjection(t *testing.T) {
 	if len(f.snapshot(t).Ledger.Consumers) != 1 {
 		t.Fatal("refresh added consumer")
 	}
+	if runtime.GOOS == "windows" {
+		if e := f.run("--remove"); e != nil {
+			t.Fatal(e)
+		}
+		if !bytes.Equal(embeddedRead(t, f.skill), skills.AgentNotify()) {
+			t.Fatal("independent removal deleted shared skill")
+		}
+		return
+	}
 	canonicalBin, e := installruntime.CanonicalPath(f.bin)
 	if e != nil {
 		t.Fatal(e)

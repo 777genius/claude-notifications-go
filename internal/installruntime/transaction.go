@@ -65,6 +65,9 @@ type transaction struct {
 	Before      Ledger
 	After       Ledger
 	Files       []File
+	// Rollback marks a durable reverse decision. Retry must resume it instead
+	// of reversing the reverse and republishing the interrupted upgrade.
+	Rollback bool `json:",omitempty"`
 }
 
 // Request stages ordinary file bytes before Commit. Prepare runs under the
@@ -251,6 +254,12 @@ func Commit(ctx context.Context, r Request) (Ledger, error) {
 		if r.RollbackPending {
 			if !reflect.DeepEqual(l, pending.Before) && !reflect.DeepEqual(l, pending.After) {
 				return l, fmt.Errorf("rollback ledger mismatch")
+			}
+			if pending.Rollback {
+				if e := recoverTransaction(ctx, root, l, pending, r.Fault); e != nil {
+					return l, e
+				}
+				return pending.After, nil
 			}
 			reverse, e := reverseTransaction(l, pending)
 			if e != nil {

@@ -231,6 +231,72 @@ func TestRollbackIndividualIdentities(t *testing.T) {
 	}
 }
 
+func TestInterruptedRollbackResumesReverseDecision(t *testing.T) {
+	ctx, r := request(t)
+	asset := filepath.Join(r.RuntimeRoot, "sender")
+	configPath := filepath.Join(t.TempDir(), "hooks.json")
+	r.ConfigPaths = []string{configPath}
+	r.Consumer.Commands = []string{"cmd-a"}
+	r.Files = []File{
+		{Path: asset, Data: []byte("A"), Mode: 0755},
+		{Path: configPath, Data: []byte(`{"v":"A"}`), Mode: 0600},
+	}
+	if _, err := Commit(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	beforeAsset, err := Fingerprint(asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeConfig, err := Fingerprint(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Consumer.Commands = []string{"cmd-b"}
+	r.Files = []File{
+		{Path: asset, Before: beforeAsset, Data: []byte("B"), Mode: 0755},
+		{Path: configPath, Before: beforeConfig, Data: []byte(`{"v":"B"}`), Mode: 0600},
+	}
+	r.Fault = func(phase string) error {
+		if phase == "ledger" {
+			return fmt.Errorf("crash")
+		}
+		return nil
+	}
+	if _, err := Commit(ctx, r); err == nil {
+		t.Fatal("missing upgrade crash")
+	}
+	r.Files = nil
+	r.RollbackPending = true
+	if _, err := Commit(ctx, r); err == nil {
+		t.Fatal("missing rollback crash")
+	}
+	pending, err := decodeTransaction(mustRead(t, filepath.Join(r.ControlRoot, "transaction.json")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pending.Rollback {
+		t.Fatal("reversal intent not persisted")
+	}
+	r.Fault = nil
+	ledger, err := Commit(ctx, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(asset); err != nil || string(data) != "A" {
+		t.Fatalf("asset rolled forward: %s %v", data, err)
+	}
+	if data, err := os.ReadFile(configPath); err != nil || string(data) != `{"v":"A"}` {
+		t.Fatalf("config rolled forward: %s %v", data, err)
+	}
+	if commands := ledger.Consumers[r.ConsumerID].Commands; len(commands) != 1 || commands[0] != "cmd-a" {
+		t.Fatalf("consumer rolled forward: %+v", ledger.Consumers[r.ConsumerID])
+	}
+	if _, err := os.Lstat(filepath.Join(r.ControlRoot, "transaction.json")); !os.IsNotExist(err) {
+		t.Fatal("pending marker retained")
+	}
+}
+
 func TestMissingTransactionAfterPromotionRefuses(t *testing.T) {
 	ctx, r := request(t)
 	if _, err := Commit(ctx, r); err != nil {

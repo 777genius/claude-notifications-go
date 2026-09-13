@@ -84,18 +84,27 @@ for scenario in staged staged_corrupt offline fresh_offline download checksum mi
 #!/bin/bash
 # agent-notifications-managed-writer-protocol-v1
 if [ "$1" = internal-install-runtime ]; then
-    stage="" target=""
+    stage="" target="" entry="" refresh=false
     shift
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --stage) stage=$2; shift 2 ;;
             --target) target=$2; shift 2 ;;
-            --entry|--control-root|--consumer) shift 2 ;;
-            --require-native|--refresh|--remove|--purge-native) shift ;;
+            --entry) entry=$2; shift 2 ;;
+            --control-root|--consumer) shift 2 ;;
+            --refresh) refresh=true; shift ;;
+            --require-native|--remove|--purge-native) shift ;;
             *) shift ;;
         esac
     done
     [ -n "$stage" ] && [ -n "$target" ] || exit 2
+    if [ "$stage" = "$target" ]; then
+        if [ -n "$entry" ]; then
+            ln -sf "$entry" "$target/claude-notifications" 2>/dev/null || true
+            ln -sf "$entry" "$target/agent-notifications" 2>/dev/null || true
+        fi
+        exit 0
+    fi
     for f in "$stage"/*; do
         [ -e "$f" ] || continue
         base=$(basename "$f")

@@ -261,7 +261,7 @@ func reverseTransaction(current Ledger, tx transaction) (transaction, error) {
 			}
 		}
 	}
-	reverse := transaction{Schema: transactionSchemaV2, Before: current, After: after, ConfigPaths: tx.ConfigPaths}
+	reverse := transaction{Schema: transactionSchemaV2, Before: current, After: after, ConfigPaths: tx.ConfigPaths, Rollback: true}
 	if tx.Native != nil && after.Native != nil {
 		parents, err := pathAnchors(after.Native.Path, false)
 		if err != nil {

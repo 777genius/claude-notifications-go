@@ -4,13 +4,15 @@ package main
 
 import (
 	"fmt"
-	"github.com/777genius/agent-notifications/internal/installruntime"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/777genius/agent-notifications/internal/config"
+	"github.com/777genius/agent-notifications/internal/installruntime"
 )
 
 func notificationRepoRoot(t *testing.T) string {
@@ -238,7 +240,8 @@ func TestNotificationBootstrapRealInstaller(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(filepath.Join(bundle, ".claude-plugin", "plugin.json"), `{"name":"claude-notifications-go","version":"1.42.0"}`)
+	version := config.ConsumerVersion
+	write(filepath.Join(bundle, ".claude-plugin", "plugin.json"), fmt.Sprintf(`{"name":"claude-notifications-go","version":%q}`, version))
 	packagedConfig, err := os.ReadFile(filepath.Join(notificationRepoRoot(t), "config", "config.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +279,8 @@ main "$@"
 		t.Fatal(err)
 	}
 	write(filepath.Join(configStage, "install.sh"), stagedInstaller)
-	archiveRoot := filepath.Join(home, "archive", "agent-notifications-1.42.0")
+	archiveName := "agent-notifications-" + version
+	archiveRoot := filepath.Join(home, "archive", archiveName)
 	if err := os.MkdirAll(archiveRoot, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +289,7 @@ main "$@"
 		t.Fatalf("copy archive: %v: %s", err, output)
 	}
 	tarball := filepath.Join(home, "source.tar.gz")
-	cmd = exec.Command("tar", "-czf", tarball, "-C", filepath.Join(home, "archive"), "agent-notifications-1.42.0")
+	cmd = exec.Command("tar", "-czf", tarball, "-C", filepath.Join(home, "archive"), archiveName)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("tar: %v: %s", err, output)
 	}
@@ -300,7 +304,7 @@ main "$@"
 _CONFIG_STAGE="$NOTIFICATION_TEST_CONFIG_STAGE"
 _CONFIG_HELPER="$NOTIFICATION_TEST_ASSET"
 chmod +x "$_CONFIG_HELPER"
-BOOTSTRAP_TAG=v1.42.0
+BOOTSTRAP_TAG=v`+version+`
 PRODUCT=codex
 CONFIGURE_NOTIFICATIONS=true
 fetch_bootstrap_file() { cp "$NOTIFICATION_TEST_SOURCE_TAR" "$2"; }
@@ -347,7 +351,7 @@ func TestNotificationShellHelper(t *testing.T) {
 	args = args[1:]
 	switch args[0] {
 	case "--version":
-		fmt.Println("claude-notifications v1.42.0")
+		fmt.Println("claude-notifications v" + config.ConsumerVersion)
 	case "setup-codex":
 		runSetupCodex(args[1:])
 	case "config":

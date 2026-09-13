@@ -211,4 +211,50 @@ echo 'PASS: missing launcher is restored through kernel refresh'
  [ -L "$SCRIPT_DIR/claude-notifications" ]
  [ "$(readlink "$SCRIPT_DIR/claude-notifications")" = "$BINARY_NAME" ]
 )
-echo 'PASS: disposable missing launcher still falls back to a local symlink'
+echo 'PASS: unmanaged missing launcher still falls back to a local symlink'
+(
+ export INSTALL_TARGET_DIR="$sandbox/refuse-launcher"
+ mkdir -p "$INSTALL_TARGET_DIR"
+ source "$sandbox/functions.sh"
+ detect_platform() {
+  PLATFORM=linux ARCH=amd64 BINARY_NAME=claude-notifications-linux-amd64
+  BINARY_PATH="$SCRIPT_DIR/$BINARY_NAME"
+ }
+ detect_platform
+ guard_install_paths() { :; }
+ cat > "$BINARY_PATH" <<'PAYLOAD'
+#!/bin/sh
+# agent-notifications-managed-writer-protocol-v1
+echo 'canonical skill is not an unchanged owned regular file' >&2
+exit 1
+PAYLOAD
+ chmod +x "$BINARY_PATH"
+ if create_named_launcher claude-notifications; then
+  echo 'managed refusal published an untracked launcher' >&2
+  exit 1
+ fi
+ [ ! -e "$SCRIPT_DIR/claude-notifications" ]
+ [ ! -L "$SCRIPT_DIR/claude-notifications" ]
+)
+echo 'PASS: managed launcher repair refusal is not bypassed'
+(
+ export INSTALL_TARGET_DIR="$sandbox/disposable-launcher"
+ mkdir -p "$INSTALL_TARGET_DIR"
+ source "$sandbox/functions.sh"
+ detect_platform() {
+  PLATFORM=linux ARCH=amd64 BINARY_NAME=claude-notifications-linux-amd64
+  BINARY_PATH="$SCRIPT_DIR/$BINARY_NAME"
+ }
+ detect_platform
+ guard_install_paths() { :; }
+ INSTALL_DISPOSABLE_ACQUISITION=true
+ cat > "$BINARY_PATH" <<'PAYLOAD'
+#!/bin/sh
+# agent-notifications-managed-writer-protocol-v1
+exit 1
+PAYLOAD
+ chmod +x "$BINARY_PATH"
+ create_named_launcher claude-notifications
+ [ -L "$SCRIPT_DIR/claude-notifications" ]
+)
+echo 'PASS: disposable acquisition may still publish a local launcher'
