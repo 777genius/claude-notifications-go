@@ -255,31 +255,60 @@ if [ "$1" = "help" ] || [ "$1" = "--help" ]; then
     exit 0
 fi
 if [ "$1" = "internal-install-runtime" ]; then
-    stage="" target=""
+    stage="" target="" entry=""
     shift
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --stage) stage=$2; shift 2 ;;
             --target) target=$2; shift 2 ;;
-            --entry|--control-root|--consumer) shift 2 ;;
+            --entry) entry=$2; shift 2 ;;
+            --control-root|--consumer) shift 2 ;;
             --require-native|--refresh|--remove|--purge-native) shift ;;
             *) shift ;;
         esac
     done
     [ -n "$stage" ] && [ -n "$target" ] || exit 2
-    mkdir -p "$target" || exit 1
-    for f in "$stage"/*; do
-        [ -e "$f" ] || continue
-        base=$(basename "$f")
-        case "$base" in .install-stage.*|checksums.txt|.checksums.txt|*.sha256) continue ;; esac
-        if [ -d "$f" ]; then
-            rm -rf "$target/$base"
-            cp -R "$f" "$target/$base" || exit 1
-        else
-            cp "$f" "$target/$base" || exit 1
-            chmod +x "$target/$base" 2>/dev/null || true
-        fi
-    done
+    if [ "$stage" != "$target" ]; then
+        mkdir -p "$target" || exit 1
+        for f in "$stage"/*; do
+            [ -e "$f" ] || continue
+            base=$(basename "$f")
+            case "$base" in .install-stage.*|checksums.txt|.checksums.txt|*.sha256) continue ;; esac
+            if [ -d "$f" ]; then
+                [ "$f" -ef "$target/$base" ] 2>/dev/null && continue
+                rm -rf "$target/$base"
+                cp -R "$f" "$target/$base" || exit 1
+            else
+                [ "$f" -ef "$target/$base" ] 2>/dev/null && continue
+                cp "$f" "$target/$base" || exit 1
+                chmod +x "$target/$base" 2>/dev/null || true
+            fi
+        done
+    fi
+    if [ -z "$entry" ]; then
+        exit 1
+    fi
+    case "$entry" in
+        *.exe)
+            for launcher in claude-notifications agent-notifications; do
+                cat > "$target/${launcher}.bat" <<EOF
+@echo off
+REM ${launcher} Windows wrapper
+REM Automatically runs the platform-specific binary
+
+setlocal
+set SCRIPT_DIR=%~dp0
+set AGENT_NOTIFICATIONS_LAUNCHER=${launcher}
+"%SCRIPT_DIR%${entry}" %*
+EOF
+                [ -f "$target/${launcher}.bat" ] || exit 1
+            done
+            ;;
+        *)
+            ln -sf "$entry" "$target/claude-notifications" || exit 1
+            ln -sf "$entry" "$target/agent-notifications" || exit 1
+            ;;
+    esac
     echo "managed-runtime committed generation=1"
     exit 0
 fi
@@ -1261,6 +1290,12 @@ test_windows_native_hooks_real_exec_launch() {
     touch "$bin_dir/sound-preview-windows-amd64.exe"
     touch "$bin_dir/list-devices-windows-amd64.exe"
     touch "$bin_dir/list-sounds-windows-amd64.exe"
+
+    if ! "$exe_path" internal-install-runtime --stage "$bin_dir" --target "$bin_dir" --entry "claude-notifications-windows-amd64.exe"; then
+        fail_test "Register managed Windows runtime" "internal-install-runtime failed"
+        cleanup_test_dir
+        return
+    fi
 
     local output exit_code
     output=$(INSTALL_TARGET_DIR="$bin_dir" bash "$INSTALL_SCRIPT" 2>&1)
